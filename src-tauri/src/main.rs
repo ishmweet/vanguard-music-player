@@ -9,7 +9,8 @@ fn search_youtube(query: String) -> Result<String, String> {
             &format!("ytsearch10:{}", query),
             "--flat-playlist",
             "--print",
-            "%(title)s|%(uploader)s|%(duration_string)s|%(id)s",
+            // Keep ==== delimiter to prevent breaking on titles containing common symbols
+            "%(title)s====%(uploader)s====%(duration_string)s====%(id)s",
         ])
         .output()
         .map_err(|e| e.to_string())?;
@@ -19,17 +20,23 @@ fn search_youtube(query: String) -> Result<String, String> {
 
 #[tauri::command]
 fn play_audio(url: String) -> Result<(), String> {
+    // Kill existing instances to prevent audio overlapping
     let _ = Command::new("pkill").arg("mpv").output();
     
-    // Clean up old socket just in case
+    // Clean up old socket to ensure fresh IPC connection
     let _ = std::fs::remove_file("/tmp/mpvsocket");
 
     Command::new("mpv")
         .args([
             "--no-video", 
             "--script-opts=ytdl_hook-ytdl_path=yt-dlp",
-            "--ytdl-format=bestaudio",
+            // SMART FORMAT SELECTION: 
+            // prioritizing best standalone audio, then falling back to best combined
+            "--ytdl-format=bestaudio/best",
+            // FIXED RAW OPTIONS: Removed complex nested commas that caused parsing errors
+            "--ytdl-raw-options=ignore-config=,no-check-certificates=,format-sort=hasaud:true",
             "--input-ipc-server=/tmp/mpvsocket", 
+            "--force-window=no",
             &url
         ])
         .spawn()
@@ -69,9 +76,28 @@ fn set_volume(volume: f64) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn download_song(url: String) -> Result<String, String> {
-    // Uses yt-dlp to download the audio directly to the user's Downloads folder
-    let cmd = format!("yt-dlp -f bestaudio --extract-audio --audio-format mp3 -o ~/Downloads/'%(title)s.%(ext)s' {}", url);
+fn download_song(url: String, quality: String, path: String) -> Result<String, String> {
+    // SMART DOWNLOAD FORMATS: 
+    // Always include a fallback to /best to ensure the download doesn't fail 
+    // if a specific audio-only stream is missing.
+    let format = match quality.as_str() {
+        "Low" => "worstaudio/worst",
+        "Medium" => "bestaudio[abr<=128]/bestaudio/best",
+        _ => "bestaudio/best",
+    };
+
+    let path_with_slash = if path.ends_with('/') {
+        path
+    } else {
+        format!("{}/", path)
+    };
+
+    // Robust download command
+    let cmd = format!(
+        "yt-dlp -f \"{}\" --extract-audio --audio-format mp3 --no-check-certificates -o '{}%(title)s.%(ext)s' {}", 
+        format, path_with_slash, url
+    );
+    
     let output = Command::new("sh")
         .arg("-c")
         .arg(&cmd)
@@ -79,7 +105,7 @@ fn download_song(url: String) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
 
     if output.status.success() {
-        Ok("Downloaded successfully to Downloads".to_string())
+        Ok("Downloaded successfully".to_string())
     } else {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
@@ -99,7 +125,7 @@ fn send_ipc_command(cmd: &str) -> Result<String, String> {
 
 fn main() {
     tauri::Builder::default()
-    .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             search_youtube,
             play_audio,
@@ -107,12 +133,11 @@ fn main() {
             get_progress,
             seek_audio,
             set_volume,
-            download_song 
+            download_song
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| {
-            // Robust event hook for cleanly shutting down mpv on exit
             if let tauri::RunEvent::Exit = event {
                 let _ = std::process::Command::new("pkill").arg("mpv").output();
                 let _ = std::fs::remove_file("/tmp/mpvsocket");
