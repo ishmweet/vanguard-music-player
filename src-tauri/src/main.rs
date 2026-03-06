@@ -9,7 +9,6 @@ fn search_youtube(query: String) -> Result<String, String> {
             &format!("ytsearch10:{}", query),
             "--flat-playlist",
             "--print",
-            // Keep ==== delimiter to prevent breaking on titles containing common symbols
             "%(title)s====%(uploader)s====%(duration_string)s====%(id)s",
         ])
         .output()
@@ -20,22 +19,19 @@ fn search_youtube(query: String) -> Result<String, String> {
 
 #[tauri::command]
 fn play_audio(url: String) -> Result<(), String> {
-    // Kill existing instances to prevent audio overlapping
     let _ = Command::new("pkill").arg("mpv").output();
-    
-    // Clean up old socket to ensure fresh IPC connection
     let _ = std::fs::remove_file("/tmp/mpvsocket");
+
+    // Small delay to ensure socket is cleaned up
+    std::thread::sleep(std::time::Duration::from_millis(200));
 
     Command::new("mpv")
         .args([
-            "--no-video", 
+            "--no-video",
             "--script-opts=ytdl_hook-ytdl_path=yt-dlp",
-            // SMART FORMAT SELECTION: 
-            // prioritizing best standalone audio, then falling back to best combined
             "--ytdl-format=bestaudio/best",
-            // FIXED RAW OPTIONS: Removed complex nested commas that caused parsing errors
             "--ytdl-raw-options=ignore-config=,no-check-certificates=,format-sort=hasaud:true",
-            "--input-ipc-server=/tmp/mpvsocket", 
+            "--input-ipc-server=/tmp/mpvsocket",
             "--force-window=no",
             &url
         ])
@@ -53,14 +49,23 @@ fn pause_audio() -> Result<(), String> {
 #[tauri::command]
 fn get_progress() -> Result<f64, String> {
     let response = send_ipc_command(r#"{"command": ["get_property", "time-pos"]}"#)?;
-    if let Some(data_idx) = response.find("\"data\":") {
-        let remainder = &response[data_idx + 7..];
-        let num_str = remainder.split(|c| c == ',' || c == '}').next().unwrap_or("");
-        if let Ok(time) = num_str.parse::<f64>() {
-            return Ok(time);
-        }
+    parse_f64_from_response(&response)
+}
+
+#[tauri::command]
+fn get_duration() -> Result<f64, String> {
+    let response = send_ipc_command(r#"{"command": ["get_property", "duration"]}"#)?;
+    parse_f64_from_response(&response)
+}
+
+#[tauri::command]
+fn is_paused() -> Result<bool, String> {
+    let response = send_ipc_command(r#"{"command": ["get_property", "pause"]}"#)?;
+    if response.contains("\"data\":true") {
+        Ok(true)
+    } else {
+        Ok(false)
     }
-    Ok(0.0)
 }
 
 #[tauri::command]
@@ -77,27 +82,19 @@ fn set_volume(volume: f64) -> Result<(), String> {
 
 #[tauri::command]
 fn download_song(url: String, quality: String, path: String) -> Result<String, String> {
-    // SMART DOWNLOAD FORMATS: 
-    // Always include a fallback to /best to ensure the download doesn't fail 
-    // if a specific audio-only stream is missing.
     let format = match quality.as_str() {
         "Low" => "worstaudio/worst",
         "Medium" => "bestaudio[abr<=128]/bestaudio/best",
         _ => "bestaudio/best",
     };
 
-    let path_with_slash = if path.ends_with('/') {
-        path
-    } else {
-        format!("{}/", path)
-    };
+    let path_with_slash = if path.ends_with('/') { path } else { format!("{}/", path) };
 
-    // Robust download command
     let cmd = format!(
-        "yt-dlp -f \"{}\" --extract-audio --audio-format mp3 --no-check-certificates -o '{}%(title)s.%(ext)s' {}", 
+        "yt-dlp -f \"{}\" --extract-audio --audio-format mp3 --no-check-certificates -o '{}%(title)s.%(ext)s' {}",
         format, path_with_slash, url
     );
-    
+
     let output = Command::new("sh")
         .arg("-c")
         .arg(&cmd)
@@ -111,12 +108,24 @@ fn download_song(url: String, quality: String, path: String) -> Result<String, S
     }
 }
 
-// Helper function to send commands to mpv's Unix socket
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+fn parse_f64_from_response(response: &str) -> Result<f64, String> {
+    if let Some(data_idx) = response.find("\"data\":") {
+        let remainder = &response[data_idx + 7..];
+        let num_str = remainder.split(|c| c == ',' || c == '}').next().unwrap_or("");
+        if let Ok(val) = num_str.trim().parse::<f64>() {
+            return Ok(val);
+        }
+    }
+    Ok(0.0)
+}
+
 fn send_ipc_command(cmd: &str) -> Result<String, String> {
     let mut stream = UnixStream::connect("/tmp/mpvsocket").map_err(|e| e.to_string())?;
     stream.write_all(cmd.as_bytes()).map_err(|e| e.to_string())?;
     stream.write_all(b"\n").map_err(|e| e.to_string())?;
-    
+
     let mut reader = BufReader::new(stream);
     let mut response = String::new();
     reader.read_line(&mut response).map_err(|e| e.to_string())?;
@@ -131,6 +140,8 @@ fn main() {
             play_audio,
             pause_audio,
             get_progress,
+            get_duration,
+            is_paused,
             seek_audio,
             set_volume,
             download_song
