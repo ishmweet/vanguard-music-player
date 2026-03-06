@@ -268,6 +268,39 @@
             -webkit-text-fill-color: transparent;
         }
 
+        #typewriter {
+            visibility: hidden;
+        }
+        #typewriter.tw-ready {
+            visibility: visible;
+        }
+
+        #tw-cursor {
+            display: inline-block;
+            width: 3px;
+            height: 0.78em;
+            background: linear-gradient(135deg, #4ff828, #10b981);
+            margin-left: 3px;
+            border-radius: 2px;
+            vertical-align: middle;
+            position: relative;
+            top: -0.05em;
+            animation: blink-cursor 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* While typing line1 (white text), cursor is white */
+        #tw-cursor.phase-one {
+            background: #ffffff;
+        }
+
+        /* Word 365 style: visible → smooth fade out → brief off → snap back on */
+        @keyframes blink-cursor {
+            0%   { opacity: 1; }
+            50%  { opacity: 1; }
+            75%  { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
         .hero-desc {
             font-size: 17px;
             color: var(--text-secondary);
@@ -970,7 +1003,7 @@
     <header class="hero">
         <div class="hero-content">
             <span class="hero-tag">ZERO ADS. ZERO TRACKING.</span>
-            <h1 class="hero-title">Your music, <span>uninterrupted.</span></h1>
+            <h1 class="hero-title" id="typewriter" style="visibility:hidden;">Your music, <span>uninterrupted.</span></h1>
             <p class="hero-desc">
                 Experience the ultimate ad-free music player designed for true audio enthusiasts. <strong>Vanguard Player</strong> is meticulously built from the ground up to deliver pure, high-fidelity playback, seamless library management, and a strikingly sleek interface—completely free of distracting clutter, tracking, or paywalls. Fully open-source, community-driven, and completely yours.
             </p>
@@ -1560,6 +1593,86 @@
                 }
             });
         });
+        // ── Typewriter hero title ──
+        (function() {
+            var tw = document.getElementById('typewriter');
+
+            // Grab HTML immediately before any render — prevents flash
+            var sourceHTML = tw.innerHTML.trim();
+            tw.innerHTML = '';                    // clear NOW, not after delay
+            tw.style.visibility = 'visible';      // show immediately (empty, no flash)
+
+            function setupTypewriter(el, html) {
+                // Inject cursor
+                var cursor = document.createElement('span');
+                cursor.id = 'tw-cursor';
+                cursor.className = 'phase-one';
+                el.appendChild(cursor);
+
+                var pos = 0,
+                    tag = '',
+                    writingTag = false,
+                    typeSpeed = 88,
+                    tempTypeSpeed = 0;
+
+                function type() {
+                    var ch = html[pos];
+
+                    // ── Tag handling ──
+                    if (ch === '<') {
+                        writingTag = true;
+                        tag = '<';
+                        pos++;
+                        if (pos < html.length) setTimeout(type, 0);
+                        return;
+                    }
+
+                    if (writingTag) {
+                        tag += ch;
+                        if (ch === '>') {
+                            writingTag = false;
+                            var isClosing = tag[1] === '/';
+                            if (!isClosing) {
+                                cursor.classList.remove('phase-one');
+                                var newSpan = document.createElement('span');
+                                el.insertBefore(newSpan, cursor);
+                                el._activeSpan = newSpan;
+                            } else {
+                                el._activeSpan = null;
+                            }
+                        }
+                        pos++;
+                        if (pos < html.length) setTimeout(type, 0);
+                        return;
+                    }
+
+                    // ── Regular character ──
+                    tempTypeSpeed = (ch === ' ')
+                        ? 0
+                        : Math.random() * typeSpeed + 50;
+
+                    if (el._activeSpan) {
+                        el._activeSpan.appendChild(document.createTextNode(ch));
+                        el.insertBefore(cursor, el._activeSpan.nextSibling);
+                    } else {
+                        el.insertBefore(document.createTextNode(ch), cursor);
+                    }
+
+                    pos++;
+                    if (pos < html.length) setTimeout(type, tempTypeSpeed);
+                    // else: finished — cursor stays and blinks
+                }
+
+                return { type: type };
+            }
+
+            // Small delay just to let hero fade-in begin, then start typing
+            setTimeout(function() {
+                var writer = setupTypewriter(tw, sourceHTML);
+                writer.type();
+            }, 950);
+        })();
+
     </script>
 
 </body>
