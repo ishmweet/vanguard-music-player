@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Home, Search, Play, Pause, SkipBack, SkipForward,
   ListMusic, Heart, DownloadCloud, Music, Volume2, VolumeX,
@@ -8,7 +10,11 @@ import {
   Info, X, Clock, Youtube, Disc, Hash, FileCode2, PlaySquare,
   PlusCircle, FileBadge2, Settings, RefreshCw, FolderDown,
   Shuffle, Repeat, Repeat1, ListOrdered, Trash2, Pencil,
-  ChevronRight, ChevronLeft, ImagePlus, AlignLeft
+  ChevronRight, ChevronLeft, ImagePlus, AlignLeft, HardDrive,
+  FileMusic, AlertCircle, Gauge, Sliders, Moon, FolderOpen,
+  PackageCheck, RotateCcw, Timer, Zap, BarChart2, FileOutput,
+  CheckCircle, WifiOff, Database, Upload, ArchiveRestore,
+  AlertTriangle, Terminal, ChevronDown, Sparkles, ArrowLeft
 } from 'lucide-react';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -19,6 +25,15 @@ type Track = {
   duration: string;
   url: string;
   cover: string;
+};
+
+type LocalTrack = {
+  title: string;
+  path: string;
+  size_bytes: number;
+  extension: string;
+  artist?: string;
+  duration?: string;
 };
 
 type Playlist = {
@@ -32,134 +47,854 @@ type Playlist = {
 type RepeatMode = 'off' | 'all' | 'one';
 
 type CtxMenu = {
-  x: number;
-  y: number;
+  x: number; y: number;
   type: 'track' | 'playlist' | 'sidebar-playlist' | 'queue-track' | 'quickpick';
   track?: Track;
   playlist?: Playlist;
 };
 
+type DepsStatus = { mpv: boolean; yt_dlp: boolean; ffprobe: boolean };
+type AudioInfo = { codec: string; bitrate: number; samplerate: number; channels: number };
+type DiskInfo = { used_bytes: number; track_count: number };
+type BatchProgress = { index: number; total: number; title: string; success: boolean; error?: string };
+type InstallResult = { success: boolean; message: string };
+type SettingsTab = 'dependencies' | 'downloads' | 'storage';
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-function parseDurationToSeconds(duration: string): number {
-  const parts = duration.split(':').map(Number);
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  return parts[0] || 0;
+function parseDurationToSeconds(d: string): number {
+  const p = d.split(':').map(Number);
+  if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+  if (p.length === 2) return p[0] * 60 + p[1];
+  return p[0] || 0;
 }
-
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
+function formatTime(s: number): string {
+  const m = Math.floor(s / 60); const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
 }
-
-function loadFromStorage<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch { return fallback; }
+function formatBytes(b: number): string {
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
-
-function saveToStorage(key: string, value: unknown) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+function loadLS<T>(key: string, fb: T): T {
+  try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fb; } catch { return fb; }
 }
-
-function clampMenuPos(x: number, y: number, w = 260, h = 400) {
+function saveLS(key: string, v: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
+}
+function clampMenu(x: number, y: number, w = 260, h = 380) {
   return {
     x: x + w > window.innerWidth ? window.innerWidth - w - 8 : x,
     y: y + h > window.innerHeight ? window.innerHeight - h - 8 : y,
   };
 }
 
+// ─── SLEEP TIMER BUTTON (top-right, animated) ─────────────────────────────────
+const SleepTimerButton = React.memo(({
+  sleepTimer, onOpen,
+}: { sleepTimer: number; onOpen: () => void }) => {
+  const active = sleepTimer > 0;
+  const mins = active ? Math.ceil(sleepTimer / 60) : 0;
+  return (
+    <button
+      onClick={onOpen}
+      title={active ? `Sleep in ${mins}m — click to change` : 'Set sleep timer'}
+      className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300
+        ${active
+          ? 'bg-amber-500/15 border border-amber-500/40 text-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.2)]'
+          : 'text-neutral-600 hover:text-neutral-400 border border-transparent hover:border-neutral-800'}`}
+    >
+      <Moon size={13} className={active ? 'animate-pulse' : ''} />
+      {active && <span className="tabular-nums">{mins}m</span>}
+    </button>
+  );
+});
+
+// ─── INFO HINT BUTTON ────────────────────────────────────────────────────────
+const InfoHintButton = React.memo(({ onClick }: { onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    title="Before using, install dependencies from Settings → Dependencies"
+    className="w-7 h-7 rounded-full border-2 border-amber-500/60 text-amber-400 hover:border-amber-400 hover:text-amber-300 hover:shadow-[0_0_10px_rgba(251,191,36,0.4)] transition-all duration-200 flex items-center justify-center text-xs font-black bg-amber-500/10"
+  >
+    !
+  </button>
+));
+
+// ─── SLEEP TIMER POPOVER ─────────────────────────────────────────────────────
+const SleepTimerPopover = React.memo(({
+  sleepTimer, onSet, onCancel, onClose,
+}: { sleepTimer: number; onSet: (m: number) => void; onCancel: () => void; onClose: () => void }) => {
+  const [input, setInput] = useState('');
+  const presets = [5, 10, 15, 20, 30, 45, 60, 90];
+  return (
+    <div className="w-64 bg-[#0e0e0e] border border-neutral-800 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.9)] overflow-hidden"
+      onClick={e => e.stopPropagation()}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
+        <span className="text-sm font-bold text-white flex items-center gap-2"><Moon size={14} className="text-amber-400" /> Sleep Timer</span>
+        <button onClick={onClose} className="text-neutral-600 hover:text-white transition-colors"><X size={14} /></button>
+      </div>
+      {sleepTimer > 0 ? (
+        <div className="px-4 py-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between py-2 px-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+            <span className="text-sm text-amber-400">Pausing in <strong>{Math.ceil(sleepTimer / 60)}m</strong></span>
+            <button onClick={() => { onCancel(); onClose(); }} className="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1">
+              <X size={11} /> Cancel
+            </button>
+          </div>
+          <p className="text-xs text-neutral-600">Set a new timer to override:</p>
+        </div>
+      ) : (
+        <div className="px-4 pt-4 pb-1">
+          <p className="text-xs text-neutral-600 mb-3">Auto-pause after:</p>
+        </div>
+      )}
+      <div className="px-4 pb-2 grid grid-cols-4 gap-1.5">
+        {presets.map(m => (
+          <button key={m} onClick={() => { onSet(m); onClose(); }}
+            className="py-1.5 rounded-lg text-xs font-semibold bg-neutral-900 border border-neutral-800 text-neutral-400 hover:border-amber-500/50 hover:text-amber-400 hover:bg-amber-500/10 transition-all">
+            {m}m
+          </button>
+        ))}
+      </div>
+      <div className="px-4 pb-4 flex gap-2 mt-1">
+        <input type="number" min="1" max="999" placeholder="Custom (min)"
+          value={input} onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { const m = parseInt(input); if (m > 0) { onSet(m); onClose(); } } }}
+          className="flex-1 bg-[#050505] border border-neutral-800 text-white rounded-lg py-1.5 px-2.5 focus:outline-none focus:border-amber-500/50 text-xs placeholder-neutral-700"
+        />
+        <button onClick={() => { const m = parseInt(input); if (m > 0) { onSet(m); onClose(); } }}
+          className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-lg text-xs font-semibold hover:bg-amber-500/20 transition-colors">
+          Set
+        </button>
+      </div>
+    </div>
+  );
+});
+
+// ─── DEPS BANNER ─────────────────────────────────────────────────────────────
+const DepsBanner = React.memo(({ deps, onGoToSettings }: { deps: DepsStatus | null; onGoToSettings: () => void }) => {
+  if (!deps) return null;
+  const missing = [!deps.mpv && 'mpv', !deps.yt_dlp && 'yt-dlp'].filter(Boolean) as string[];
+  if (missing.length === 0) return null;
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-500/10 border-b border-amber-500/20 text-amber-400 text-xs font-medium shrink-0 z-30">
+      <WifiOff size={13} className="shrink-0" />
+      <span className="flex-1"><strong>{missing.join(', ')}</strong> not found — playback won't work.</span>
+      <button onClick={onGoToSettings} className="shrink-0 px-2.5 py-1 bg-amber-500/20 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 transition-colors">
+        Install →
+      </button>
+    </div>
+  );
+});
+
+// ─── TRACK ROW ───────────────────────────────────────────────────────────────
+type TrackRowProps = {
+  track: Track; index: number; showRemove?: boolean; onRemove?: () => void;
+  isActive: boolean; isHovered: boolean; isLoadingTrack: boolean; isPlaying: boolean;
+  isLiked: boolean; isDownloading: boolean;
+  onPlay: () => void; onHoverEnter: () => void; onHoverLeave: () => void;
+  onLike: () => void; onDownload: () => void; onCtx: (e: React.MouseEvent) => void;
+};
+const TrackRow = React.memo(({
+  track, index, showRemove, onRemove,
+  isActive, isHovered, isLoadingTrack, isPlaying, isLiked, isDownloading,
+  onPlay, onHoverEnter, onHoverLeave, onLike, onDownload, onCtx,
+}: TrackRowProps) => (
+  <div
+    className={`flex items-center gap-4 px-4 py-3.5 rounded-lg cursor-pointer transition-all duration-150 group
+      ${isActive ? 'bg-[#39FF14]/[0.07] border border-[#39FF14]/20' : 'hover:bg-white/5 border border-transparent'}`}
+    onClick={onPlay} onContextMenu={onCtx} onMouseEnter={onHoverEnter} onMouseLeave={onHoverLeave}
+  >
+    <div className="w-8 flex items-center justify-center shrink-0">
+      {isActive && isLoadingTrack
+        ? <div className="w-3.5 h-3.5 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" />
+        : isActive && isPlaying
+          ? <div className="flex gap-[2px] items-end h-4">
+              {[100, 65, 80].map((h, i) => <div key={i} className="w-[3px] bg-[#39FF14] rounded-full animate-pulse shadow-[0_0_4px_#39FF14]" style={{ height: `${h}%`, animationDelay: `${i * 150}ms` }} />)}
+            </div>
+          : isHovered ? <Play size={16} fill="white" className="text-white" />
+          : <span className={`text-[13px] tabular-nums ${isActive ? 'text-[#39FF14]' : 'text-neutral-500'}`}>{index + 1}</span>}
+    </div>
+    <div className="w-12 h-12 rounded-md overflow-hidden shrink-0 border border-neutral-800/60 bg-neutral-900">
+      <img src={track.cover} alt={track.title} className="w-full h-full object-cover" loading="lazy" />
+    </div>
+    <div className="flex-1 min-w-0">
+      <p className={`font-semibold text-[15px] truncate ${isActive ? 'text-[#39FF14]' : 'text-white'}`}>{track.title}</p>
+      <p className="text-[13px] text-neutral-500 truncate mt-0.5">{track.artist}</p>
+    </div>
+    <div className={`flex items-center gap-1 transition-opacity duration-150 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+      <button onClick={e => { e.stopPropagation(); onLike(); }} className="p-1.5 rounded-md hover:bg-white/10 transition-colors">
+        <Heart size={14} className={isLiked ? 'text-[#39FF14] fill-[#39FF14]' : 'text-neutral-400'} />
+      </button>
+      <button onClick={e => { e.stopPropagation(); onDownload(); }} className="p-1.5 rounded-md hover:bg-white/10 transition-colors">
+        {isDownloading ? <div className="w-3.5 h-3.5 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" /> : <Download size={14} className="text-neutral-400" />}
+      </button>
+      {showRemove && onRemove
+        ? <button onClick={e => { e.stopPropagation(); onRemove(); }} className="p-1.5 rounded-md hover:bg-red-500/20 transition-colors"><X size={14} className="text-neutral-400 hover:text-red-400" /></button>
+        : <button onClick={e => { e.stopPropagation(); onCtx(e); }} className="p-1.5 rounded-md hover:bg-white/10 transition-colors"><MoreVertical size={14} className="text-neutral-400" /></button>}
+    </div>
+    <span className="text-[13px] text-neutral-500 tabular-nums w-12 text-right shrink-0">{track.duration}</span>
+  </div>
+));
+
+const TrackRowSkeleton = ({ index }: { index: number }) => (
+  <div className="flex items-center gap-4 px-4 py-3.5">
+    <div className="w-8 shrink-0" />
+    <div className="w-12 h-12 rounded-md shrink-0 bg-neutral-800/60 animate-pulse" />
+    <div className="flex-1 flex flex-col gap-2">
+      <div className="h-3.5 bg-neutral-800/70 rounded-full animate-pulse" style={{ width: `${55 + (index * 13) % 35}%` }} />
+      <div className="h-2.5 bg-neutral-800/50 rounded-full animate-pulse" style={{ width: `${30 + (index * 7) % 25}%` }} />
+    </div>
+    <div className="w-12 h-2.5 bg-neutral-800/50 rounded-full animate-pulse shrink-0" />
+  </div>
+);
+
+// ─── WAVEFORM ─────────────────────────────────────────────────────────────────
+const WaveformBar = React.memo(({ waveform, progressPercent, isDragging }: { waveform: number[]; progressPercent: number; isDragging: boolean }) => {
+  if (!waveform.length) return null;
+  const max = Math.max(...waveform, 0.01);
+  return (
+    <div className="absolute inset-0 flex items-center gap-[1px] px-0 pointer-events-none overflow-hidden rounded-full opacity-50">
+      {waveform.map((v, i) => (
+        <div key={i} className="flex-1 rounded-sm"
+          style={{
+            height: `${Math.max(8, (v / max) * 100)}%`,
+            background: (i / waveform.length) * 100 <= progressPercent ? '#39FF14' : '#333',
+            transition: isDragging ? 'none' : 'background 0.3s',
+          }} />
+      ))}
+    </div>
+  );
+});
+
+// ─── CUSTOM SELECT (themed dropdown) ─────────────────────────────────────────
+const ThemedSelect = ({ value, options, onChange }: {
+  value: string;
+  options: { label: string; value: string; desc?: string }[];
+  onChange: (v: string) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = options.find(o => o.value === value);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleOpen = () => {
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      const dropW = Math.max(r.width, 220);
+      // Right-align dropdown to button's right edge, clamp to viewport
+      const left = Math.min(r.right - dropW, window.innerWidth - dropW - 12);
+      setDropPos({ top: r.bottom + 6, left: Math.max(8, left), width: dropW });
+    }
+    setOpen(o => !o);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button ref={btnRef}
+        onClick={handleOpen}
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-all duration-200 min-w-[120px]
+          ${open ? 'bg-[#39FF14]/15 border-[#39FF14]/50 text-[#39FF14]' : 'bg-[#39FF14]/10 border-[#39FF14]/30 text-[#39FF14] hover:bg-[#39FF14]/15'}`}
+      >
+        <span className="flex-1 text-left">{current?.label}</span>
+        <ChevronDown size={14} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div
+          className="fixed rounded-xl overflow-hidden z-[99999]"
+          style={{
+            top: dropPos.top,
+            left: dropPos.left,
+            minWidth: dropPos.width,
+            animation: 'dropIn 0.15s ease-out',
+            background: '#0e0e0e',
+            border: '1px solid rgba(57,255,20,0.2)',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.95)',
+            opacity: 1,
+          }}>
+          {options.map((opt, i) => (
+            <button key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={`w-full flex flex-col items-start px-4 py-3 text-left transition-all duration-150
+                ${i !== 0 ? 'border-t border-neutral-900' : ''}
+                ${value === opt.value
+                  ? 'bg-[#39FF14]/10 text-[#39FF14]'
+                  : 'text-neutral-300 hover:bg-white/[0.04] hover:text-white'}`}
+            >
+              <span className="text-sm font-semibold">{opt.label}</span>
+              {opt.desc && <span className="text-[11px] text-neutral-600 mt-0.5">{opt.desc}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── SETTINGS PANEL ──────────────────────────────────────────────────────────
 function SettingsPanel({
-  downloadQuality, setDownloadQuality,
-  downloadPath, handleSelectDirectory,
+  downloadQuality, setDownloadQuality, downloadPath, handleSelectDirectory,
+  playbackSpeed, setPlaybackSpeed, eq, setEq,
+  sleepTimer, setSleepTimerMinutes, cancelSleepTimer,
+  deps, setDeps, ytDlpVersion, setYtDlpVersion,
+  onUpdateYtDlp, isUpdatingYtDlp,
+  onBackup, onRestore,
+  backupPath, setBackupPath,
+  showToast,
 }: {
-  downloadQuality: string;
-  setDownloadQuality: (q: string) => void;
-  downloadPath: string;
-  handleSelectDirectory: () => void;
+  downloadQuality: string; setDownloadQuality: (q: string) => void;
+  downloadPath: string; handleSelectDirectory: () => void;
+  playbackSpeed: number; setPlaybackSpeed: (s: number) => void;
+  eq: { bass: number; mid: number; treble: number }; setEq: (eq: { bass: number; mid: number; treble: number }) => void;
+  sleepTimer: number; setSleepTimerMinutes: (m: number) => void; cancelSleepTimer: () => void;
+  deps: DepsStatus | null; setDeps: (d: DepsStatus) => void;
+  ytDlpVersion: string; setYtDlpVersion: (v: string) => void;
+  onUpdateYtDlp: () => void; isUpdatingYtDlp: boolean;
+  onBackup: () => void; onRestore: () => void;
+  backupPath: string; setBackupPath: (p: string) => void;
+  showToast: (m: string) => void;
 }) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('dependencies');
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [installLog, setInstallLog] = useState('');
+  const [diskInfo, setDiskInfo] = useState<DiskInfo | null>(null);
+
+  useEffect(() => {
+    invoke<DiskInfo>('get_disk_usage', { path: downloadPath }).then(setDiskInfo).catch(() => {});
+  }, [downloadPath]);
+
+  const handleInstall = async () => {
+    setIsInstalling(true);
+    setInstallLog('Installing dependencies...\n');
+    try {
+      const result: InstallResult = await invoke('install_dependencies');
+      setInstallLog(result.message);
+      if (result.success) showToast('Dependencies installed!');
+      // Re-check
+      const d: DepsStatus = await invoke('check_dependencies');
+      setDeps(d);
+      const v: string = await invoke('get_yt_dlp_version').catch(() => '');
+      setYtDlpVersion(v);
+    } catch (e) {
+      setInstallLog(`Error: ${e}`);
+    } finally {
+      setIsInstalling(false);
+    }
+  };
+
+  const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'dependencies', label: 'Dependencies', icon: <PackageCheck size={15} /> },
+    { id: 'downloads', label: 'Downloads', icon: <FolderDown size={15} /> },
+    { id: 'storage', label: 'Storage', icon: <Database size={15} /> },
+  ];
+
+  const allInstalled = deps?.mpv && deps?.yt_dlp && deps?.ffprobe;
+
   return (
-    <div className="flex-1 overflow-y-auto p-8 z-10 custom-scrollbar">
-      <div className="flex items-center gap-4 mb-8">
-        <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-[#39FF14]/10 border border-[#39FF14]/30 shrink-0">
-          <FolderDown size={22} className="text-[#39FF14] drop-shadow-[0_0_6px_#39FF14]" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-bold text-white">Downloads</h2>
-          <p className="text-sm text-neutral-500 mt-0.5">Download path, quality and more</p>
-        </div>
+    <div className="flex-1 flex overflow-hidden">
+      {/* Sidebar tabs */}
+      <div className="w-48 shrink-0 border-r border-neutral-800/50 flex flex-col p-4 gap-1">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-600 px-3 mb-2">Settings</p>
+        {tabs.map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 text-left w-full
+              ${activeTab === tab.id
+                ? 'bg-[#39FF14]/[0.08] text-[#39FF14] border border-[#39FF14]/15 shadow-[inset_2px_0_0_#39FF14]'
+                : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.03] border border-transparent'}`}>
+            <span className={activeTab === tab.id ? 'text-[#39FF14]' : 'text-neutral-600'}>{tab.icon}</span>
+            {tab.label}
+            {tab.id === 'dependencies' && deps && (!deps.mpv || !deps.yt_dlp) && (
+              <span className="ml-auto w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+            )}
+          </button>
+        ))}
       </div>
-      <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-5 border-b border-neutral-800/40">
-          <div>
-            <h4 className="text-white font-medium text-[15px]">Download Quality</h4>
-            <p className="text-[13px] text-neutral-500 mt-1">Quality of audio extracted from YouTube.</p>
-          </div>
-          <div className="relative ml-8 shrink-0">
-            <select
-              value={downloadQuality}
-              onChange={(e) => setDownloadQuality(e.target.value)}
-              className="bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] font-medium text-[14px] rounded-lg px-3 py-1.5 focus:outline-none cursor-pointer appearance-none pr-7 transition-colors hover:bg-[#39FF14]/20"
-            >
-              <option value="High" className="bg-[#111] text-white">High</option>
-              <option value="Medium" className="bg-[#111] text-white">Medium</option>
-              <option value="Low" className="bg-[#111] text-white">Low</option>
-            </select>
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[#39FF14]">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+
+      {/* Tab content — fills remaining space, no empty right gap */}
+      <div className="flex-1 overflow-y-auto px-8 py-8 custom-scrollbar">
+
+        {/* ── DEPENDENCIES ── */}
+        {activeTab === 'dependencies' && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-xl font-bold text-white mb-1">Dependencies</h2>
+              <p className="text-sm text-neutral-500">Vanguard requires mpv, yt-dlp, and ffprobe to work. Install or update them here.</p>
+            </div>
+
+            {/* Status cards */}
+            <div className="grid grid-cols-3 gap-3">
+              {([
+                { key: 'mpv', label: 'mpv', desc: 'Audio playback', ok: deps?.mpv },
+                { key: 'yt_dlp', label: 'yt-dlp', desc: 'YouTube streaming', ok: deps?.yt_dlp },
+                { key: 'ffprobe', label: 'ffprobe', desc: 'Metadata & waveforms', ok: deps?.ffprobe },
+              ] as { key: string; label: string; desc: string; ok: boolean | undefined }[]).map(d => (
+                <div key={d.key} className={`p-4 rounded-xl border transition-all ${d.ok ? 'border-[#39FF14]/20 bg-[#39FF14]/[0.04]' : 'border-red-500/20 bg-red-500/[0.04]'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold font-mono text-white">{d.label}</span>
+                    {d.ok === undefined
+                      ? <div className="w-4 h-4 border-2 border-neutral-700 border-t-transparent rounded-full animate-spin" />
+                      : d.ok
+                        ? <CheckCircle size={15} className="text-[#39FF14]" />
+                        : <X size={15} className="text-red-400" />}
+                  </div>
+                  <p className="text-[11px] text-neutral-600">{d.desc}</p>
+                  <p className={`text-[11px] font-semibold mt-1 ${d.ok ? 'text-[#39FF14]/70' : 'text-red-400/70'}`}>
+                    {d.ok === undefined ? 'Checking...' : d.ok ? 'Installed' : 'Not found'}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* yt-dlp version + update */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">yt-dlp version</p>
+                  <p className="text-xs text-neutral-600 font-mono mt-0.5">{ytDlpVersion || (deps?.yt_dlp ? 'Loading...' : 'Not installed')}</p>
+                </div>
+                <button onClick={onUpdateYtDlp} disabled={isUpdatingYtDlp || !deps?.yt_dlp}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] rounded-lg text-sm font-semibold hover:bg-[#39FF14]/20 disabled:opacity-40 transition-colors">
+                  {isUpdatingYtDlp ? <div className="w-3.5 h-3.5 border-2 border-[#39FF14]/70 border-t-transparent rounded-full animate-spin" /> : <RotateCcw size={14} />}
+                  Update
+                </button>
+              </div>
+            </div>
+
+            {/* Install button */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Terminal size={15} className="text-[#39FF14]" /> Install All Dependencies
+                </h3>
+                <p className="text-xs text-neutral-600 mt-1">
+                  Installs mpv, ffmpeg, and yt-dlp using your system's package manager (apt, pacman, dnf, winget, brew).
+                </p>
+              </div>
+              <div className="px-5 py-4 flex flex-col gap-3">
+                <button onClick={handleInstall} disabled={isInstalling || !!allInstalled}
+                  className={`flex items-center justify-center gap-2.5 py-3 px-5 rounded-xl font-bold text-sm transition-all duration-200
+                    ${allInstalled
+                      ? 'bg-[#39FF14]/10 border border-[#39FF14]/20 text-[#39FF14]/50 cursor-not-allowed'
+                      : isInstalling
+                        ? 'bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] cursor-wait'
+                        : 'bg-[#39FF14] text-black hover:shadow-[0_0_25px_#39FF14] hover:scale-[1.02] active:scale-[0.98]'}`}>
+                  {isInstalling
+                    ? <><div className="w-4 h-4 border-2 border-current/60 border-t-transparent rounded-full animate-spin" /> Installing...</>
+                    : allInstalled
+                      ? <><CheckCircle size={16} /> All Installed</>
+                      : <><Zap size={16} /> Install Dependencies</>}
+                </button>
+                {installLog && (
+                  <div className="bg-[#050505] border border-neutral-800 rounded-lg p-3 font-mono text-[11px] text-neutral-400 whitespace-pre-wrap max-h-40 overflow-y-auto custom-scrollbar">
+                    {installLog}
+                  </div>
+                )}
+                {allInstalled && (
+                  <p className="text-xs text-[#39FF14]/60 flex items-center gap-1.5"><CheckCircle size={11} /> All dependencies are installed and ready.</p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-        <div
-          className="flex items-center justify-between px-5 py-5 cursor-pointer group hover:bg-white/[0.02] transition-colors"
-          onClick={handleSelectDirectory}
-        >
-          <div className="flex-1 min-w-0">
-            <h4 className="text-white font-medium text-[15px]">Download Folder</h4>
-            <p className="text-[13px] text-neutral-500 mt-1 truncate font-mono">{downloadPath}</p>
+        )}
+
+        {/* ── DOWNLOADS ── */}
+        {activeTab === 'downloads' && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-xl font-bold text-white mb-1">Downloads</h2>
+              <p className="text-sm text-neutral-500">Configure download quality and destination folder.</p>
+            </div>
+
+            {/* Quality */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-visible">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
+                <h3 className="text-sm font-semibold text-white">Audio Quality</h3>
+                <p className="text-xs text-neutral-600 mt-0.5">Quality of downloaded MP3 files.</p>
+              </div>
+              <div className="px-5 py-5 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-white">Download Quality</p>
+                  <p className="text-xs text-neutral-600 mt-1">
+                    {downloadQuality === 'High' ? 'Best available audio bitrate (320kbps+)' : downloadQuality === 'Medium' ? 'Balanced quality (~128kbps)' : 'Smallest file size'}
+                  </p>
+                </div>
+                <ThemedSelect
+                  value={downloadQuality}
+                  onChange={setDownloadQuality}
+                  options={[
+                    { value: 'High', label: 'High', desc: 'Best quality · largest files' },
+                    { value: 'Medium', label: 'Medium', desc: 'Balanced · ~128kbps' },
+                    { value: 'Low', label: 'Low', desc: 'Smallest files' },
+                  ]}
+                />
+              </div>
+            </div>
+
+            {/* Folder */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
+                <h3 className="text-sm font-semibold text-white">Download Folder</h3>
+              </div>
+              <div className="flex items-center justify-between px-5 py-4 cursor-pointer group hover:bg-white/[0.02] transition-colors" onClick={handleSelectDirectory}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-mono text-neutral-300 truncate">{downloadPath}</p>
+                  {diskInfo && <p className="text-xs text-neutral-600 mt-1">{formatBytes(diskInfo.used_bytes)} used · {diskInfo.track_count} audio files</p>}
+                </div>
+                <button className="p-2 ml-4 text-neutral-600 group-hover:text-[#39FF14] transition-colors shrink-0 rounded-lg">
+                  <FolderOpen size={17} />
+                </button>
+              </div>
+            </div>
           </div>
-          <button className="p-2 ml-4 text-neutral-500 group-hover:text-[#39FF14] transition-colors shrink-0">
-            <RefreshCw size={16} />
-          </button>
-        </div>
+        )}
+
+        {/* ── STORAGE ── */}
+        {activeTab === 'storage' && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-xl font-bold text-white mb-1">Storage</h2>
+              <p className="text-sm text-neutral-500">Backup and restore your playlists, queue, settings, and history.</p>
+            </div>
+
+            {/* Backup Location — explicit picker */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
+                <h3 className="text-sm font-semibold text-white">Backup Location</h3>
+                <p className="text-xs text-neutral-600 mt-0.5">Choose where backup files are saved.</p>
+              </div>
+              <div className="flex items-center justify-between px-5 py-4 cursor-pointer group hover:bg-white/[0.02] transition-colors" onClick={async () => {
+                try {
+                  const sel = await (await import('@tauri-apps/plugin-dialog')).open({ directory: true, multiple: false, defaultPath: backupPath });
+                  if (sel) setBackupPath(sel as string);
+                } catch {}
+              }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-mono text-neutral-300 truncate">{backupPath || downloadPath}</p>
+                  <p className="text-xs text-neutral-600 mt-1">Backup file: vanguard_backup.json</p>
+                </div>
+                <button className="p-2 ml-4 text-neutral-600 group-hover:text-[#39FF14] transition-colors shrink-0 rounded-lg">
+                  <FolderOpen size={17} />
+                </button>
+              </div>
+            </div>
+
+            <div className="border border-neutral-800/60 rounded-xl divide-y divide-neutral-800/60 overflow-hidden">
+              {/* Create backup */}
+              <div className="px-5 py-4 flex items-center justify-between group hover:bg-white/[0.02] transition-colors cursor-pointer" onClick={onBackup}>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Create Backup</h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">Save all playlists, queue, history and settings to a JSON file.</p>
+                </div>
+                <button className="p-2 text-neutral-600 group-hover:text-[#39FF14] transition-colors rounded-lg ml-4 shrink-0">
+                  <Upload size={17} />
+                </button>
+              </div>
+
+              {/* Restore */}
+              <div className="px-5 py-4 flex items-center justify-between group hover:bg-white/[0.02] transition-colors cursor-pointer" onClick={onRestore}>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Restore Backup</h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">Restore your data and settings from a backup file.</p>
+                </div>
+                <button className="p-2 text-neutral-600 group-hover:text-[#39FF14] transition-colors rounded-lg ml-4 shrink-0">
+                  <ArchiveRestore size={17} />
+                </button>
+              </div>
+
+              {/* Reset */}
+              <div className="px-5 py-4 flex items-center justify-between group hover:bg-red-500/[0.04] transition-colors cursor-pointer"
+                onClick={() => {
+                  if (window.confirm('Reset all Vanguard data? This cannot be undone.')) {
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                }}>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Reset Vanguard App</h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">Clear all data and reset the app to its default state.</p>
+                </div>
+                <button className="p-2 text-neutral-700 group-hover:text-red-400 transition-colors rounded-lg ml-4 shrink-0">
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+
       </div>
     </div>
   );
 }
 
+// ─── DOWNLOADS PANEL ─────────────────────────────────────────────────────────
+function DownloadsPanel({
+  downloadPath, onPlayLocalTrack, onDeleteLocalTrack,
+  currentTrackPath, isPlaying, isLoadingTrack,
+  onOpenInFileManager, onExportM3u, onChangeFolder,
+}: {
+  downloadPath: string; onPlayLocalTrack: (t: LocalTrack, list?: LocalTrack[], idx?: number) => void;
+  onDeleteLocalTrack: (t: LocalTrack) => void; currentTrackPath: string | null;
+  isPlaying: boolean; isLoadingTrack: boolean;
+  onOpenInFileManager: (p: string) => void; onExportM3u: (ts: LocalTrack[]) => void;
+  onChangeFolder: () => void;
+}) {
+  const [tracks, setTracks] = useState<LocalTrack[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [diskInfo, setDiskInfo] = useState<DiskInfo | null>(null);
+  const [renaming, setRenaming] = useState<LocalTrack | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+
+  const scan = useCallback(async () => {
+    setScanning(true); setError(null);
+    try {
+      const raw: LocalTrack[] = await invoke('scan_downloads', { path: downloadPath });
+      // Enrich with metadata (title/artist/duration only — no useless fields)
+      const enriched = await Promise.allSettled(raw.map(async t => {
+        try {
+          const m: { title: string; artist: string; duration: string } = await invoke('get_audio_metadata', { path: t.path });
+          return { ...t, title: m.title || t.title, artist: m.artist || undefined, duration: m.duration !== '0:00' ? m.duration : undefined };
+        } catch { return t; }
+      }));
+      setTracks(enriched.map(r => r.status === 'fulfilled' ? r.value : (r as PromiseRejectedResult).reason));
+      const di: DiskInfo = await invoke('get_disk_usage', { path: downloadPath }).catch(() => null);
+      if (di) setDiskInfo(di);
+    } catch (e) { setError(String(e)); }
+    finally { setScanning(false); }
+  }, [downloadPath]);
+
+  useEffect(() => { scan(); }, [scan]);
+
+  const confirmRename = async () => {
+    if (!renaming || !renameVal.trim()) return;
+    try {
+      const newPath: string = await invoke('rename_local_file', { oldPath: renaming.path, newTitle: renameVal.trim() });
+      setTracks(prev => prev.map(t => t.path === renaming.path ? { ...t, title: renameVal.trim(), path: newPath } : t));
+      setRenaming(null);
+    } catch (e) { setError(String(e)); }
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-8 z-10 custom-scrollbar">
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-6">
+        <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-[#39FF14]/10 border border-[#39FF14]/30 shrink-0">
+          <HardDrive size={22} className="text-[#39FF14] drop-shadow-[0_0_6px_#39FF14]" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-2xl font-bold text-white">Offline</h2>
+          {/* Folder path — click to change */}
+          <button onClick={onChangeFolder}
+            className="flex items-center gap-1.5 mt-0.5 text-sm text-neutral-500 hover:text-[#39FF14] transition-colors font-mono truncate max-w-full group" title="Change folder">
+            <span className="truncate">{downloadPath}</span>
+            <FolderOpen size={13} className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </button>
+          {diskInfo && <p className="text-xs text-neutral-600 mt-0.5">{formatBytes(diskInfo.used_bytes)} used · {diskInfo.track_count} files</p>}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={onChangeFolder} className="p-2 text-neutral-500 hover:text-[#39FF14] transition-colors rounded-lg hover:bg-white/5" title="Change folder"><FolderOpen size={16} /></button>
+          {tracks.length > 0 && (
+            <button onClick={() => onExportM3u(tracks)} className="p-2 text-neutral-500 hover:text-[#39FF14] transition-colors rounded-lg hover:bg-white/5" title="Export M3U"><FileOutput size={16} /></button>
+          )}
+          <button onClick={scan} disabled={scanning} className="p-2 text-neutral-500 hover:text-[#39FF14] disabled:opacity-40 rounded-lg hover:bg-white/5" title="Refresh"><RefreshCw size={16} className={scanning ? 'animate-spin' : ''} /></button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm mb-6">
+          <AlertCircle size={16} className="shrink-0" /><span>{error}</span>
+        </div>
+      )}
+
+      {scanning && (
+        <div className="flex flex-col gap-1">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-3.5 rounded-lg">
+              <div className="w-10 h-10 rounded-md bg-neutral-800/60 animate-pulse shrink-0" />
+              <div className="flex-1 flex flex-col gap-2">
+                <div className="h-3 bg-neutral-800/70 rounded-full animate-pulse" style={{ width: `${50 + (i * 11) % 35}%` }} />
+                <div className="h-2.5 bg-neutral-800/40 rounded-full animate-pulse" style={{ width: `${25 + (i * 7) % 20}%` }} />
+              </div>
+              <div className="w-12 h-2.5 bg-neutral-800/40 rounded-full animate-pulse shrink-0" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!scanning && tracks.length === 0 && !error && (
+        <div className="flex flex-col items-center justify-center h-48 text-neutral-700 gap-4">
+          <FileMusic size={40} strokeWidth={1} />
+          <div className="text-center">
+            <p className="text-sm font-medium text-neutral-600">No audio files found</p>
+            <p className="text-xs text-neutral-700 mt-1">Download tracks from Home, or change your folder in Settings → Downloads.</p>
+          </div>
+        </div>
+      )}
+
+      {!scanning && tracks.length > 0 && (
+        <>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="w-1.5 h-5 bg-[#39FF14] rounded-full shadow-[0_0_8px_#39FF14] shrink-0" />
+            <h3 className="text-base font-bold text-white flex-1">{tracks.length} track{tracks.length !== 1 ? 's' : ''}</h3>
+          </div>
+          <div className="flex flex-col gap-1">
+            {tracks.map((track, i) => {
+              const isActive = currentTrackPath === track.path;
+              const isHov = hovered === track.path;
+              return (
+                <div key={track.path}
+                  className={`flex items-center gap-4 px-4 py-3.5 rounded-lg cursor-pointer transition-all duration-150 group border
+                    ${isActive ? 'bg-[#39FF14]/[0.07] border-[#39FF14]/20' : 'hover:bg-white/5 border-transparent'}`}
+                  onClick={() => onPlayLocalTrack(track, tracks, i)}
+                  onMouseEnter={() => setHovered(track.path)} onMouseLeave={() => setHovered(null)}
+                >
+                  <div className="w-8 flex items-center justify-center shrink-0">
+                    {isActive && isLoadingTrack
+                      ? <div className="w-3.5 h-3.5 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" />
+                      : isActive && isPlaying
+                        ? <div className="flex gap-[2px] items-end h-4">{[100, 65, 80].map((h, j) => <div key={j} className="w-[3px] bg-[#39FF14] rounded-full animate-pulse shadow-[0_0_4px_#39FF14]" style={{ height: `${h}%`, animationDelay: `${j * 150}ms` }} />)}</div>
+                        : isHov ? <Play size={16} fill="white" className="text-white" />
+                        : <span className={`text-[13px] tabular-nums ${isActive ? 'text-[#39FF14]' : 'text-neutral-500'}`}>{i + 1}</span>}
+                  </div>
+                  <div className={`w-10 h-10 rounded-md flex items-center justify-center shrink-0 border ${isActive ? 'bg-[#39FF14]/10 border-[#39FF14]/20' : 'bg-neutral-900 border-neutral-800/60'}`}>
+                    <FileMusic size={18} className={isActive ? 'text-[#39FF14]' : 'text-neutral-500'} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-semibold text-[15px] truncate ${isActive ? 'text-[#39FF14]' : 'text-white'}`}>{track.title}</p>
+                    <p className="text-[13px] text-neutral-500 truncate mt-0.5">{track.artist || track.extension.toUpperCase()} · {formatBytes(track.size_bytes)}</p>
+                  </div>
+                  <div className={`flex items-center gap-1 transition-opacity ${isHov ? 'opacity-100' : 'opacity-0'}`}>
+                    <button onClick={e => { e.stopPropagation(); setRenaming(track); setRenameVal(track.title); }} className="p-1.5 rounded-md hover:bg-white/10 transition-colors" title="Rename"><Pencil size={13} className="text-neutral-400" /></button>
+                    <button onClick={e => { e.stopPropagation(); onOpenInFileManager(track.path); }} className="p-1.5 rounded-md hover:bg-white/10 transition-colors" title="Show in folder"><FolderOpen size={13} className="text-neutral-400" /></button>
+                    <button onClick={e => { e.stopPropagation(); onDeleteLocalTrack(track); scan(); }} className="p-1.5 rounded-md hover:bg-red-500/20 transition-colors" title="Delete"><Trash2 size={13} className="text-neutral-400 hover:text-red-400" /></button>
+                  </div>
+                  <span className="text-[13px] text-neutral-500 tabular-nums w-12 text-right shrink-0">{track.duration || '—'}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Rename modal */}
+      {renaming && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#111] border border-neutral-800 p-6 rounded-xl w-80 shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-4">Rename Track</h3>
+            <input autoFocus type="text" value={renameVal} onChange={e => setRenameVal(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') setRenaming(null); }}
+              className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] mb-4 text-sm" />
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setRenaming(null)} className="px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors">Cancel</button>
+              <button onClick={confirmRename} className="px-4 py-2 bg-[#39FF14] text-black text-sm font-bold rounded-lg hover:shadow-[0_0_15px_#39FF14] transition-all">Rename</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SPEED SELECTOR (in player bar) ──────────────────────────────────────────
+const SpeedSelector = React.memo(({ speed, onChange }: { speed: number; onChange: (s: number) => void }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all border
+          ${speed !== 1 ? 'text-[#39FF14] border-[#39FF14]/30 bg-[#39FF14]/10' : 'text-neutral-600 border-neutral-800 hover:text-neutral-400 hover:border-neutral-700'}`}>
+        <Gauge size={11} />
+        {speed}x
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-[#0e0e0e] border border-neutral-800 rounded-xl overflow-hidden shadow-2xl z-50"
+          style={{ animation: 'dropIn 0.12s ease-out' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-600 px-3 pt-2.5 pb-1">Speed</p>
+          {speeds.map(s => (
+            <button key={s} onClick={() => { onChange(s); setOpen(false); }}
+              className={`w-full text-left px-4 py-2 text-sm font-semibold transition-colors
+                ${speed === s ? 'text-[#39FF14] bg-[#39FF14]/10' : 'text-neutral-400 hover:text-white hover:bg-white/5'}`}>
+              {s}x {s === 1 && <span className="text-neutral-700 text-xs font-normal ml-1">normal</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function VanguardPlayer() {
+
+  // ── Core state ───────────────────────────────────────────────────────────────
   const [tracks, setTracks] = useState<Track[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchHistory, setSearchHistory] = useState<string[]>(() => loadFromStorage('vg_searchHistory', []));
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => loadLS('vg_searchHistory', []));
   const [showHistory, setShowHistory] = useState(false);
-  const [currentTrack, setCurrentTrack] = useState<Track | null>(() => loadFromStorage('vg_currentTrack', null));
+  const [hasSearched, setHasSearched] = useState(false);
+  const [currentTrack, setCurrentTrack] = useState<Track | null>(() => loadLS('vg_currentTrack', null));
+  const [currentLocalPath, setCurrentLocalPath] = useState<string | null>(null);
+  const currentLocalPathRef = useRef<string | null>(null);
 
-  // Use ref for isPlaying so the always-on poll interval reads the latest value
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false);
-  const setIsPlayingSync = useCallback((val: boolean) => {
-    isPlayingRef.current = val;
-    setIsPlaying(val);
-  }, []);
+  const setIsPlayingSync = useCallback((v: boolean) => { isPlayingRef.current = v; setIsPlaying(v); }, []);
 
   const [isLoadingTrack, setIsLoadingTrack] = useState(false);
   const [activeNav, setActiveNav] = useState('home');
+  const [navHistory, setNavHistory] = useState<string[]>([]);
+
+  // Wrap setActiveNav to push to history
+  const navigateTo = useCallback((nav: string) => {
+    setNavHistory(prev => [...prev.slice(-20), activeNav]);
+    setActiveNav(nav);
+  }, [activeNav]);
+
+  const navigateBack = useCallback(() => {
+    setNavHistory(prev => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      setActiveNav(last);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  const [trackDurationSeconds, setTrackDurationSeconds] = useState(0);
+  const trackDurationRef = useRef(0);
   const [progressSeconds, setProgressSeconds] = useState(0);
   const progressSecondsRef = useRef(0);
-  const [isSearching, setIsSearching] = useState(false);
-  const [quickPicks, setQuickPicks] = useState<Track[]>(() => loadFromStorage('vg_quickPicks', []));
 
-  const [queue, setQueue] = useState<Track[]>(() => loadFromStorage('vg_queue', []));
-  const [playHistory, setPlayHistory] = useState<Track[]>(() => loadFromStorage('vg_playHistory', []));
-  const [shuffle, setShuffle] = useState<boolean>(() => loadFromStorage('vg_shuffle', false));
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>(() => loadFromStorage('vg_repeatMode', 'off'));
+  const [isSearching, setIsSearching] = useState(false);
+  const [quickPicks, setQuickPicks] = useState<Track[]>(() => loadLS('vg_quickPicks', []));
+
+  const [queue, setQueue] = useState<Track[]>(() => loadLS('vg_queue', []));
+  const [playHistory, setPlayHistory] = useState<Track[]>(() => loadLS('vg_playHistory', []));
+  const [shuffle, setShuffle] = useState<boolean>(() => loadLS('vg_shuffle', false));
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>(() => loadLS('vg_repeatMode', 'off'));
+  const repeatModeRef = useRef<RepeatMode>(loadLS('vg_repeatMode', 'off'));
   const [isQueueOpen, setIsQueueOpen] = useState(false);
 
-  const [volume, setVolume] = useState<number>(() => loadFromStorage('vg_volume', 100));
+  const [volume, setVolume] = useState<number>(() => loadLS('vg_volume', 100));
   const [previousVolume, setPreviousVolume] = useState(100);
 
   const [isDraggingProgress, setIsDraggingProgress] = useState(false);
@@ -168,217 +903,659 @@ export default function VanguardPlayer() {
   const progressRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
 
+  // ── Playlists ─────────────────────────────────────────────────────────────────
   const [playlists, setPlaylists] = useState<Playlist[]>(() =>
-    loadFromStorage('vg_playlists', [{ id: 'p1', name: 'Liked Songs', description: 'Your liked tracks', tracks: [] }])
+    loadLS('vg_playlists', [{ id: 'p1', name: 'Liked Songs', description: '', tracks: [] }])
   );
   const [openPlaylistId, setOpenPlaylistId] = useState<string | null>(null);
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
   const [renamingPlaylist, setRenamingPlaylist] = useState<Playlist | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [renameDescValue, setRenameDescValue] = useState('');
+  const [renameVal, setRenameVal] = useState('');
+  const [renameDescVal, setRenameDescVal] = useState('');
   const [addToPlaylistTrack, setAddToPlaylistTrack] = useState<Track | null>(null);
   const [sidebarPlaylistsExpanded, setSidebarPlaylistsExpanded] = useState(true);
 
+  // ── UI ────────────────────────────────────────────────────────────────────────
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [infoModalTrack, setInfoModalTrack] = useState<Track | null>(null);
-  const [downloadingTracks, setDownloadingTracks] = useState<{ [key: string]: boolean }>({});
+  const [downloadingTracks, setDownloadingTracks] = useState<Record<string, boolean>>({});
   const [hoveredTrackUrl, setHoveredTrackUrl] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [downloadQuality, setDownloadQuality] = useState<string>(() => loadFromStorage('vg_dlQuality', 'High'));
-  const [downloadPath, setDownloadPath] = useState<string>(() => loadFromStorage('vg_dlPath', '~/Downloads'));
+  // ── Settings ──────────────────────────────────────────────────────────────────
+  const [downloadQuality, setDownloadQuality] = useState<string>(() => loadLS('vg_dlQuality', 'High'));
+  const [downloadPath, setDownloadPath] = useState<string>(() => loadLS('vg_dlPath', '~/Downloads'));
+  const [backupPath, setBackupPathState] = useState<string>(() => loadLS('vg_backupPath', ''));
+  const setBackupPath = useCallback((p: string) => { setBackupPathState(p); saveLS('vg_backupPath', p); }, []);
+  const [playbackSpeed, setPlaybackSpeedState] = useState<number>(() => loadLS('vg_speed', 1));
+  const [eq, setEqState] = useState<{ bass: number; mid: number; treble: number }>(() => loadLS('vg_eq', { bass: 0, mid: 0, treble: 0 }));
+  const [deps, setDeps] = useState<DepsStatus | null>(null);
+  const [ytDlpVersion, setYtDlpVersion] = useState('');
+  const [isUpdatingYtDlp, setIsUpdatingYtDlp] = useState(false);
+  const [sleepTimer, setSleepTimerState] = useState(-1);
+  const [audioInfo, setAudioInfo] = useState<AudioInfo | null>(null);
+  const [waveformData, setWaveformData] = useState<number[]>([]);
+  const [showSleepPopover, setShowSleepPopover] = useState(false);
+  const [showInfoHint, setShowInfoHint] = useState(false);
+  const infoHintBtnRef = useRef<HTMLDivElement>(null);
+  const [infoHintPos, setInfoHintPos] = useState<{ top: number; left: number } | null>(null);
+  const sleepPopoverRef = useRef<HTMLDivElement>(null);
 
+  // ── Refs ──────────────────────────────────────────────────────────────────────
   const searchRef = useRef<HTMLInputElement>(null);
   const endDetectedRef = useRef(false);
   const currentTrackRef = useRef(currentTrack);
+  const queueRef = useRef(queue);
+  const localTracksListRef = useRef<LocalTrack[]>([]);
+  const localTrackIndexRef = useRef(0);
+  // Context for playlist/search track navigation (enables skip fwd/back in any Track[] source)
+  const playlistContextRef = useRef<{ tracks: Track[]; index: number } | null>(null);
+
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+  useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
 
-  // ─── PERSIST ──────────────────────────────────────────────────────────────
-  useEffect(() => { saveToStorage('vg_playlists', playlists); }, [playlists]);
-  useEffect(() => { saveToStorage('vg_queue', queue); }, [queue]);
-  useEffect(() => { saveToStorage('vg_playHistory', playHistory); }, [playHistory]);
-  useEffect(() => { saveToStorage('vg_shuffle', shuffle); }, [shuffle]);
-  useEffect(() => { saveToStorage('vg_repeatMode', repeatMode); }, [repeatMode]);
-  useEffect(() => { saveToStorage('vg_volume', volume); }, [volume]);
-  useEffect(() => { saveToStorage('vg_currentTrack', currentTrack); }, [currentTrack]);
-  useEffect(() => { saveToStorage('vg_searchHistory', searchHistory); }, [searchHistory]);
-  useEffect(() => { saveToStorage('vg_dlQuality', downloadQuality); }, [downloadQuality]);
-  useEffect(() => { saveToStorage('vg_dlPath', downloadPath); }, [downloadPath]);
-  useEffect(() => { saveToStorage('vg_quickPicks', quickPicks); }, [quickPicks]);
+  // ── Persist ───────────────────────────────────────────────────────────────────
+  useEffect(() => { saveLS('vg_playlists', playlists); }, [playlists]);
+  useEffect(() => { saveLS('vg_queue', queue); }, [queue]);
+  useEffect(() => { saveLS('vg_playHistory', playHistory); }, [playHistory]);
+  useEffect(() => { saveLS('vg_shuffle', shuffle); }, [shuffle]);
+  useEffect(() => { saveLS('vg_repeatMode', repeatMode); }, [repeatMode]);
+  useEffect(() => { saveLS('vg_volume', volume); }, [volume]);
+  useEffect(() => { saveLS('vg_currentTrack', currentTrack); }, [currentTrack]);
+  useEffect(() => { saveLS('vg_searchHistory', searchHistory); }, [searchHistory]);
+  useEffect(() => { saveLS('vg_dlQuality', downloadQuality); }, [downloadQuality]);
+  useEffect(() => { saveLS('vg_dlPath', downloadPath); }, [downloadPath]);
+  useEffect(() => { saveLS('vg_quickPicks', quickPicks); }, [quickPicks]);
+  useEffect(() => { saveLS('vg_speed', playbackSpeed); }, [playbackSpeed]);
+  useEffect(() => { saveLS('vg_eq', eq); }, [eq]);
 
+  // ── Toast ─────────────────────────────────────────────────────────────────────
   const showToast = useCallback((msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2500);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
   }, []);
 
+  // ── Global click ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    const handleClick = () => { setCtxMenu(null); setShowHistory(false); };
-    window.addEventListener('click', handleClick);
-    return () => window.removeEventListener('click', handleClick);
+    const h = () => { setCtxMenu(null); setShowHistory(false); setShowSleepPopover(false); setShowInfoHint(false); };
+    window.addEventListener('click', h);
+    return () => window.removeEventListener('click', h);
   }, []);
 
-  // ─── PLAYBACK ─────────────────────────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    invoke<DepsStatus>('check_dependencies').then(setDeps).catch(() => {});
+    invoke<string>('get_yt_dlp_version').then(setYtDlpVersion).catch(() => {});
+  }, []);
+
+  // ── Sleep timer poll — actually pauses when expired ──────────────────────
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const r: number = await invoke('get_sleep_timer_remaining');
+        if (r >= 0) {
+          setSleepTimerState(r);
+          // If timer just hit 0 (within this poll window), pause playback
+          if (r === 0 && isPlayingRef.current) {
+            try { await invoke('pause_audio'); setIsPlayingSync(false); } catch {}
+            setSleepTimerState(-1);
+          }
+        } else {
+          setSleepTimerState(-1);
+        }
+      } catch {}
+    }, sleepTimer > 0 ? 2000 : 10000);
+    return () => clearInterval(id);
+  }, [sleepTimer, setIsPlayingSync]);
+
+  // ── Batch download listener ───────────────────────────────────────────────────
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<BatchProgress>('batch_download_progress', e => {
+      showToast(`Downloaded ${e.payload.index + 1}/${e.payload.total}${e.payload.error ? ' (error)' : ''}`);
+    }).then(fn => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [showToast]);
+
+  // ── Prefetch next in queue — only when queue head URL changes ───────────────
+  const lastPrefetchUrl = useRef<string | null>(null);
+  useEffect(() => {
+    const nextUrl = queue[0]?.url;
+    // Never prefetch local files — they're already on disk, no network needed
+    if (nextUrl && !nextUrl.startsWith('local://') && nextUrl !== lastPrefetchUrl.current) {
+      lastPrefetchUrl.current = nextUrl;
+      invoke('prefetch_track', { url: nextUrl }).catch(() => {});
+    }
+  }, [queue]);
+
+  // ── Audio info ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isPlaying) return;
+    const id = setInterval(() => { invoke<AudioInfo>('get_audio_info').then(setAudioInfo).catch(() => {}); }, 6000);
+    invoke<AudioInfo>('get_audio_info').then(setAudioInfo).catch(() => {});
+    return () => clearInterval(id);
+  }, [isPlaying]);
+
+  // ── Settings actions ──────────────────────────────────────────────────────────
+  const setPlaybackSpeed = useCallback((s: number) => {
+    setPlaybackSpeedState(s);
+    invoke('set_playback_speed', { speed: s }).catch(() => {});
+    showToast(`Speed: ${s}x`);
+  }, [showToast]);
+
+  const setEq = useCallback((newEq: typeof eq) => {
+    setEqState(newEq);
+    invoke('set_equalizer', { bass: newEq.bass, mid: newEq.mid, treble: newEq.treble }).catch(() => {});
+  }, []);
+
+  const setSleepTimerMinutes = useCallback((m: number) => {
+    invoke('set_sleep_timer', { seconds: m * 60 })
+      .then(() => { setSleepTimerState(m * 60); showToast(`Sleep timer: ${m}m`); })
+      .catch(() => {});
+  }, [showToast]);
+
+  const cancelSleepTimer = useCallback(() => {
+    invoke('cancel_sleep_timer').then(() => { setSleepTimerState(-1); showToast('Sleep timer cancelled'); }).catch(() => {});
+  }, [showToast]);
+
+  const handleUpdateYtDlp = useCallback(async () => {
+    setIsUpdatingYtDlp(true);
+    try {
+      const r: string = await invoke('update_yt_dlp');
+      showToast(r.includes('up-to-date') ? 'yt-dlp is up to date' : 'yt-dlp updated');
+      const v: string = await invoke('get_yt_dlp_version').catch(() => '');
+      setYtDlpVersion(v);
+      const d: DepsStatus = await invoke('check_dependencies');
+      setDeps(d);
+    } catch (e) { showToast(`Update failed: ${e}`); }
+    finally { setIsUpdatingYtDlp(false); }
+  }, [showToast]);
+
+  // ── Backup / Restore ──────────────────────────────────────────────────────────
+  const handleBackup = useCallback(async () => {
+    try {
+      const data = {
+        playlists,
+        queue,
+        playHistory,
+        shuffle,
+        repeatMode,
+        volume,
+        downloadQuality,
+        downloadPath,
+        backupPath,
+        playbackSpeed,
+        eq,
+        searchHistory,
+        quickPicks,
+        currentTrack,
+        version: 1,
+        exportedAt: new Date().toISOString(),
+      };
+      const json = JSON.stringify(data, null, 2);
+      // Trigger browser download
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'vanguard_backup.json'; a.click();
+      URL.revokeObjectURL(url);
+      showToast('Backup saved');
+    } catch (e) { showToast(`Backup failed: ${e}`); }
+  }, [playlists, queue, playHistory, shuffle, repeatMode, volume, downloadQuality, downloadPath, backupPath, playbackSpeed, eq, searchHistory, quickPicks, currentTrack, showToast]);
+
+  const handleRestore = useCallback(async () => {
+    try {
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = '.json';
+      input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+        const text = await file.text();
+        try {
+          const data = JSON.parse(text);
+          if (data.version !== 1) { showToast('Invalid backup file'); return; }
+          if (data.playlists) setPlaylists(data.playlists);
+          if (data.queue) setQueue(data.queue);
+          if (data.playHistory) setPlayHistory(data.playHistory);
+          if (data.shuffle !== undefined) setShuffle(data.shuffle);
+          if (data.repeatMode) setRepeatMode(data.repeatMode);
+          if (data.volume !== undefined) setVolume(data.volume);
+          if (data.downloadQuality) setDownloadQuality(data.downloadQuality);
+          if (data.downloadPath) setDownloadPath(data.downloadPath);
+          if (data.backupPath) setBackupPath(data.backupPath);
+          if (data.playbackSpeed) setPlaybackSpeedState(data.playbackSpeed);
+          if (data.eq) setEqState(data.eq);
+          if (data.searchHistory) setSearchHistory(data.searchHistory);
+          if (data.quickPicks) setQuickPicks(data.quickPicks);
+          if (data.currentTrack) setCurrentTrack(data.currentTrack);
+          showToast('Backup restored successfully');
+        } catch { showToast('Failed to parse backup file'); }
+      };
+      input.click();
+    } catch (e) { showToast(`Restore failed: ${e}`); }
+  }, [showToast]);
+
+  // ── PLAY YOUTUBE ──────────────────────────────────────────────────────────────
   const handlePlayTrack = useCallback(async (track: Track, fromQueue = false) => {
     endDetectedRef.current = false;
-    setIsLoadingTrack(true);
-    setIsPlayingSync(false);
-    setProgressSeconds(0);
-    progressSecondsRef.current = 0;
-    setCurrentTrack(track);
-    currentTrackRef.current = track;
+    setCurrentTrack(track); currentTrackRef.current = track;
+    setCurrentLocalPath(null); currentLocalPathRef.current = null;
+    setIsLoadingTrack(true); setIsPlayingSync(false);
+    setProgressSeconds(0); progressSecondsRef.current = 0;
+    setTrackDurationSeconds(0); trackDurationRef.current = 0;
+    setWaveformData([]); setAudioInfo(null);
 
-    if (currentTrackRef.current && !fromQueue) {
-      setPlayHistory(prev => [currentTrackRef.current!, ...prev].slice(0, 50));
+    if (!fromQueue) {
+      setPlayHistory(prev => [track, ...prev].slice(0, 50));
+      // If this track is in the current playlist context, update the index
+      if (playlistContextRef.current) {
+        const idx = playlistContextRef.current.tracks.findIndex(t => t.url === track.url);
+        if (idx >= 0) playlistContextRef.current = { ...playlistContextRef.current, index: idx };
+        else playlistContextRef.current = null; // track not in current context — clear it
+      }
     }
-    setQuickPicks(prev => {
-      const filtered = prev.filter(t => t.url !== track.url);
-      return [track, ...filtered].slice(0, 20);
-    });
+    setQuickPicks(prev => [track, ...prev.filter(t => t.url !== track.url)].slice(0, 20));
 
     try {
-      await invoke("play_audio", { url: track.url });
-      await invoke("set_volume", { volume });
+      await invoke('play_audio', { url: track.url });
+      await invoke('set_volume', { volume });
+      await invoke('set_playback_speed', { speed: playbackSpeed });
+      await invoke('set_equalizer', { bass: eq.bass, mid: eq.mid, treble: eq.treble });
+
       let waited = 0;
-      await new Promise<void>((resolve) => {
-        const timer = setInterval(async () => {
+      await new Promise<void>(resolve => {
+        const t = setInterval(async () => {
           waited += 300;
           try {
-            const pos: number = await invoke("get_progress");
-            if (pos > 0) { clearInterval(timer); resolve(); }
+            const s: { position: number; duration: number } = await invoke('get_playback_state');
+            if (s.position > 0) {
+              if (s.duration > 0) { setTrackDurationSeconds(s.duration); trackDurationRef.current = s.duration; }
+              clearInterval(t); resolve(); return;
+            }
           } catch {}
-          if (waited >= 20000) { clearInterval(timer); resolve(); }
+          if (waited >= 20000) { clearInterval(t); resolve(); }
         }, 300);
       });
-      setIsPlayingSync(true);
-    } catch {
-      showToast("Playback failed — is mpv installed?");
-      setIsPlayingSync(false);
-    } finally {
-      setIsLoadingTrack(false);
-    }
-  }, [volume, showToast, setIsPlayingSync]);
 
+      setIsPlayingSync(true);
+    } catch { setIsPlayingSync(false); }
+    finally { setIsLoadingTrack(false); }
+  }, [volume, playbackSpeed, eq, setIsPlayingSync]);
+
+  // ── PLAY LOCAL ────────────────────────────────────────────────────────────────
+  const handlePlayLocalTrack = useCallback(async (local: LocalTrack, localList?: LocalTrack[], localIndex?: number) => {
+    endDetectedRef.current = false;
+    setCurrentLocalPath(local.path); currentLocalPathRef.current = local.path;
+    // Track list for next/prev navigation within local tracks
+    if (localList !== undefined) {
+      localTracksListRef.current = localList;
+      localTrackIndexRef.current = localIndex ?? 0;
+    } else if (localTracksListRef.current.length === 0) {
+      // Single track play — put it in list so auto-advance still works
+      localTracksListRef.current = [local];
+      localTrackIndexRef.current = 0;
+    } else {
+      // Find it in existing list
+      const idx = localTracksListRef.current.findIndex(t => t.path === local.path);
+      if (idx >= 0) localTrackIndexRef.current = idx;
+    }
+
+    setIsLoadingTrack(true); setIsPlayingSync(false);
+    setProgressSeconds(0); progressSecondsRef.current = 0;
+    setTrackDurationSeconds(0); trackDurationRef.current = 0;
+    setAudioInfo(null);
+
+    const synth: Track = {
+      id: -1, title: local.title,
+      artist: local.artist || local.extension.toUpperCase(),
+      duration: local.duration || '0:00',
+      url: `local://${local.path}`, cover: '',
+    };
+    setCurrentTrack(synth); currentTrackRef.current = synth;
+
+    // Pre-set duration from metadata so bar is ready immediately
+    if (local.duration && local.duration !== '0:00') {
+      const d = parseDurationToSeconds(local.duration);
+      if (d > 0) { setTrackDurationSeconds(d); trackDurationRef.current = d; }
+    }
+
+    // Waveform in background — don't block playback
+    invoke<number[]>('get_waveform_thumbnail', { path: local.path })
+      .then(setWaveformData).catch(() => setWaveformData([]));
+
+    try {
+      await invoke('play_local_file', { path: local.path });
+      await invoke('set_volume', { volume });
+      await invoke('set_playback_speed', { speed: playbackSpeed });
+      // Local files are already on disk — play instantly, no buffering
+      setIsPlayingSync(true);
+      // Confirm duration from mpv after a short moment
+      setTimeout(async () => {
+        try {
+          const s: { position: number; duration: number } = await invoke('get_playback_state');
+          if (s.duration > 0) { setTrackDurationSeconds(s.duration); trackDurationRef.current = s.duration; }
+        } catch {}
+      }, 500);
+    } catch { setIsPlayingSync(false); }
+    finally { setIsLoadingTrack(false); }
+  }, [volume, playbackSpeed, setIsPlayingSync]);
+
+  const handleDeleteLocalTrack = useCallback(async (t: LocalTrack) => {
+    try { await invoke('delete_local_file', { path: t.path }); showToast(`Deleted: ${t.title}`); }
+    catch (e) { showToast(`Delete failed: ${e}`); }
+  }, [showToast]);
+
+  const handleOpenInFileManager = useCallback((p: string) => { invoke('open_in_file_manager', { path: p }).catch(() => {}); }, []);
+
+  const handleExportM3u = useCallback(async (localTracks: LocalTrack[]) => {
+    try {
+      const tracks = localTracks.map(t => ({ title: t.title, artist: t.artist || '', url: t.path, duration_secs: t.duration ? Math.round(parseDurationToSeconds(t.duration)) : 0 }));
+      await invoke('export_playlist_m3u', { tracks, path: `${downloadPath}/playlist.m3u` });
+      showToast('Playlist exported');
+    } catch (e) { showToast(`Export failed: ${e}`); }
+  }, [downloadPath, showToast]);
+
+  // ── Play track in playlist context (sets nav so skip fwd/back work) ─────────
+  const handlePlayInContext = useCallback((track: Track, contextList: Track[]) => {
+    const idx = contextList.findIndex(t => t.url === track.url);
+    playlistContextRef.current = { tracks: contextList, index: Math.max(0, idx) };
+    setQueue([]); // Clear queue — context takes over navigation
+    handlePlayTrack(track, true);
+    // Don't add to history when playing from a list (handled by context)
+  }, [handlePlayTrack]);
+
+  // ── Controls ──────────────────────────────────────────────────────────────────
   const togglePlayPause = useCallback(async () => {
     if (!currentTrackRef.current) return;
-    try {
-      await invoke("pause_audio");
-      setIsPlayingSync(!isPlayingRef.current);
-    } catch {}
+    try { await invoke('pause_audio'); setIsPlayingSync(!isPlayingRef.current); } catch {}
   }, [setIsPlayingSync]);
 
   const toggleMute = useCallback(async () => {
-    const newVol = volume === 0 ? previousVolume : 0;
+    const v = volume === 0 ? previousVolume : 0;
     if (volume > 0) setPreviousVolume(volume);
-    setVolume(newVol);
-    try { await invoke("set_volume", { volume: newVol }); } catch {}
+    setVolume(v);
+    try { await invoke('set_volume', { volume: v }); } catch {}
   }, [volume, previousVolume]);
 
-  // ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────
+  const handleSkipForward = useCallback(async () => {
+    const track = currentTrackRef.current;
+    const isLocal = track?.url?.startsWith('local://');
+
+    // ── Local file navigation ──────────────────────────────────────────────
+    if (isLocal) {
+      const list = localTracksListRef.current;
+      const idx = localTrackIndexRef.current;
+      let nextIdx: number;
+      if (shuffle) {
+        do { nextIdx = Math.floor(Math.random() * list.length); } while (nextIdx === idx && list.length > 1);
+      } else {
+        nextIdx = idx + 1;
+      }
+      if (nextIdx < list.length) {
+        localTrackIndexRef.current = nextIdx;
+        handlePlayLocalTrack(list[nextIdx], list, nextIdx);
+      } else if (repeatModeRef.current === 'all' && list.length > 0) {
+        localTrackIndexRef.current = 0;
+        handlePlayLocalTrack(list[0], list, 0);
+      }
+      return;
+    }
+
+    // ── Playlist context navigation (takes priority over queue) ───────────
+    const ctx = playlistContextRef.current;
+    if (ctx && ctx.tracks.length > 1) {
+      let nextIdx: number;
+      if (shuffle) {
+        do { nextIdx = Math.floor(Math.random() * ctx.tracks.length); }
+        while (nextIdx === ctx.index && ctx.tracks.length > 1);
+      } else {
+        nextIdx = ctx.index + 1;
+      }
+      if (nextIdx < ctx.tracks.length) {
+        playlistContextRef.current = { ...ctx, index: nextIdx };
+        await handlePlayTrack(ctx.tracks[nextIdx], true);
+      } else if (repeatModeRef.current === 'all') {
+        playlistContextRef.current = { ...ctx, index: 0 };
+        await handlePlayTrack(ctx.tracks[0], true);
+      }
+      return;
+    }
+
+    // ── Queue fallback ─────────────────────────────────────────────────────
+    const q = queueRef.current;
+    if (q.length > 0) { const [next, ...rest] = q; setQueue(rest); await handlePlayTrack(next, true); }
+  }, [handlePlayTrack, handlePlayLocalTrack, shuffle]);
+
+  const handleSkipBack = useCallback(async () => {
+    const track = currentTrackRef.current;
+    const isLocal = track?.url?.startsWith('local://');
+
+    // ── Local file navigation ──────────────────────────────────────────────
+    if (isLocal) {
+      if (progressSecondsRef.current > 3) {
+        await invoke('seek_audio', { time: 0 }).catch(() => {});
+        progressSecondsRef.current = 0; setProgressSeconds(0);
+        return;
+      }
+      const list = localTracksListRef.current;
+      const idx = localTrackIndexRef.current;
+      if (idx > 0) {
+        const prevIdx = idx - 1;
+        localTrackIndexRef.current = prevIdx;
+        handlePlayLocalTrack(list[prevIdx], list, prevIdx);
+      } else {
+        await invoke('seek_audio', { time: 0 }).catch(() => {});
+        progressSecondsRef.current = 0; setProgressSeconds(0);
+      }
+      return;
+    }
+
+    // Restart if past 3s
+    if (progressSecondsRef.current > 3) {
+      await invoke('seek_audio', { time: 0 }).catch(() => {});
+      progressSecondsRef.current = 0; setProgressSeconds(0);
+      return;
+    }
+
+    // ── Playlist context navigation ────────────────────────────────────────
+    const ctx = playlistContextRef.current;
+    if (ctx && ctx.index > 0) {
+      const prevIdx = ctx.index - 1;
+      playlistContextRef.current = { ...ctx, index: prevIdx };
+      await handlePlayTrack(ctx.tracks[prevIdx], true);
+      return;
+    }
+
+    // ── History fallback ───────────────────────────────────────────────────
+    if (playHistory.length > 0) {
+      const [prev, ...rest] = playHistory; setPlayHistory(rest); await handlePlayTrack(prev, true);
+    } else {
+      await invoke('seek_audio', { time: 0 }).catch(() => {});
+      progressSecondsRef.current = 0; setProgressSeconds(0);
+    }
+  }, [playHistory, handlePlayTrack, handlePlayLocalTrack]);
+
+  const toggleShuffle = useCallback(() => setShuffle(p => { showToast(!p ? 'Shuffle on' : 'Shuffle off'); return !p; }), [showToast]);
+  const cycleRepeat = useCallback(() => setRepeatMode(p => {
+    const n: RepeatMode = p === 'off' ? 'all' : p === 'all' ? 'one' : 'off';
+    repeatModeRef.current = n;
+    showToast(n === 'off' ? 'Repeat off' : n === 'all' ? 'Repeat all' : 'Repeat one');
+    return n;
+  }), [showToast]);
+
+  // ── Keyboard ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
+    const h = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
       if (e.code === 'Space' && !isInput) { e.preventDefault(); togglePlayPause(); }
-      if (e.code === 'ArrowRight' && !isInput && currentTrackRef.current) {
-        e.preventDefault();
-        const newTime = Math.min(progressSecondsRef.current + 10, parseDurationToSeconds(currentTrackRef.current.duration));
-        invoke("seek_audio", { time: newTime }).catch(() => {});
-        progressSecondsRef.current = newTime;
-        setProgressSeconds(newTime);
-      }
-      if (e.code === 'ArrowLeft' && !isInput && currentTrackRef.current) {
-        e.preventDefault();
-        const newTime = Math.max(progressSecondsRef.current - 10, 0);
-        invoke("seek_audio", { time: newTime }).catch(() => {});
-        progressSecondsRef.current = newTime;
-        setProgressSeconds(newTime);
-      }
+      if (e.code === 'ArrowRight' && !isInput && currentTrackRef.current) { e.preventDefault(); invoke('seek_relative', { seconds: 10 }).catch(() => {}); }
+      if (e.code === 'ArrowLeft' && !isInput && currentTrackRef.current) { e.preventDefault(); invoke('seek_relative', { seconds: -10 }).catch(() => {}); }
       if (e.code === 'KeyM' && !isInput) toggleMute();
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyF') {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyF') { e.preventDefault(); searchRef.current?.focus(); }
     };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
   }, [togglePlayPause, toggleMute]);
 
-  // ─── TRACK END HANDLER ────────────────────────────────────────────────────
+  // ── Track end ─────────────────────────────────────────────────────────────────
   const handleTrackEnd = useCallback(() => {
     if (endDetectedRef.current) return;
     endDetectedRef.current = true;
-    setQueue(prevQueue => {
-      const track = currentTrackRef.current;
-      setRepeatMode(prevRepeat => {
-        if (prevRepeat === 'one' && track) {
-          endDetectedRef.current = false;
-          invoke("seek_audio", { time: 0 }).catch(() => {});
-          progressSecondsRef.current = 0;
-          setProgressSeconds(0);
-          return prevRepeat;
-        }
-        if (prevQueue.length > 0) {
-          const [next, ...rest] = prevQueue;
-          setTimeout(() => { setQueue(rest); handlePlayTrack(next, true); }, 0);
-          return prevRepeat;
-        }
-        if (prevRepeat === 'all' && track) {
-          setTimeout(() => handlePlayTrack(track, true), 0);
-          return prevRepeat;
-        }
-        setIsPlayingSync(false);
-        return prevRepeat;
-      });
-      return prevQueue;
-    });
-  }, [handlePlayTrack, setIsPlayingSync]);
+    const track = currentTrackRef.current;
+    const repeat = repeatModeRef.current;
+    const isLocal = track?.url?.startsWith('local://');
 
-  // ─── REAL-TIME PROGRESS POLL ─────────────────────────────────────────────
-  // Single always-on interval; reads refs to avoid stale closures
+    if (repeat === 'one' && track) {
+      invoke('seek_to_start').catch(() => {
+        invoke('seek_audio', { time: 0 }).catch(() => {});
+      });
+      progressSecondsRef.current = 0;
+      setProgressSeconds(0);
+      setIsPlayingSync(true);
+      setTimeout(() => { endDetectedRef.current = false; }, 1500);
+      return;
+    }
+
+    // ── Local track auto-advance ──────────────────────────────────────────
+    if (isLocal) {
+      const list = localTracksListRef.current;
+      const idx = localTrackIndexRef.current;
+      if (list.length > 1) {
+        let nextIdx: number;
+        if (shuffle) {
+          // Random next, but not same
+          do { nextIdx = Math.floor(Math.random() * list.length); } while (nextIdx === idx && list.length > 1);
+        } else {
+          nextIdx = idx + 1;
+        }
+        if (nextIdx < list.length) {
+          localTrackIndexRef.current = nextIdx;
+          setTimeout(() => handlePlayLocalTrack(list[nextIdx], list, nextIdx), 0);
+          return;
+        } else if (repeat === 'all') {
+          localTrackIndexRef.current = 0;
+          setTimeout(() => handlePlayLocalTrack(list[0], list, 0), 0);
+          return;
+        }
+      } else if (repeat === 'all' && list.length === 1) {
+        // Single track repeat all = just replay
+        invoke('seek_to_start').catch(() => {});
+        progressSecondsRef.current = 0; setProgressSeconds(0);
+        setIsPlayingSync(true);
+        setTimeout(() => { endDetectedRef.current = false; }, 1500);
+        return;
+      }
+      setIsPlayingSync(false);
+      return;
+    }
+
+    // ── Queue auto-advance ────────────────────────────────────────────────
+    const q = queueRef.current;
+    if (q.length > 0) {
+      const [next, ...rest] = q;
+      queueRef.current = rest;
+      setQueue(rest);
+      setTimeout(() => handlePlayTrack(next, true), 0);
+      return;
+    }
+
+    // ── Playlist context auto-advance ─────────────────────────────────────
+    const ctx = playlistContextRef.current;
+    if (ctx && ctx.tracks.length > 1) {
+      let nextIdx: number;
+      if (shuffle) {
+        do { nextIdx = Math.floor(Math.random() * ctx.tracks.length); }
+        while (nextIdx === ctx.index && ctx.tracks.length > 1);
+      } else {
+        nextIdx = ctx.index + 1;
+      }
+      if (nextIdx < ctx.tracks.length) {
+        playlistContextRef.current = { ...ctx, index: nextIdx };
+        setTimeout(() => handlePlayTrack(ctx.tracks[nextIdx], true), 0);
+        return;
+      } else if (repeat === 'all') {
+        playlistContextRef.current = { ...ctx, index: 0 };
+        setTimeout(() => handlePlayTrack(ctx.tracks[0], true), 0);
+        return;
+      }
+    }
+
+    if (repeat === 'all' && track) {
+      setTimeout(() => handlePlayTrack(track, true), 0);
+      return;
+    }
+
+    // Nothing to play — stop
+    setIsPlayingSync(false);
+  }, [handlePlayTrack, handlePlayLocalTrack, setIsPlayingSync, shuffle]);
+
+  // ── Progress poll ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    const interval = setInterval(async () => {
-      if (!isPlayingRef.current || isDraggingProgressRef.current) return;
+    const poll = async () => {
+      if (isDraggingProgressRef.current) return;
       try {
-        const pos: number = await invoke("get_progress");
-        progressSecondsRef.current = pos;
-        setProgressSeconds(pos);
-        const track = currentTrackRef.current;
-        if (track && pos > 5) {
-          const total = parseDurationToSeconds(track.duration);
-          if (total > 0 && pos >= total - 1) handleTrackEnd();
+        const s: { playing: boolean; paused: boolean; position: number; duration: number; eof_reached: boolean } =
+          await invoke('get_playback_state');
+
+        progressSecondsRef.current = s.position;
+        setProgressSeconds(s.position);
+
+        if (s.duration > 0 && s.duration !== trackDurationRef.current) {
+          trackDurationRef.current = s.duration; setTrackDurationSeconds(s.duration);
+        }
+
+        // Only sync play/pause state when not loading and not in EOF handling
+        if (!isLoadingTrack && !endDetectedRef.current) {
+          const playing = !s.paused;
+          if (playing !== isPlayingRef.current) setIsPlayingSync(playing);
+        }
+
+        // EOF detection — only fire if position is meaningful (> 3s to avoid false positives on load)
+        if (s.eof_reached && !endDetectedRef.current && s.position > 3) {
+          handleTrackEnd();
+          return;
+        }
+        // Secondary check: very close to end (within 1s) — covers cases where eof-reached isn't set yet
+        if (!s.eof_reached && !endDetectedRef.current && s.position > 3 && s.duration > 0 && s.position >= s.duration - 1.0) {
+          handleTrackEnd();
         }
       } catch {}
-    }, 500);
-    return () => clearInterval(interval);
-  }, [handleTrackEnd]);
+    };
 
-  // ─── FOLDER PICKER ────────────────────────────────────────────────────────
-  const handleSelectDirectory = async () => {
+    const id = setInterval(poll, isPlaying ? 500 : 2000);
+    return () => clearInterval(id);
+  }, [isPlaying, isLoadingTrack, handleTrackEnd, setIsPlayingSync]);
+
+  // ── Folder picker ─────────────────────────────────────────────────────────────
+  const handleSelectDirectory = useCallback(async () => {
     try {
-      const selected = await open({ directory: true, multiple: false, defaultPath: downloadPath });
-      if (selected) setDownloadPath(selected as string);
+      const sel = await open({ directory: true, multiple: false, defaultPath: downloadPath });
+      if (sel) setDownloadPath(sel as string);
     } catch {}
-  };
+  }, [downloadPath]);
 
-  // ─── DRAG LOGIC ───────────────────────────────────────────────────────────
+  // ── Progress drag ─────────────────────────────────────────────────────────────
   const updateProgressFromEvent = useCallback((clientX: number) => {
     if (!progressRef.current || !currentTrackRef.current) return undefined;
     const rect = progressRef.current.getBoundingClientRect();
-    const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const newTime = parseDurationToSeconds(currentTrackRef.current.duration) * percent;
-    progressSecondsRef.current = newTime;
-    setProgressSeconds(newTime);
-    return newTime;
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const total = trackDurationRef.current || parseDurationToSeconds(currentTrackRef.current.duration);
+    const t = total * pct;
+    progressSecondsRef.current = t; setProgressSeconds(t);
+    return t;
   }, []);
 
   const updateVolumeFromEvent = useCallback((clientX: number) => {
     if (!volumeRef.current) return;
     const rect = volumeRef.current.getBoundingClientRect();
-    const percent = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
-    setVolume(percent);
-    invoke("set_volume", { volume: percent }).catch(() => {});
+    const v = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    setVolume(v); invoke('set_volume', { volume: v }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -389,9 +1566,8 @@ export default function VanguardPlayer() {
     const onUp = async (e: MouseEvent) => {
       if (isDraggingProgressRef.current) {
         const t = updateProgressFromEvent(e.clientX);
-        if (t !== undefined) await invoke("seek_audio", { time: t }).catch(() => {});
-        isDraggingProgressRef.current = false;
-        setIsDraggingProgress(false);
+        if (t !== undefined) await invoke('seek_audio', { time: t }).catch(() => {});
+        isDraggingProgressRef.current = false; setIsDraggingProgress(false);
       }
       if (isDraggingVolume) setIsDraggingVolume(false);
     };
@@ -402,298 +1578,224 @@ export default function VanguardPlayer() {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [isDraggingProgress, isDraggingVolume, updateProgressFromEvent, updateVolumeFromEvent]);
 
-  // ─── SEARCH ───────────────────────────────────────────────────────────────
-  const searchMusic = async (overrideQuery?: string) => {
-    const q = (overrideQuery ?? searchQuery).trim();
-    if (!q) return;
-    setIsSearching(true);
-    setTracks([]);
-    setShowHistory(false);
+  // ── Search ────────────────────────────────────────────────────────────────────
+  const searchMusic = useCallback(async (override?: string) => {
+    const q = (override ?? searchQuery).trim();
+    if (!q || isSearching) return;
+    setIsSearching(true); setTracks([]); setShowHistory(false); setHasSearched(true);
     setSearchHistory(prev => [q, ...prev.filter(h => h !== q)].slice(0, 8));
     try {
-      const response: string = await invoke("search_youtube", { query: q });
-      const parsed = response.trim().split("\n").filter(l => l.trim()).map((line, index) => {
-        const [title, uploader, duration, id] = line.split("====");
+      const res: string = await invoke('search_youtube', { query: q });
+      const parsed = res.trim().split('\n').filter(Boolean).map((line, i) => {
+        const [title, artist, duration, id] = line.split('====');
         const cleanId = id?.trim();
-        return {
-          id: index,
-          title: title?.trim() || "Unknown Title",
-          artist: uploader?.trim() || "Unknown Artist",
-          duration: duration?.trim() || "0:00",
-          url: `https://youtube.com/watch?v=${cleanId}`,
-          cover: `https://i.ytimg.com/vi/${cleanId}/mqdefault.jpg`,
-        };
+        return { id: i, title: title?.trim() || 'Unknown', artist: artist?.trim() || 'Unknown', duration: duration?.trim() || '0:00', url: `https://youtube.com/watch?v=${cleanId}`, cover: `https://i.ytimg.com/vi/${cleanId}/mqdefault.jpg` };
       });
       setTracks(parsed);
-    } catch {
-      showToast("Search failed — is yt-dlp installed?");
-    } finally {
-      setIsSearching(false);
-    }
-  };
+    } catch { setTracks([]); }
+    finally { setIsSearching(false); }
+  }, [searchQuery, isSearching]);
 
-  // ─── SKIP CONTROLS ────────────────────────────────────────────────────────
-  const handleSkipForward = async () => {
-    if (queue.length > 0) {
-      const [next, ...rest] = queue;
-      setQueue(rest);
-      await handlePlayTrack(next, true);
-    }
-  };
-
-  const handleSkipBack = async () => {
-    if (progressSecondsRef.current > 3) {
-      await invoke("seek_audio", { time: 0 }).catch(() => {});
-      progressSecondsRef.current = 0;
-      setProgressSeconds(0);
-    } else if (playHistory.length > 0) {
-      const [prev, ...rest] = playHistory;
-      setPlayHistory(rest);
-      await handlePlayTrack(prev, true);
-    } else {
-      await invoke("seek_audio", { time: 0 }).catch(() => {});
-      progressSecondsRef.current = 0;
-      setProgressSeconds(0);
-    }
-  };
-
-  const toggleShuffle = () => setShuffle(prev => { showToast(!prev ? "Shuffle on" : "Shuffle off"); return !prev; });
-  const cycleRepeat = () => setRepeatMode(prev => {
-    const next: RepeatMode = prev === 'off' ? 'all' : prev === 'all' ? 'one' : 'off';
-    showToast(next === 'off' ? "Repeat off" : next === 'all' ? "Repeat all" : "Repeat one");
-    return next;
-  });
-
-  // ─── CONTEXT MENU HELPER ──────────────────────────────────────────────────
-  const openCtx = (e: React.MouseEvent, menu: Omit<CtxMenu, 'x' | 'y'>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const { x, y } = clampMenuPos(e.clientX, e.clientY);
+  // ── Context menu ──────────────────────────────────────────────────────────────
+  const openCtx = useCallback((e: React.MouseEvent, menu: Omit<CtxMenu, 'x' | 'y'>) => {
+    e.preventDefault(); e.stopPropagation();
+    const { x, y } = clampMenu(e.clientX, e.clientY);
     setCtxMenu({ x, y, ...menu });
-  };
+  }, []);
 
-  // ─── DOWNLOAD ─────────────────────────────────────────────────────────────
-  const handleDownload = async (track: Track) => {
+  // ── Download ──────────────────────────────────────────────────────────────────
+  const handleDownload = useCallback(async (track: Track) => {
+    setDownloadingTracks(p => ({ ...p, [track.url]: true }));
     try {
-      setDownloadingTracks(prev => ({ ...prev, [track.url]: true }));
-      await invoke("download_song", { url: track.url, quality: downloadQuality, path: downloadPath });
+      await invoke('download_song', { url: track.url, quality: downloadQuality, path: downloadPath });
       showToast(`Downloaded: ${track.title}`);
-      setTimeout(() => setDownloadingTracks(prev => ({ ...prev, [track.url]: false })), 2000);
-    } catch {
-      showToast("Download failed");
-      setDownloadingTracks(prev => ({ ...prev, [track.url]: false }));
-    }
-  };
+    } catch { showToast('Download failed'); }
+    finally { setTimeout(() => setDownloadingTracks(p => ({ ...p, [track.url]: false })), 2000); }
+  }, [downloadQuality, downloadPath, showToast]);
 
-  const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text); showToast("Copied to clipboard"); };
-  const openInYouTube = (url: string) => window.open(url, '_blank');
+  const copyToClipboard = useCallback((t: string) => { navigator.clipboard.writeText(t); showToast('Copied!'); }, [showToast]);
+  const openInYouTube = useCallback((u: string) => { openUrl(u).catch(() => window.open(u, '_blank')); }, []);
 
-  // ─── PLAYLISTS ────────────────────────────────────────────────────────────
-  const confirmCreatePlaylist = () => {
+  // ── Playlist helpers ──────────────────────────────────────────────────────────
+  const confirmCreatePlaylist = useCallback(() => {
     if (!newPlaylistName.trim()) return;
-    setPlaylists(prev => [...prev, {
-      id: `p${Date.now()}`,
-      name: newPlaylistName.trim(),
-      description: newPlaylistDesc.trim(),
-      tracks: [],
-    }]);
-    setIsPlaylistModalOpen(false);
-    setNewPlaylistName('');
-    setNewPlaylistDesc('');
+    setPlaylists(p => [...p, { id: `p${Date.now()}`, name: newPlaylistName.trim(), description: newPlaylistDesc.trim(), tracks: [] }]);
+    setIsPlaylistModalOpen(false); setNewPlaylistName(''); setNewPlaylistDesc('');
     showToast(`Playlist "${newPlaylistName.trim()}" created`);
-  };
+  }, [newPlaylistName, newPlaylistDesc, showToast]);
 
-  const deletePlaylist = (id: string) => {
+  const deletePlaylist = useCallback((id: string) => {
     if (id === 'p1') return;
-    setPlaylists(prev => prev.filter(p => p.id !== id));
-    if (openPlaylistId === id) setOpenPlaylistId(null);
-    showToast("Playlist deleted");
-  };
+    setPlaylists(p => p.filter(x => x.id !== id));
+    setOpenPlaylistId(prev => prev === id ? null : prev);
+    showToast('Playlist deleted');
+  }, [showToast]);
 
-  const confirmRenamePlaylist = () => {
-    if (!renameValue.trim() || !renamingPlaylist) return;
-    setPlaylists(prev => prev.map(p =>
-      p.id === renamingPlaylist.id
-        ? { ...p, name: renameValue.trim(), description: renameDescValue.trim() }
-        : p
-    ));
-    setRenamingPlaylist(null);
-    showToast("Playlist updated");
-  };
+  const confirmRenamePlaylist = useCallback(() => {
+    if (!renameVal.trim() || !renamingPlaylist) return;
+    setPlaylists(p => p.map(x => x.id === renamingPlaylist.id ? { ...x, name: renameVal.trim(), description: renameDescVal.trim() } : x));
+    setRenamingPlaylist(null); showToast('Playlist updated');
+  }, [renameVal, renameDescVal, renamingPlaylist, showToast]);
 
-  const toggleLikeTrack = (t: Track) => {
-    setPlaylists(prev => prev.map(p => {
-      if (p.id !== 'p1') return p;
-      const liked = p.tracks.some(x => x.url === t.url);
-      return { ...p, tracks: liked ? p.tracks.filter(x => x.url !== t.url) : [...p.tracks, t] };
+  const toggleLikeTrack = useCallback((t: Track) => {
+    setPlaylists(p => p.map(x => {
+      if (x.id !== 'p1') return x;
+      const liked = x.tracks.some(y => y.url === t.url);
+      return { ...x, tracks: liked ? x.tracks.filter(y => y.url !== t.url) : [...x.tracks, t] };
     }));
-  };
+  }, []);
 
-  const addTrackToPlaylist = (playlistId: string, track: Track) => {
-    setPlaylists(prev => prev.map(p => {
-      if (p.id !== playlistId) return p;
-      if (p.tracks.some(t => t.url === track.url)) { showToast("Already in playlist"); return p; }
-      showToast(`Added to ${p.name}`);
-      return { ...p, tracks: [...p.tracks, track] };
+  const addTrackToPlaylist = useCallback((pid: string, t: Track) => {
+    setPlaylists(p => p.map(x => {
+      if (x.id !== pid) return x;
+      if (x.tracks.some(y => y.url === t.url)) { showToast('Already in playlist'); return x; }
+      showToast(`Added to ${x.name}`); return { ...x, tracks: [...x.tracks, t] };
     }));
-    setAddToPlaylistTrack(null);
-    setCtxMenu(null);
-  };
+    setAddToPlaylistTrack(null); setCtxMenu(null);
+  }, [showToast]);
 
-  const removeFromPlaylist = (playlistId: string, trackUrl: string) => {
-    setPlaylists(prev => prev.map(p =>
-      p.id !== playlistId ? p : { ...p, tracks: p.tracks.filter(t => t.url !== trackUrl) }
-    ));
-    showToast("Removed from playlist");
-  };
+  const removeFromPlaylist = useCallback((pid: string, url: string) => {
+    setPlaylists(p => p.map(x => x.id !== pid ? x : { ...x, tracks: x.tracks.filter(t => t.url !== url) }));
+    showToast('Removed from playlist');
+  }, [showToast]);
 
-  const handleCoverUpload = (playlistId: string) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const result = ev.target?.result as string;
-        if (result) {
-          setPlaylists(prev => prev.map(p => p.id === playlistId ? { ...p, customCover: result } : p));
-          showToast("Cover updated");
-        }
-      };
-      reader.readAsDataURL(file);
+  const handleCoverUpload = useCallback((pid: string) => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+    inp.onchange = e => {
+      const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = ev => { const d = ev.target?.result as string; if (d) { setPlaylists(p => p.map(x => x.id === pid ? { ...x, customCover: d } : x)); showToast('Cover updated'); } };
+      r.readAsDataURL(f);
     };
-    input.click();
-  };
+    inp.click();
+  }, [showToast]);
 
-  const isTrackLiked = (url: string) => playlists.find(p => p.id === 'p1')?.tracks.some(t => t.url === url) || false;
+  const isTrackLiked = useCallback((url: string) => playlists.find(p => p.id === 'p1')?.tracks.some(t => t.url === url) || false, [playlists]);
   const getPlaylistCover = (p: Playlist) => p.customCover || p.tracks[0]?.cover || null;
 
-  // ─── QUEUE HELPERS ────────────────────────────────────────────────────────
-  const playAll = (trackList: Track[]) => {
-    if (!trackList.length) return;
-    const list = shuffle ? [...trackList].sort(() => Math.random() - 0.5) : [...trackList];
-    handlePlayTrack(list[0]);
-    setQueue(list.slice(1));
-    showToast(shuffle ? "Shuffle playing all" : "Playing all");
-  };
+  const playAll = useCallback((list: Track[]) => {
+    if (!list.length) return;
+    const sorted = shuffle ? [...list].sort(() => Math.random() - 0.5) : [...list];
+    // Set playlist context so skip fwd/back works without a queue
+    playlistContextRef.current = { tracks: sorted, index: 0 };
+    handlePlayTrack(sorted[0], true); setQueue(sorted.slice(1));
+    showToast(shuffle ? 'Shuffle playing all' : 'Playing all');
+  }, [shuffle, handlePlayTrack, showToast]);
 
-  const removeFromQueue = (index: number) => setQueue(prev => prev.filter((_, i) => i !== index));
+  const removeFromQueue = useCallback((url: string) => setQueue(p => p.filter(q => q.url !== url)), []);
 
-  const calculateProgressPercent = () => {
-    if (!currentTrack) return 0;
-    const total = parseDurationToSeconds(currentTrack.duration);
+  const calculateProgressPercent = useCallback(() => {
+    const total = trackDurationSeconds || parseDurationToSeconds(currentTrack?.duration || '0:00');
     return total === 0 ? 0 : Math.min((progressSeconds / total) * 100, 100);
-  };
-
-  // ─── TRACK ROW ────────────────────────────────────────────────────────────
-  const TrackRow = ({ track, index, showRemove, onRemove }: {
-    track: Track; index: number; showRemove?: boolean; onRemove?: () => void;
-  }) => {
-    const isActive = currentTrack?.url === track.url;
-    const isHovered = hoveredTrackUrl === track.url;
-    return (
-      <div
-        className={`flex items-center gap-4 px-4 py-3.5 rounded-lg cursor-pointer transition-all duration-150 group
-          ${isActive ? 'bg-[#39FF14]/[0.07] border border-[#39FF14]/20' : 'hover:bg-white/5 border border-transparent'}`}
-        onClick={() => handlePlayTrack(track)}
-        onContextMenu={(e) => openCtx(e, { type: 'track', track })}
-        onMouseEnter={() => setHoveredTrackUrl(track.url)}
-        onMouseLeave={() => setHoveredTrackUrl(null)}
-      >
-        <div className="w-8 flex items-center justify-center shrink-0">
-          {isActive && isLoadingTrack ? (
-            <div className="w-3.5 h-3.5 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" />
-          ) : isActive && isPlaying ? (
-            <div className="flex gap-[2px] items-end h-4">
-              <div className="w-[3px] bg-[#39FF14] rounded-full animate-pulse shadow-[0_0_4px_#39FF14]" style={{ height: '100%' }} />
-              <div className="w-[3px] bg-[#39FF14] rounded-full animate-pulse shadow-[0_0_4px_#39FF14]" style={{ height: '65%', animationDelay: '150ms' }} />
-              <div className="w-[3px] bg-[#39FF14] rounded-full animate-pulse shadow-[0_0_4px_#39FF14]" style={{ height: '80%', animationDelay: '300ms' }} />
-            </div>
-          ) : isHovered ? (
-            <Play size={16} fill="white" className="text-white" />
-          ) : (
-            <span className={`text-[13px] tabular-nums ${isActive ? 'text-[#39FF14]' : 'text-neutral-500'}`}>{index + 1}</span>
-          )}
-        </div>
-        <div className="w-12 h-12 rounded-md overflow-hidden shrink-0 border border-neutral-800/60">
-          <img src={track.cover} alt={track.title} className="w-full h-full object-cover" loading="lazy" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className={`font-semibold text-[15px] truncate transition-colors duration-150 ${isActive ? 'text-[#39FF14]' : 'text-white'}`}>{track.title}</p>
-          <p className="text-[13px] text-neutral-500 truncate mt-0.5">{track.artist}</p>
-        </div>
-        <div className={`flex items-center gap-1 transition-opacity duration-150 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-          <button onClick={(e) => { e.stopPropagation(); toggleLikeTrack(track); }} className="p-1.5 rounded-md hover:bg-white/10 transition-colors">
-            <Heart size={14} className={isTrackLiked(track.url) ? 'text-[#39FF14] fill-[#39FF14]' : 'text-neutral-400'} />
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); handleDownload(track); }} className="p-1.5 rounded-md hover:bg-white/10 transition-colors">
-            {downloadingTracks[track.url]
-              ? <div className="w-3.5 h-3.5 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" />
-              : <Download size={14} className="text-neutral-400" />}
-          </button>
-          {showRemove && onRemove ? (
-            <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="p-1.5 rounded-md hover:bg-red-500/20 transition-colors">
-              <X size={14} className="text-neutral-400 hover:text-red-400" />
-            </button>
-          ) : (
-            <button onClick={(e) => { e.stopPropagation(); openCtx(e, { type: 'track', track }); }} className="p-1.5 rounded-md hover:bg-white/10 transition-colors">
-              <MoreVertical size={14} className="text-neutral-400" />
-            </button>
-          )}
-        </div>
-        <span className="text-[13px] text-neutral-500 tabular-nums w-12 text-right shrink-0">{track.duration}</span>
-      </div>
-    );
-  };
-
-  const TrackRowSkeleton = ({ index }: { index: number }) => (
-    <div className="flex items-center gap-4 px-4 py-3.5 rounded-lg border border-transparent">
-      <div className="w-8 flex items-center justify-center shrink-0">
-        <span className="text-[13px] text-neutral-800">{index + 1}</span>
-      </div>
-      <div className="w-12 h-12 rounded-md shrink-0 bg-neutral-800/60 animate-pulse" />
-      <div className="flex-1 min-w-0 flex flex-col gap-2">
-        <div className="h-3.5 bg-neutral-800/70 rounded-full animate-pulse" style={{ width: `${55 + (index * 13) % 35}%` }} />
-        <div className="h-2.5 bg-neutral-800/50 rounded-full animate-pulse" style={{ width: `${30 + (index * 7) % 25}%` }} />
-      </div>
-      <div className="w-12 h-2.5 bg-neutral-800/50 rounded-full animate-pulse shrink-0" />
-    </div>
-  );
+  }, [progressSeconds, trackDurationSeconds, currentTrack]);
 
   const openPlaylist = playlists.find(p => p.id === openPlaylistId);
 
+  // ── RENDER ────────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen w-full bg-[#050505] text-white font-sans overflow-hidden selection:bg-[#39FF14] selection:text-black relative">
+    <div className="flex flex-col h-screen w-full bg-[#050505] text-white font-sans overflow-hidden selection:bg-[#39FF14] selection:text-black">
       <style>{`
-        @keyframes loadbar {
-          0%   { transform: translateX(-100%); }
-          50%  { transform: translateX(150%); }
-          100% { transform: translateX(400%); }
-        }
-        .slider-thumb { transition: opacity 0.15s ease, transform 0.15s ease; }
-        .slider-track:hover .slider-thumb { opacity: 1 !important; transform: translateY(-50%) scale(1.25); }
+        @keyframes loadbar { 0%{transform:translateX(-100%)} 50%{transform:translateX(150%)} 100%{transform:translateX(400%)} }
+        @keyframes dropIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+        .slider-track:hover .slider-thumb{opacity:1!important;transform:translateY(-50%) scale(1.25)}
+        .custom-scrollbar::-webkit-scrollbar{width:4px}
+        .custom-scrollbar::-webkit-scrollbar-track{background:transparent}
+        .custom-scrollbar::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover{background:#444}
       `}</style>
+
+      <DepsBanner deps={deps} onGoToSettings={() => navigateTo('settings')} />
 
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── SIDEBAR ── */}
-        <div className="w-64 bg-[#0a0a0a] border-r border-neutral-800/50 flex flex-col p-6 z-10 shrink-0 overflow-hidden">
-          <div className="flex items-center gap-3 mb-10 cursor-pointer group shrink-0">
-            <div className="w-8 h-8 rounded bg-[#39FF14] flex items-center justify-center shadow-[0_0_15px_rgba(57,255,20,0.5)] group-hover:shadow-[0_0_25px_rgba(57,255,20,0.8)] transition-all duration-300">
-              <Music size={20} className="text-black" />
+        <div className="w-64 bg-[#0a0a0a] border-r border-neutral-800/50 flex flex-col p-6 z-10 shrink-0 overflow-visible relative">
+          {/* Logo + info hint */}
+          <div className="flex items-center gap-2 mb-6 shrink-0">
+            <div className="flex items-center gap-3 flex-1 cursor-pointer group" onClick={() => navigateTo('home')}>
+              <div className="w-8 h-8 rounded bg-[#39FF14] flex items-center justify-center shadow-[0_0_15px_rgba(57,255,20,0.5)] group-hover:shadow-[0_0_25px_rgba(57,255,20,0.8)] transition-all duration-300 shrink-0">
+                <Music size={20} className="text-black" />
+              </div>
+              <h1 className="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#39FF14] to-emerald-200 drop-shadow-[0_0_8px_rgba(57,255,20,0.6)]">VANGUARD</h1>
             </div>
-            <h1 className="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#39FF14] to-emerald-200 drop-shadow-[0_0_8px_rgba(57,255,20,0.6)]">VANGUARD</h1>
+            {/* Info hint */}
+            <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
+              <div ref={infoHintBtnRef as React.RefObject<HTMLDivElement>} style={{ display: 'inline-block' }}>
+                <InfoHintButton onClick={() => {
+                  if (infoHintBtnRef.current) {
+                    const r = infoHintBtnRef.current.getBoundingClientRect();
+                    const boxW = 288; // w-72
+                    // Right-align to button right edge, but keep on screen
+                    const left = Math.min(r.right - boxW, window.innerWidth - boxW - 12);
+                    setInfoHintPos({ top: r.bottom + 8, left: Math.max(8, left) });
+                  }
+                  setShowInfoHint(o => !o);
+                }} />
+              </div>
+              {showInfoHint && infoHintPos && (
+                <div className="fixed w-72 rounded-xl p-5 z-[99999]"
+                  style={{
+                    top: infoHintPos.top,
+                    left: infoHintPos.left,
+                    animation: 'dropIn 0.15s ease-out',
+                    background: '#111111',
+                    border: '1px solid rgba(245,158,11,0.35)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.95), 0 0 24px rgba(251,191,36,0.12)',
+                    opacity: 1,
+                  }}>
+                  <p className="font-bold text-white mb-2 flex items-center gap-2 text-sm"><AlertTriangle size={15} className="text-amber-400" /> Getting Started</p>
+                  <p className="text-xs text-neutral-300 leading-relaxed">Before using Vanguard, install the required dependencies:</p>
+                  <p className="mt-2.5 text-[#39FF14] font-bold text-sm">Settings → Dependencies → Install</p>
+                  <p className="mt-2 text-xs text-neutral-500">Requires: mpv · yt-dlp · ffprobe</p>
+                  <button onClick={() => { navigateTo('settings'); setShowInfoHint(false); }}
+                    className="mt-3 w-full py-2 bg-amber-500/15 border border-amber-500/30 text-amber-400 rounded-lg text-xs font-semibold hover:bg-amber-500/25 transition-colors">
+                    Go to Settings →
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Sleep timer pill — always visible */}
+          <div className="relative mb-4 shrink-0 overflow-visible" onClick={e => e.stopPropagation()}>
+            <div
+              onClick={() => setShowSleepPopover(o => !o)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 border text-sm font-medium w-full
+                ${sleepTimer > 0
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                  : 'bg-neutral-900/60 border-neutral-800 text-neutral-500 hover:text-neutral-300 hover:border-neutral-700'}`}>
+              <Moon size={14} className={sleepTimer > 0 ? 'animate-pulse text-amber-400' : ''} />
+              <span className="flex-1">{sleepTimer > 0 ? `Sleep in ${Math.ceil(sleepTimer / 60)}m` : 'Sleep Timer'}</span>
+              {sleepTimer > 0
+                ? <button onClick={e => { e.stopPropagation(); cancelSleepTimer(); }} className="text-xs text-neutral-500 hover:text-red-400 px-1"><X size={11} /></button>
+                : <ChevronDown size={13} className={`transition-transform ${showSleepPopover ? 'rotate-180' : ''}`} />}
+            </div>
+            {showSleepPopover && (
+              <div className="absolute top-full left-0 mt-2 z-[9999]">
+                <SleepTimerPopover
+                  sleepTimer={sleepTimer}
+                  onSet={setSleepTimerMinutes}
+                  onCancel={cancelSleepTimer}
+                  onClose={() => setShowSleepPopover(false)}
+                />
+              </div>
+            )}
           </div>
 
           <nav className="flex flex-col gap-1 shrink-0">
-            {[{ id: 'home', label: 'Home', icon: Home }, { id: 'settings', label: 'Settings', icon: Settings }].map(({ id, label, icon: Icon }) => (
-              <button key={id} onClick={() => setActiveNav(id)}
+            {([
+              { id: 'home', label: 'Home', icon: Home },
+              { id: 'downloads', label: 'Offline', icon: HardDrive },
+              { id: 'settings', label: 'Settings', icon: Settings },
+            ] as { id: string; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[]).map(({ id, label, icon: Icon }) => (
+              <button key={id} onClick={() => navigateTo(id)}
                 className={`flex items-center gap-4 px-4 py-3 rounded-lg transition-all duration-200 w-full text-left
                   ${activeNav === id ? 'bg-neutral-800/50 text-[#39FF14] shadow-[inset_2px_0_0_#39FF14]' : 'text-neutral-400 hover:text-[#39FF14] hover:bg-neutral-900/50'}`}>
                 <Icon size={20} className={activeNav === id ? 'drop-shadow-[0_0_5px_#39FF14]' : ''} />
                 <span className="font-medium">{label}</span>
+                {id === 'settings' && deps && (!deps.mpv || !deps.yt_dlp) && (
+                  <span className="ml-auto w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+                )}
               </button>
             ))}
             <button onClick={() => setIsQueueOpen(o => !o)}
@@ -701,60 +1803,44 @@ export default function VanguardPlayer() {
                 ${isQueueOpen ? 'bg-neutral-800/50 text-[#39FF14] shadow-[inset_2px_0_0_#39FF14]' : 'text-neutral-400 hover:text-[#39FF14] hover:bg-neutral-900/50'}`}>
               <ListOrdered size={20} className={isQueueOpen ? 'drop-shadow-[0_0_5px_#39FF14]' : ''} />
               <span className="font-medium">Queue</span>
-              {queue.length > 0 && (
-                <span className="ml-auto bg-[#39FF14] text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{queue.length}</span>
-              )}
+              {queue.length > 0 && <span className="ml-auto bg-[#39FF14] text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{queue.length}</span>}
             </button>
           </nav>
 
+          {/* Playlists */}
           <div className="mt-5 flex flex-col flex-1 min-h-0">
             <div className="flex items-center justify-between px-1 mb-2 shrink-0">
-              <button
-                onClick={() => { setSidebarPlaylistsExpanded(o => !o); setActiveNav('library'); setOpenPlaylistId(null); }}
-                className={`flex items-center gap-3 flex-1 py-2 px-3 rounded-lg transition-all duration-200 text-left
-                  ${activeNav === 'library' ? 'text-[#39FF14]' : 'text-neutral-400 hover:text-[#39FF14] hover:bg-neutral-900/50'}`}
-              >
+              <button onClick={() => { setSidebarPlaylistsExpanded(o => !o); navigateTo('library'); setOpenPlaylistId(null); }}
+                className={`flex items-center gap-3 flex-1 py-2 px-3 rounded-lg transition-all duration-200 text-left ${activeNav === 'library' ? 'text-[#39FF14]' : 'text-neutral-400 hover:text-[#39FF14] hover:bg-neutral-900/50'}`}>
                 <ListMusic size={20} className={activeNav === 'library' ? 'drop-shadow-[0_0_5px_#39FF14]' : ''} />
                 <span className="font-medium">Playlists</span>
                 <ChevronRight size={14} className={`ml-auto transition-transform duration-200 ${sidebarPlaylistsExpanded ? 'rotate-90' : ''}`} />
               </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); setNewPlaylistName(''); setNewPlaylistDesc(''); setIsPlaylistModalOpen(true); }}
-                className="p-1.5 ml-1 text-neutral-600 hover:text-[#39FF14] transition-colors rounded-md hover:bg-neutral-900/50 shrink-0"
-                title="New playlist"
-              >
+              <button onClick={e => { e.stopPropagation(); setNewPlaylistName(''); setNewPlaylistDesc(''); setIsPlaylistModalOpen(true); }}
+                className="p-1.5 ml-1 text-neutral-600 hover:text-[#39FF14] transition-colors rounded-md hover:bg-neutral-900/50 shrink-0" title="New playlist">
                 <PlusCircle size={15} />
               </button>
             </div>
-
             {sidebarPlaylistsExpanded && (
               <div className="flex-1 overflow-y-auto custom-scrollbar -mx-1 px-1">
                 <div className="flex flex-col gap-0.5 pb-2">
-                  {playlists.map((playlist) => {
-                    const isOpen = openPlaylistId === playlist.id && activeNav === 'library';
-                    const cover = getPlaylistCover(playlist);
+                  {playlists.map(pl => {
+                    const isOpen = openPlaylistId === pl.id && activeNav === 'library';
+                    const cover = getPlaylistCover(pl);
                     return (
-                      <button key={playlist.id}
-                        onClick={() => { setOpenPlaylistId(playlist.id); setActiveNav('library'); }}
-                        onContextMenu={(e) => openCtx(e, { type: 'sidebar-playlist', playlist })}
+                      <button key={pl.id}
+                        onClick={() => { setOpenPlaylistId(pl.id); navigateTo('library'); }}
+                        onContextMenu={e => openCtx(e, { type: 'sidebar-playlist', playlist: pl })}
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 w-full text-left group
-                          ${isOpen ? 'bg-[#39FF14]/[0.08] text-[#39FF14] border border-[#39FF14]/15' : 'text-neutral-500 hover:text-neutral-200 hover:bg-neutral-900/50 border border-transparent'}`}
-                      >
+                          ${isOpen ? 'bg-[#39FF14]/[0.08] text-[#39FF14] border border-[#39FF14]/15' : 'text-neutral-500 hover:text-neutral-200 hover:bg-neutral-900/50 border border-transparent'}`}>
                         <div className="w-7 h-7 rounded-md overflow-hidden shrink-0 border border-neutral-800/60">
-                          {cover
-                            ? <img src={cover} className="w-full h-full object-cover" alt="" />
-                            : <div className={`w-full h-full flex items-center justify-center ${isOpen ? 'bg-[#39FF14]/15' : 'bg-neutral-800/60 group-hover:bg-neutral-800'}`}>
-                                {playlist.id === 'p1'
-                                  ? <Heart size={12} className={isOpen ? 'text-[#39FF14] fill-[#39FF14]' : 'text-neutral-500 group-hover:text-red-400'} />
-                                  : <ListMusic size={12} className={isOpen ? 'text-[#39FF14]' : 'text-neutral-500'} />}
+                          {cover ? <img src={cover} className="w-full h-full object-cover" alt="" />
+                            : <div className={`w-full h-full flex items-center justify-center ${isOpen ? 'bg-[#39FF14]/15' : 'bg-neutral-800/60'}`}>
+                                {pl.id === 'p1' ? <Heart size={12} className={isOpen ? 'text-[#39FF14] fill-[#39FF14]' : 'text-neutral-500 group-hover:text-red-400'} /> : <ListMusic size={12} className={isOpen ? 'text-[#39FF14]' : 'text-neutral-500'} />}
                               </div>}
                         </div>
-                        <span className="text-[13px] font-medium truncate flex-1">{playlist.name}</span>
-                        {playlist.tracks.length > 0 && (
-                          <span className={`text-[10px] font-bold tabular-nums shrink-0 ${isOpen ? 'text-[#39FF14]/70' : 'text-neutral-700 group-hover:text-neutral-500'}`}>
-                            {playlist.tracks.length}
-                          </span>
-                        )}
+                        <span className="text-[13px] font-medium truncate flex-1">{pl.name}</span>
+                        {pl.tracks.length > 0 && <span className={`text-[10px] font-bold tabular-nums shrink-0 ${isOpen ? 'text-[#39FF14]/70' : 'text-neutral-700 group-hover:text-neutral-500'}`}>{pl.tracks.length}</span>}
                       </button>
                     );
                   })}
@@ -776,73 +1862,112 @@ export default function VanguardPlayer() {
         <div className="flex-1 flex flex-col bg-gradient-to-b from-[#0f1115] to-[#050505] overflow-hidden relative">
           <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#39FF14]/10 via-transparent to-transparent" />
 
-          {activeNav === 'home' ? (
+          {/* ── BACK BUTTON — always visible ── */}
+          <div className="flex items-center gap-3 px-6 pt-4 pb-0 shrink-0 z-20 relative">
+            <button
+              onClick={navigateBack}
+              disabled={navHistory.length === 0}
+              title="Go back"
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all duration-200
+                ${navHistory.length > 0
+                  ? 'text-white border-neutral-700 bg-neutral-900/80 hover:border-[#39FF14]/50 hover:text-[#39FF14] hover:bg-[#39FF14]/5 active:scale-95'
+                  : 'text-neutral-700 border-neutral-800/40 bg-neutral-900/30 cursor-not-allowed opacity-40'}`}
+            >
+              <ChevronLeft size={16} />
+              <span>Back</span>
+            </button>
+            {/* Breadcrumb */}
+            <span className="text-xs text-neutral-600 font-medium uppercase tracking-widest">
+              {activeNav === 'home' ? 'Home' : activeNav === 'downloads' ? 'Offline' : activeNav === 'settings' ? 'Settings' : activeNav === 'library' ? (openPlaylistId ? playlists.find(p => p.id === openPlaylistId)?.name || 'Playlist' : 'Playlists') : activeNav}
+            </span>
+          </div>
+
+          {/* ── HOME ── */}
+          {activeNav === 'home' && (
             <>
               <div className="p-6 pb-3 relative z-30 shrink-0">
-                <div className="relative w-full" onClick={(e) => e.stopPropagation()}>
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    {isSearching
-                      ? <div className="w-4 h-4 border-2 border-[#39FF14]/70 border-t-transparent rounded-full animate-spin" />
-                      : <Search size={18} className={`transition-colors duration-200 ${showHistory || searchQuery ? 'text-[#39FF14]' : 'text-neutral-500'}`} />}
-                  </div>
-                  <input ref={searchRef} type="text"
-                    placeholder="Search YouTube or enter a URL... (Ctrl+F)"
-                    value={searchQuery}
-                    onChange={(e) => !isSearching && setSearchQuery(e.target.value)}
-                    onFocus={() => !isSearching && setShowHistory(searchHistory.length > 0)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { setShowHistory(false); searchMusic(); } if (e.key === 'Escape') setShowHistory(false); }}
-                    className={`w-full bg-[#111] border text-white rounded-xl py-3 pl-11 pr-4 focus:outline-none transition-all duration-200 placeholder-neutral-600 font-medium text-sm
-                      ${isSearching ? 'border-[#39FF14]/40 ring-1 ring-[#39FF14]/30 opacity-70 cursor-not-allowed' : 'border-neutral-800 focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] focus:shadow-[0_0_20px_rgba(57,255,20,0.1)]'}`}
-                  />
-                  {showHistory && (
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-[#0e0e0e] border border-neutral-800/80 rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.6)] z-[100]">
-                      <div className="flex items-center justify-between px-4 py-2.5 border-b border-neutral-800/50">
-                        <span className="text-[11px] font-semibold uppercase tracking-widest text-neutral-600">Recent searches</span>
-                        <button onClick={(e) => { e.stopPropagation(); setSearchHistory([]); setShowHistory(false); }} className="text-[11px] text-neutral-600 hover:text-red-400 transition-colors px-1">Clear</button>
-                      </div>
-                      {searchHistory.map((h, i) => (
-                        <button key={i} onClick={(e) => { e.stopPropagation(); setSearchQuery(h); setShowHistory(false); searchMusic(h); }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.04] transition-colors text-left">
-                          <Clock size={13} className="text-neutral-600 shrink-0" />
-                          <span className="text-sm text-neutral-300 truncate flex-1">{h}</span>
-                          <ChevronRight size={12} className="text-neutral-700 shrink-0" />
-                        </button>
-                      ))}
+                <div className="relative w-full flex gap-3" onClick={e => e.stopPropagation()}>
+                  <div className="relative flex-1">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      {isSearching
+                        ? <div className="w-4 h-4 border-2 border-[#39FF14]/70 border-t-transparent rounded-full animate-spin" />
+                        : <Search size={18} className={`transition-colors duration-200 ${showHistory || searchQuery ? 'text-[#39FF14]' : 'text-neutral-500'}`} />}
                     </div>
-                  )}
+                    <input ref={searchRef} type="text"
+                      placeholder="Search YouTube... (Ctrl+F)"
+                      value={searchQuery} readOnly={isSearching}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      onFocus={() => !isSearching && setShowHistory(searchHistory.length > 0)}
+                      onKeyDown={e => { if (e.key === 'Enter') { setShowHistory(false); searchMusic(); } if (e.key === 'Escape') setShowHistory(false); }}
+                      className={`w-full bg-[#111] border text-white rounded-xl py-3 pl-11 pr-4 focus:outline-none transition-all duration-200 placeholder-neutral-600 font-medium text-sm
+                        ${isSearching ? 'border-[#39FF14]/40 ring-1 ring-[#39FF14]/30 opacity-60 cursor-not-allowed' : 'border-neutral-800 focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] focus:shadow-[0_0_20px_rgba(57,255,20,0.1)]'}`} />
+                    {showHistory && (
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-[#0e0e0e] border border-neutral-800/80 rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.6)] z-[100]">
+                        <div className="flex items-center justify-between px-4 py-2.5 border-b border-neutral-800/50">
+                          <span className="text-[11px] font-semibold uppercase tracking-widest text-neutral-600">Recent searches</span>
+                          <button onClick={e => { e.stopPropagation(); setSearchHistory([]); setShowHistory(false); }} className="text-[11px] text-neutral-600 hover:text-red-400 transition-colors px-1">Clear</button>
+                        </div>
+                        {searchHistory.map((h, i) => (
+                          <button key={i} onClick={e => { e.stopPropagation(); setSearchQuery(h); setShowHistory(false); searchMusic(h); }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.04] transition-colors text-left">
+                            <Clock size={13} className="text-neutral-600 shrink-0" />
+                            <span className="text-sm text-neutral-300 truncate flex-1">{h}</span>
+                            <ChevronRight size={12} className="text-neutral-700 shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => { setShowHistory(false); searchMusic(); }}
+                    disabled={isSearching || !searchQuery.trim()}
+                    className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all duration-200 shrink-0 flex items-center gap-2
+                      ${isSearching
+                        ? 'bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14]/60 cursor-not-allowed'
+                        : 'bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] hover:bg-[#39FF14]/20 hover:border-[#39FF14]/60 disabled:opacity-30 disabled:cursor-not-allowed'}`}>
+                    {isSearching ? <div className="w-4 h-4 border-2 border-[#39FF14]/70 border-t-transparent rounded-full animate-spin" /> : <Search size={16} />}
+                    {!isSearching && 'Search'}
+                  </button>
                 </div>
               </div>
 
               <div className="flex-1 overflow-y-auto px-6 pb-4 z-10 custom-scrollbar" onClick={() => setShowHistory(false)}>
+                {/* Empty state */}
+                {!isSearching && tracks.length === 0 && quickPicks.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-5 text-neutral-700 select-none">
+                    <div className="relative">
+                      <Music size={56} strokeWidth={0.8} className="text-neutral-800" />
+                      <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#39FF14]/10 rounded-full flex items-center justify-center border border-[#39FF14]/20">
+                        <Search size={10} className="text-[#39FF14]/40" />
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-neutral-600">Nothing playing yet</p>
+                      <p className="text-xs text-neutral-700 mt-1">Search for something above to get started.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick picks */}
                 {!isSearching && tracks.length === 0 && quickPicks.length > 0 && (
                   <div className="mb-6 pt-1">
                     <div className="flex items-center gap-3 mb-3">
                       <span className="w-1.5 h-5 bg-[#39FF14] rounded-full shadow-[0_0_8px_#39FF14] shrink-0" />
                       <h2 className="text-base font-bold text-white flex-1">Quick Picks</h2>
-                      <button onClick={() => { setQuickPicks([]); showToast("Quick Picks cleared"); }} className="text-[11px] text-neutral-600 hover:text-neutral-400 transition-colors">Clear</button>
+                      <button onClick={() => { setQuickPicks([]); }} className="text-[11px] text-neutral-600 hover:text-neutral-400 transition-colors">Clear</button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      {quickPicks.slice(0, 8).map((track) => {
+                      {quickPicks.slice(0, 8).map(track => {
                         const isActive = currentTrack?.url === track.url;
-                        const isLoading = isLoadingTrack && isActive;
                         return (
-                          <div key={track.url}
-                            onClick={() => handlePlayTrack(track)}
-                            onContextMenu={(e) => openCtx(e, { type: 'quickpick', track })}
+                          <div key={track.url} onClick={() => handlePlayInContext(track, quickPicks.slice(0, 8))} onContextMenu={e => openCtx(e, { type: 'quickpick', track })}
                             className={`flex items-center gap-3 rounded-lg p-3 cursor-pointer transition-all duration-150 group border
                               ${isActive ? 'bg-[#39FF14]/[0.07] border-[#39FF14]/20' : 'bg-neutral-900/40 border-neutral-800/30 hover:bg-neutral-800/60 hover:border-neutral-700/50'}`}>
                             <div className="relative w-12 h-12 rounded-md overflow-hidden shrink-0">
                               <img src={track.cover} alt={track.title} className="w-full h-full object-cover" loading="lazy" />
-                              <div className={`absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity duration-150 ${isLoading ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                {isLoading
-                                  ? <div className="w-4 h-4 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" />
-                                  : isActive && isPlaying
-                                    ? <div className="flex gap-[2px] items-end h-3">
-                                        <div className="w-[2px] bg-[#39FF14] rounded-full animate-pulse" style={{ height: '100%' }} />
-                                        <div className="w-[2px] bg-[#39FF14] rounded-full animate-pulse" style={{ height: '65%', animationDelay: '150ms' }} />
-                                        <div className="w-[2px] bg-[#39FF14] rounded-full animate-pulse" style={{ height: '80%', animationDelay: '300ms' }} />
-                                      </div>
-                                    : <Play size={14} fill="white" className="text-white ml-0.5" />}
+                              <div className={`absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity ${isActive && isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                {isActive && isLoadingTrack ? <div className="w-4 h-4 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" />
+                                  : isActive && isPlaying ? <div className="flex gap-[2px] items-end h-3">{[100, 65, 80].map((h, i) => <div key={i} className="w-[2px] bg-[#39FF14] rounded-full animate-pulse" style={{ height: `${h}%`, animationDelay: `${i * 150}ms` }} />)}</div>
+                                  : <Play size={14} fill="white" className="text-white ml-0.5" />}
                               </div>
                             </div>
                             <div className="flex-1 min-w-0">
@@ -856,17 +1981,12 @@ export default function VanguardPlayer() {
                   </div>
                 )}
 
+                {/* Search results */}
                 {(isSearching || tracks.length > 0) && (
                   <div className="flex items-center gap-3 mb-3 py-2">
                     <span className="w-1.5 h-5 bg-[#39FF14] rounded-full shadow-[0_0_8px_#39FF14] shrink-0" />
-                    <h2 className="text-base font-bold text-white flex-1">{isSearching ? 'Scanning...' : 'Search Results'}</h2>
-                    {isSearching && (
-                      <div className="flex gap-1 items-end h-4">
-                        {[100, 60, 80, 50].map((h, i) => (
-                          <div key={i} className="w-1 bg-[#39FF14]/60 rounded-full animate-pulse shadow-[0_0_4px_#39FF14]" style={{ height: `${h}%`, animationDelay: `${i * 100}ms` }} />
-                        ))}
-                      </div>
-                    )}
+                    <h2 className="text-base font-bold text-white flex-1">{isSearching ? 'Searching...' : 'Results'}</h2>
+                    {isSearching && <div className="flex gap-1 items-end h-4">{[100, 60, 80, 50].map((h, i) => <div key={i} className="w-1 bg-[#39FF14]/60 rounded-full animate-pulse" style={{ height: `${h}%`, animationDelay: `${i * 100}ms` }} />)}</div>}
                     {tracks.length > 0 && !isSearching && (
                       <button onClick={() => playAll(tracks)} className="flex items-center gap-2 px-3 py-1.5 bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] rounded-lg text-xs font-semibold hover:bg-[#39FF14]/20 transition-colors">
                         <Play size={12} fill="currentColor" /> Play All
@@ -882,20 +2002,42 @@ export default function VanguardPlayer() {
                     <Clock size={12} className="text-neutral-600 w-12 shrink-0" />
                   </div>
                 )}
-                {isSearching && (
-                  <div className="flex flex-col gap-1 mt-1">
-                    {Array.from({ length: 8 }).map((_, i) => <TrackRowSkeleton key={i} index={i} />)}
-                  </div>
-                )}
+                {isSearching && <div className="flex flex-col gap-1 mt-1">{Array.from({ length: 8 }).map((_, i) => <TrackRowSkeleton key={i} index={i} />)}</div>}
                 {!isSearching && tracks.length > 0 && (
                   <div className="flex flex-col gap-1 mt-1">
-                    {tracks.map((track, i) => <TrackRow key={track.id} track={track} index={i} />)}
+                    {tracks.map((track, i) => (
+                      <TrackRow key={track.id} track={track} index={i}
+                        isActive={currentTrack?.url === track.url}
+                        isHovered={hoveredTrackUrl === track.url}
+                        isLoadingTrack={isLoadingTrack} isPlaying={isPlaying}
+                        isLiked={isTrackLiked(track.url)} isDownloading={!!downloadingTracks[track.url]}
+                        onPlay={() => handlePlayInContext(track, tracks)}
+                        onHoverEnter={() => setHoveredTrackUrl(track.url)}
+                        onHoverLeave={() => setHoveredTrackUrl(null)}
+                        onLike={() => toggleLikeTrack(track)}
+                        onDownload={() => handleDownload(track)}
+                        onCtx={e => openCtx(e, { type: 'track', track })}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
             </>
+          )}
 
-          ) : activeNav === 'library' ? (
+          {/* ── DOWNLOADS ── */}
+          {activeNav === 'downloads' && (
+            <DownloadsPanel
+              downloadPath={downloadPath} onPlayLocalTrack={handlePlayLocalTrack}
+              onDeleteLocalTrack={handleDeleteLocalTrack} currentTrackPath={currentLocalPath}
+              isPlaying={isPlaying} isLoadingTrack={isLoadingTrack}
+              onOpenInFileManager={handleOpenInFileManager} onExportM3u={handleExportM3u}
+              onChangeFolder={handleSelectDirectory}
+            />
+          )}
+
+          {/* ── LIBRARY ── */}
+          {activeNav === 'library' && (
             openPlaylist ? (
               <div className="flex-1 overflow-y-auto p-8 z-10 custom-scrollbar">
                 <button onClick={() => setOpenPlaylistId(null)} className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors mb-8 group">
@@ -903,19 +2045,12 @@ export default function VanguardPlayer() {
                   <span className="text-sm font-medium">Playlists</span>
                 </button>
                 <div className="flex items-end gap-6 mb-8">
-                  <div
-                    className="w-28 h-28 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center shrink-0 relative group cursor-pointer overflow-hidden"
-                    onClick={() => handleCoverUpload(openPlaylist.id)}
-                    title="Click to change cover"
-                  >
+                  <div className="w-28 h-28 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center shrink-0 relative group cursor-pointer overflow-hidden"
+                    onClick={() => handleCoverUpload(openPlaylist.id)}>
                     {getPlaylistCover(openPlaylist)
                       ? <img src={getPlaylistCover(openPlaylist)!} className="w-full h-full object-cover" alt="" />
-                      : openPlaylist.id === 'p1'
-                        ? <Heart size={48} className="text-red-400" />
-                        : <ListMusic size={48} className="text-neutral-500" />}
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                      <ImagePlus size={22} className="text-white" />
-                    </div>
+                      : openPlaylist.id === 'p1' ? <Heart size={48} className="text-red-400" /> : <ListMusic size={48} className="text-neutral-500" />}
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><ImagePlus size={22} className="text-white" /></div>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-1">Playlist</p>
@@ -927,73 +2062,62 @@ export default function VanguardPlayer() {
                         className="flex items-center gap-2 px-5 py-2 bg-[#39FF14] text-black font-bold rounded-lg hover:shadow-[0_0_20px_#39FF14] transition-all disabled:opacity-40 text-sm">
                         <Play size={16} fill="currentColor" /> Play All
                       </button>
-                      <button onClick={() => { setRenamingPlaylist(openPlaylist); setRenameValue(openPlaylist.name); setRenameDescValue(openPlaylist.description); }}
-                        className="p-2 text-neutral-500 hover:text-white transition-colors rounded-lg hover:bg-white/5">
-                        <Pencil size={16} />
-                      </button>
+                      <button onClick={() => { setRenamingPlaylist(openPlaylist); setRenameVal(openPlaylist.name); setRenameDescVal(openPlaylist.description); }}
+                        className="p-2 text-neutral-500 hover:text-white transition-colors rounded-lg hover:bg-white/5"><Pencil size={16} /></button>
                       {openPlaylist.id !== 'p1' && (
                         <button onClick={() => { deletePlaylist(openPlaylist.id); setOpenPlaylistId(null); }}
-                          className="p-2 text-neutral-500 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/10">
-                          <Trash2 size={16} />
-                        </button>
+                          className="p-2 text-neutral-500 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/10"><Trash2 size={16} /></button>
                       )}
                     </div>
                   </div>
                 </div>
-                {openPlaylist.tracks.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-40 text-neutral-700 gap-3">
-                    <Music size={32} strokeWidth={1} />
-                    <p className="text-sm">No tracks yet. Search for music and add them here.</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-1">
-                    {openPlaylist.tracks.map((t, i) => (
-                      <TrackRow key={t.url} track={t} index={i} showRemove onRemove={() => removeFromPlaylist(openPlaylist.id, t.url)} />
-                    ))}
-                  </div>
-                )}
+                {openPlaylist.tracks.length === 0
+                  ? <div className="flex flex-col items-center justify-center h-40 text-neutral-700 gap-3"><Music size={32} strokeWidth={1} /><p className="text-sm">No tracks yet.</p></div>
+                  : <div className="flex flex-col gap-1">
+                      {openPlaylist.tracks.map((t, i) => (
+                        <TrackRow key={t.url} track={t} index={i} showRemove onRemove={() => removeFromPlaylist(openPlaylist.id, t.url)}
+                          isActive={currentTrack?.url === t.url} isHovered={hoveredTrackUrl === t.url}
+                          isLoadingTrack={isLoadingTrack} isPlaying={isPlaying}
+                          isLiked={isTrackLiked(t.url)} isDownloading={!!downloadingTracks[t.url]}
+                          onPlay={() => handlePlayInContext(t, openPlaylist.tracks)}
+                          onHoverEnter={() => setHoveredTrackUrl(t.url)} onHoverLeave={() => setHoveredTrackUrl(null)}
+                          onLike={() => toggleLikeTrack(t)} onDownload={() => handleDownload(t)}
+                          onCtx={e => openCtx(e, { type: 'track', track: t })} />
+                      ))}
+                    </div>}
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto p-8 z-10 custom-scrollbar">
                 <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-3xl font-bold text-white flex items-center gap-3">
-                    <ListMusic className="text-[#39FF14] drop-shadow-[0_0_8px_#39FF14]" size={32} /> Playlists
-                  </h2>
+                  <h2 className="text-3xl font-bold text-white flex items-center gap-3"><ListMusic className="text-[#39FF14] drop-shadow-[0_0_8px_#39FF14]" size={32} /> Playlists</h2>
                   <button onClick={() => { setNewPlaylistName(''); setNewPlaylistDesc(''); setIsPlaylistModalOpen(true); }}
                     className="px-5 py-2.5 bg-transparent border border-[#39FF14]/50 text-[#39FF14] rounded-lg hover:bg-[#39FF14] hover:text-black transition-all duration-300 font-semibold flex items-center gap-2">
                     <ListMusic size={18} /> Create Playlist
                   </button>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5">
-                  {playlists.map((playlist) => {
-                    const cover = getPlaylistCover(playlist);
+                  {playlists.map(pl => {
+                    const cover = getPlaylistCover(pl);
                     return (
-                      <div key={playlist.id}
+                      <div key={pl.id}
                         className="group relative cursor-pointer bg-[#0d0d0d] p-4 rounded-xl border border-neutral-800/50 hover:border-[#39FF14]/40 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_24px_rgba(57,255,20,0.12)]"
-                        onClick={() => setOpenPlaylistId(playlist.id)}
-                        onContextMenu={(e) => openCtx(e, { type: 'playlist', playlist })}
-                      >
-                        <div className="aspect-square rounded-lg overflow-hidden bg-neutral-900/80 flex items-center justify-center mb-3 group-hover:bg-[#39FF14]/10 transition-colors duration-300 relative">
-                          {cover
-                            ? <img src={cover} className="w-full h-full object-cover" alt="" />
-                            : playlist.id === 'p1'
-                              ? <Heart size={40} className="text-red-400 group-hover:text-red-500 transition-all duration-300" />
-                              : <ListMusic size={40} className="text-neutral-500 group-hover:text-[#39FF14] transition-all duration-300" />}
-                          {playlist.tracks.length > 0 && (
-                            <div className="absolute bottom-2 right-2 bg-[#39FF14] text-black text-xs font-bold px-1.5 py-0.5 rounded-full shadow-[0_0_5px_#39FF14]">{playlist.tracks.length}</div>
-                          )}
+                        onClick={() => setOpenPlaylistId(pl.id)} onContextMenu={e => openCtx(e, { type: 'playlist', playlist: pl })}>
+                        <div className="aspect-square rounded-lg overflow-hidden bg-neutral-900/80 flex items-center justify-center mb-3 relative">
+                          {cover ? <img src={cover} className="w-full h-full object-cover" alt="" />
+                            : pl.id === 'p1' ? <Heart size={40} className="text-red-400 group-hover:text-red-500 transition-all" />
+                            : <ListMusic size={40} className="text-neutral-500 group-hover:text-[#39FF14] transition-all" />}
+                          {pl.tracks.length > 0 && <div className="absolute bottom-2 right-2 bg-[#39FF14] text-black text-xs font-bold px-1.5 py-0.5 rounded-full">{pl.tracks.length}</div>}
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                            <button onClick={(e) => { e.stopPropagation(); playAll(playlist.tracks); }}
-                              className="w-10 h-10 bg-[#39FF14] rounded-full flex items-center justify-center shadow-[0_0_15px_#39FF14] hover:scale-110 transition-transform">
+                            <button onClick={e => { e.stopPropagation(); playAll(pl.tracks); }} className="w-10 h-10 bg-[#39FF14] rounded-full flex items-center justify-center shadow-[0_0_15px_#39FF14] hover:scale-110 transition-transform">
                               <Play size={18} fill="black" className="text-black ml-0.5" />
                             </button>
                           </div>
                         </div>
-                        <h3 className="font-bold text-white group-hover:text-[#39FF14] transition-colors truncate text-sm">{playlist.name}</h3>
-                        {playlist.description && <p className="text-xs text-neutral-600 truncate mt-0.5">{playlist.description}</p>}
-                        <p className="text-xs text-neutral-600 mt-0.5">{playlist.tracks.length} tracks</p>
-                        {playlist.id !== 'p1' && (
-                          <button onClick={(e) => { e.stopPropagation(); deletePlaylist(playlist.id); }}
+                        <h3 className="font-bold text-white group-hover:text-[#39FF14] transition-colors truncate text-sm">{pl.name}</h3>
+                        {pl.description && <p className="text-xs text-neutral-600 truncate mt-0.5">{pl.description}</p>}
+                        <p className="text-xs text-neutral-600 mt-0.5">{pl.tracks.length} tracks</p>
+                        {pl.id !== 'p1' && (
+                          <button onClick={e => { e.stopPropagation(); deletePlaylist(pl.id); }}
                             className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 bg-black/60 rounded-md hover:bg-red-500/30 hover:text-red-400 text-neutral-500 transition-all">
                             <Trash2 size={12} />
                           </button>
@@ -1004,9 +2128,22 @@ export default function VanguardPlayer() {
                 </div>
               </div>
             )
-          ) : (
-            <SettingsPanel downloadQuality={downloadQuality} setDownloadQuality={setDownloadQuality}
-              downloadPath={downloadPath} handleSelectDirectory={handleSelectDirectory} />
+          )}
+
+          {/* ── SETTINGS ── */}
+          {activeNav === 'settings' && (
+            <SettingsPanel
+              downloadQuality={downloadQuality} setDownloadQuality={setDownloadQuality}
+              downloadPath={downloadPath} handleSelectDirectory={handleSelectDirectory}
+              playbackSpeed={playbackSpeed} setPlaybackSpeed={setPlaybackSpeed}
+              eq={eq} setEq={setEq}
+              sleepTimer={sleepTimer} setSleepTimerMinutes={setSleepTimerMinutes} cancelSleepTimer={cancelSleepTimer}
+              deps={deps} setDeps={setDeps} ytDlpVersion={ytDlpVersion} setYtDlpVersion={setYtDlpVersion}
+              onUpdateYtDlp={handleUpdateYtDlp} isUpdatingYtDlp={isUpdatingYtDlp}
+              onBackup={handleBackup} onRestore={handleRestore}
+              backupPath={backupPath} setBackupPath={setBackupPath}
+              showToast={showToast}
+            />
           )}
         </div>
 
@@ -1020,26 +2157,17 @@ export default function VanguardPlayer() {
                   <h3 className="font-bold text-white text-[15px]">Queue</h3>
                   {queue.length > 0 && <span className="bg-[#39FF14] text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{queue.length}</span>}
                 </div>
-                {queue.length > 0 && (
-                  <button onClick={() => { setQueue([]); showToast("Queue cleared"); }} className="text-xs text-neutral-600 hover:text-red-400 transition-colors">Clear</button>
-                )}
+                {queue.length > 0 && <button onClick={() => { setQueue([]); showToast('Queue cleared'); }} className="text-xs text-neutral-600 hover:text-red-400 transition-colors">Clear</button>}
               </div>
               {currentTrack && (
                 <div className="px-4 py-3.5 border-b border-neutral-800/40 shrink-0">
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-600 mb-3">Now Playing</p>
-                  <div className="flex items-center gap-3 rounded-lg p-2.5 cursor-pointer bg-[#39FF14]/[0.05] border border-[#39FF14]/15 hover:bg-[#39FF14]/[0.09] transition-colors"
-                    onContextMenu={(e) => openCtx(e, { type: 'track', track: currentTrack })}
-                    onClick={() => handlePlayTrack(currentTrack, true)}>
-                    <div className="relative w-11 h-11 rounded-md overflow-hidden shrink-0 border border-[#39FF14]/30">
-                      <img src={currentTrack.cover} className="w-full h-full object-cover" alt="" />
-                      {isLoadingTrack && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><div className="w-4 h-4 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" /></div>}
+                  <div className="flex items-center gap-3 rounded-lg p-2.5 bg-[#39FF14]/[0.05] border border-[#39FF14]/15">
+                    <div className="relative w-11 h-11 rounded-md overflow-hidden shrink-0 border border-[#39FF14]/30 bg-neutral-900 flex items-center justify-center">
+                      {currentTrack.cover ? <img src={currentTrack.cover} className="w-full h-full object-cover" alt="" /> : <FileMusic size={18} className="text-neutral-500" />}
                       {!isLoadingTrack && isPlaying && (
                         <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                          <div className="flex gap-[2px] items-end h-3.5">
-                            <div className="w-[2.5px] bg-[#39FF14] rounded-full animate-pulse" style={{ height: '100%' }} />
-                            <div className="w-[2.5px] bg-[#39FF14] rounded-full animate-pulse" style={{ height: '60%', animationDelay: '150ms' }} />
-                            <div className="w-[2.5px] bg-[#39FF14] rounded-full animate-pulse" style={{ height: '80%', animationDelay: '300ms' }} />
-                          </div>
+                          <div className="flex gap-[2px] items-end h-3.5">{[100, 60, 80].map((h, i) => <div key={i} className="w-[2.5px] bg-[#39FF14] rounded-full animate-pulse" style={{ height: `${h}%`, animationDelay: `${i * 150}ms` }} />)}</div>
                         </div>
                       )}
                     </div>
@@ -1051,36 +2179,28 @@ export default function VanguardPlayer() {
                 </div>
               )}
               <div className="flex-1 overflow-y-auto custom-scrollbar">
-                {queue.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-40 text-neutral-700 gap-2">
-                    <ListOrdered size={26} strokeWidth={1} />
-                    <p className="text-sm">Queue is empty</p>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-600 px-5 pt-4 pb-2">Up Next</p>
-                    {queue.map((track, i) => (
-                      <div key={i}
-                        onContextMenu={(e) => openCtx(e, { type: 'queue-track', track })}
-                        onClick={() => { setQueue(prev => prev.filter((_, idx) => idx !== i)); handlePlayTrack(track, true); }}
-                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer group transition-colors ${currentTrack?.url === track.url ? 'bg-[#39FF14]/[0.06]' : 'hover:bg-white/[0.04]'}`}>
-                        <div className="w-5 shrink-0 flex items-center justify-center">
-                          <span className="text-xs text-neutral-700 group-hover:hidden tabular-nums">{i + 1}</span>
-                          <Play size={12} fill="white" className="text-white hidden group-hover:block" />
+                {queue.length === 0
+                  ? <div className="flex flex-col items-center justify-center h-40 text-neutral-700 gap-2"><ListOrdered size={26} strokeWidth={1} /><p className="text-sm">Queue is empty</p></div>
+                  : <>
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-600 px-5 pt-4 pb-2">Up Next</p>
+                      {queue.map((track, i) => (
+                        <div key={`${track.url}-${i}`}
+                          onContextMenu={e => openCtx(e, { type: 'queue-track', track })}
+                          onClick={() => { setQueue(prev => prev.filter((_, idx) => idx !== i)); handlePlayTrack(track, true); }}
+                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer group transition-colors ${currentTrack?.url === track.url ? 'bg-[#39FF14]/[0.06]' : 'hover:bg-white/[0.04]'}`}>
+                          <div className="w-5 shrink-0 flex items-center justify-center">
+                            <span className="text-xs text-neutral-700 group-hover:hidden tabular-nums">{i + 1}</span>
+                            <Play size={12} fill="white" className="text-white hidden group-hover:block" />
+                          </div>
+                          <img src={track.cover} className="w-10 h-10 rounded-md object-cover shrink-0 border border-neutral-800/60" alt="" />
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-semibold truncate leading-snug ${currentTrack?.url === track.url ? 'text-[#39FF14]' : 'text-white'}`}>{track.title}</p>
+                            <p className="text-xs text-neutral-500 truncate mt-0.5">{track.artist}</p>
+                          </div>
+                          <button onClick={e => { e.stopPropagation(); removeFromQueue(track.url); }} className="opacity-0 group-hover:opacity-100 p-1.5 text-neutral-600 hover:text-red-400 transition-all shrink-0 rounded"><X size={13} /></button>
                         </div>
-                        <img src={track.cover} className="w-10 h-10 rounded-md object-cover shrink-0 border border-neutral-800/60" alt="" />
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-semibold truncate leading-snug ${currentTrack?.url === track.url ? 'text-[#39FF14]' : 'text-white'}`}>{track.title}</p>
-                          <p className="text-xs text-neutral-500 truncate mt-0.5">{track.artist}</p>
-                        </div>
-                        <button onClick={(e) => { e.stopPropagation(); removeFromQueue(i); }}
-                          className="opacity-0 group-hover:opacity-100 p-1.5 text-neutral-600 hover:text-red-400 transition-all shrink-0 rounded">
-                          <X size={13} />
-                        </button>
-                      </div>
-                    ))}
-                  </>
-                )}
+                      ))}
+                    </>}
               </div>
             </>
           )}
@@ -1088,132 +2208,118 @@ export default function VanguardPlayer() {
       </div>
 
       {/* ── PLAYER BAR ── */}
-      <div className="h-[88px] bg-[#080808] border-t border-neutral-800/80 flex items-center justify-between px-6 relative z-20 shadow-[0_-5px_30px_rgba(0,0,0,0.5)] shrink-0">
-        {isPlaying && !isLoadingTrack && (
-          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/50 to-transparent" />
-        )}
+      <div className="h-[88px] bg-[#0a0a0a] border-t border-neutral-800 flex items-center justify-between px-6 relative z-20 shadow-[0_-8px_40px_rgba(0,0,0,0.9)] shrink-0" style={{ backdropFilter: 'none' }}>
+        {isPlaying && !isLoadingTrack && <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/50 to-transparent" />}
         {isLoadingTrack && (
           <div className="absolute top-0 left-0 w-full h-[2px] overflow-hidden bg-neutral-800/40">
             <div className="h-full bg-[#39FF14]/80 shadow-[0_0_6px_#39FF14]" style={{ animation: 'loadbar 1.4s ease-in-out infinite', width: '35%' }} />
           </div>
         )}
 
-        {/* Left */}
+        {/* Left: track info */}
         <div className="flex items-center gap-4 w-1/4 min-w-[180px]">
           {currentTrack ? (
             <>
-              <div className="relative w-14 h-14 rounded-md overflow-hidden group border border-neutral-800 shrink-0 cursor-pointer"
-                onClick={() => setInfoModalTrack(currentTrack)}
-                onContextMenu={(e) => openCtx(e, { type: 'track', track: currentTrack })}>
-                <img src={currentTrack.cover} alt={currentTrack.title} className={`w-full h-full object-cover transition-opacity duration-300 ${isLoadingTrack ? 'opacity-40' : 'opacity-100'}`} />
-                {isLoadingTrack
-                  ? <div className="absolute inset-0 flex items-center justify-center bg-black/30"><div className="w-5 h-5 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" /></div>
-                  : <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><Info size={16} className="text-white" /></div>}
+              <div className="relative w-14 h-14 rounded-md overflow-hidden group border border-neutral-800 shrink-0 cursor-pointer bg-neutral-900 flex items-center justify-center"
+                onClick={() => { if (!currentTrack.url.startsWith('local://')) setInfoModalTrack(currentTrack); }}
+                onContextMenu={e => { if (!currentTrack.url.startsWith('local://')) openCtx(e, { type: 'track', track: currentTrack }); }}>
+                {currentTrack.cover
+                  ? <img src={currentTrack.cover} alt={currentTrack.title} className={`w-full h-full object-cover transition-opacity ${isLoadingTrack ? 'opacity-40' : 'opacity-100'}`} />
+                  : <FileMusic size={22} className="text-neutral-500" />}
+                {isLoadingTrack ? <div className="absolute inset-0 flex items-center justify-center bg-black/30"><div className="w-5 h-5 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin" /></div>
+                  : !currentTrack.url.startsWith('local://') ? <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><Info size={16} className="text-white" /></div>
+                  : null}
               </div>
               <div className="flex flex-col overflow-hidden max-w-[140px]">
-                <span className="font-bold text-white text-sm truncate cursor-pointer hover:underline" onClick={() => setInfoModalTrack(currentTrack)}>{currentTrack.title}</span>
+                <span className="font-bold text-white text-sm truncate">{currentTrack.title}</span>
                 {isLoadingTrack
                   ? <span className="text-xs text-[#39FF14]/70 flex items-center gap-1.5 mt-0.5">
-                      <span className="flex gap-[3px] items-end h-3">
-                        {[1,0.6,0.8,0.5].map((h, i) => <span key={i} className="w-[2px] bg-[#39FF14]/60 rounded-full animate-pulse inline-block" style={{ height: `${h * 100}%`, animationDelay: `${i * 120}ms` }} />)}
-                      </span>
+                      <span className="flex gap-[3px] items-end h-3">{[1, 0.6, 0.8, 0.5].map((h, i) => <span key={i} className="w-[2px] bg-[#39FF14]/60 rounded-full animate-pulse inline-block" style={{ height: `${h * 100}%`, animationDelay: `${i * 120}ms` }} />)}</span>
                       Buffering...
                     </span>
                   : <span className="text-xs text-neutral-400 truncate">{currentTrack.artist}</span>}
+                {audioInfo && !isLoadingTrack && (
+                  <span className="text-[10px] text-neutral-600 truncate mt-0.5 font-mono">
+                    {audioInfo.codec.toUpperCase()}{audioInfo.samplerate > 0 ? ` · ${Math.round(audioInfo.samplerate / 1000)}kHz` : ''}
+                  </span>
+                )}
               </div>
-              <button onClick={() => toggleLikeTrack(currentTrack)} className="ml-1 p-1.5 focus:outline-none hover:scale-110 active:scale-95 transition-transform shrink-0">
-                <Heart size={18} className={isTrackLiked(currentTrack.url) ? 'text-[#39FF14] fill-[#39FF14] drop-shadow-[0_0_8px_rgba(57,255,20,0.6)]' : 'text-neutral-400 hover:text-white'} />
-              </button>
+              {!currentTrack.url.startsWith('local://') && (
+                <button onClick={() => toggleLikeTrack(currentTrack)} className="ml-1 p-1.5 focus:outline-none hover:scale-110 active:scale-95 transition-transform shrink-0">
+                  <Heart size={18} className={isTrackLiked(currentTrack.url) ? 'text-[#39FF14] fill-[#39FF14] drop-shadow-[0_0_8px_rgba(57,255,20,0.6)]' : 'text-neutral-400 hover:text-white'} />
+                </button>
+              )}
             </>
           ) : (
             <>
               <div className="w-14 h-14 rounded-md border border-neutral-800/50 bg-[#0d0d0d] flex items-center justify-center shrink-0"><Music size={20} className="text-neutral-600" /></div>
-              <div className="flex flex-col overflow-hidden">
-                <span className="font-bold text-neutral-600 text-sm">No track selected</span>
-                <span className="text-xs text-neutral-700">---</span>
-              </div>
+              <div className="flex flex-col overflow-hidden"><span className="font-bold text-neutral-600 text-sm">No track</span><span className="text-xs text-neutral-700">---</span></div>
             </>
           )}
         </div>
 
-        {/* Center */}
+        {/* Center: controls + progress + speed */}
         <div className="flex flex-col items-center justify-center w-2/4 gap-2 max-w-2xl">
           <div className="flex items-center gap-5">
-            <button onClick={toggleShuffle} title="Shuffle" className={`transition-all duration-200 ${shuffle ? 'text-[#39FF14] drop-shadow-[0_0_6px_#39FF14]' : 'text-neutral-600 hover:text-neutral-300'}`}>
-              <Shuffle size={18} />
+            <button onClick={toggleShuffle} className={`transition-all duration-200 ${shuffle ? 'text-[#39FF14] drop-shadow-[0_0_6px_#39FF14]' : 'text-neutral-600 hover:text-neutral-300'}`}><Shuffle size={18} /></button>
+            <button onClick={handleSkipBack} className={`transition-all duration-200 ${currentTrack ? 'text-neutral-300 hover:text-[#39FF14]' : 'text-neutral-700 cursor-not-allowed'}`}><SkipBack size={22} /></button>
+            <button onClick={togglePlayPause} disabled={!currentTrack || isLoadingTrack}
+              className="w-11 h-11 flex items-center justify-center rounded-full bg-white text-black hover:bg-[#39FF14] hover:shadow-[0_0_20px_#39FF14] hover:scale-105 transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:hover:bg-white disabled:hover:shadow-none">
+              {isLoadingTrack ? <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                : isPlaying ? <Pause fill="currentColor" size={22} />
+                : <Play fill="currentColor" size={22} className="ml-0.5" />}
             </button>
-            <button onClick={handleSkipBack} className={`transition-all duration-200 ${currentTrack ? 'text-neutral-300 hover:text-[#39FF14]' : 'text-neutral-700 cursor-not-allowed'}`}>
-              <SkipBack size={22} />
-            </button>
-
-            {/* PLAY/PAUSE: isPlaying=true → show Pause; isPlaying=false → show Play */}
-            <button
-              onClick={togglePlayPause}
-              disabled={!currentTrack || isLoadingTrack}
-              className="w-11 h-11 flex items-center justify-center rounded-full bg-white text-black hover:bg-[#39FF14] hover:shadow-[0_0_20px_#39FF14] hover:scale-105 transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:hover:bg-white disabled:hover:shadow-none"
-            >
-              {isLoadingTrack
-                ? <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                : isPlaying
-                  ? <Pause fill="currentColor" size={22} />
-                  : <Play fill="currentColor" size={22} className="ml-0.5" />}
-            </button>
-
-            <button onClick={handleSkipForward} className={`transition-all duration-200 ${queue.length > 0 ? 'text-neutral-300 hover:text-[#39FF14]' : 'text-neutral-700 cursor-not-allowed'}`}>
-              <SkipForward size={22} />
-            </button>
-            <button onClick={cycleRepeat} title="Repeat" className={`transition-all duration-200 ${repeatMode !== 'off' ? 'text-[#39FF14] drop-shadow-[0_0_6px_#39FF14]' : 'text-neutral-600 hover:text-neutral-300'}`}>
+            <button onClick={handleSkipForward} className={`transition-all duration-200 ${(queue.length > 0 || playlistContextRef.current !== null || (currentTrack?.url?.startsWith('local://') && localTracksListRef.current.length > 1)) ? 'text-neutral-300 hover:text-[#39FF14]' : 'text-neutral-700 cursor-not-allowed'}`}><SkipForward size={22} /></button>
+            <button onClick={cycleRepeat} className={`transition-all duration-200 ${repeatMode !== 'off' ? 'text-[#39FF14] drop-shadow-[0_0_6px_#39FF14]' : 'text-neutral-600 hover:text-neutral-300'}`}>
               {repeatMode === 'one' ? <Repeat1 size={18} /> : <Repeat size={18} />}
             </button>
           </div>
 
-          <div className="w-full flex items-center gap-3 group mt-1">
-            <span className="text-xs font-medium text-neutral-400 tabular-nums min-w-[32px] text-right">{currentTrack ? formatTime(progressSeconds) : '0:00'}</span>
-            <div
-              ref={progressRef}
+          {/* Progress row + speed selector */}
+          <div className="w-full flex items-center gap-2 mt-1">
+            {/* Speed selector — left of time */}
+            <SpeedSelector speed={playbackSpeed} onChange={setPlaybackSpeed} />
+            <span className="text-xs font-medium text-neutral-400 tabular-nums min-w-[32px] text-right">
+              {currentTrack ? formatTime(progressSeconds) : '0:00'}
+            </span>
+            <div ref={progressRef}
               className="slider-track relative flex-1 h-1 bg-neutral-800 rounded-full cursor-pointer hover:h-1.5 transition-[height] duration-150 ease-out"
-              onMouseDown={(e) => { isDraggingProgressRef.current = true; setIsDraggingProgress(true); updateProgressFromEvent(e.clientX); }}
-            >
-              <div
-                className="absolute top-0 left-0 h-full bg-[#39FF14] rounded-full shadow-[0_0_6px_rgba(57,255,20,0.5)] pointer-events-none"
-                style={{ width: `${calculateProgressPercent()}%`, transition: isDraggingProgress ? 'none' : 'width 0.5s linear' }}
-              >
+              onMouseDown={e => { isDraggingProgressRef.current = true; setIsDraggingProgress(true); updateProgressFromEvent(e.clientX); }}>
+              {waveformData.length > 0 && <WaveformBar waveform={waveformData} progressPercent={calculateProgressPercent()} isDragging={isDraggingProgress} />}
+              <div className="absolute top-0 left-0 h-full bg-[#39FF14] rounded-full shadow-[0_0_6px_rgba(57,255,20,0.5)] pointer-events-none"
+                style={{ width: `${calculateProgressPercent()}%`, transition: isDraggingProgress ? 'none' : 'width 0.5s linear' }}>
                 <div className="slider-thumb absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-[0_0_6px_rgba(255,255,255,0.8)] opacity-0 pointer-events-none" />
               </div>
             </div>
-            <span className="text-xs font-medium text-neutral-400 tabular-nums min-w-[32px]">{currentTrack ? currentTrack.duration : '0:00'}</span>
+            <span className="text-xs font-medium text-neutral-400 tabular-nums min-w-[32px]">
+              {currentTrack ? formatTime(trackDurationSeconds || parseDurationToSeconds(currentTrack.duration)) : '0:00'}
+            </span>
           </div>
         </div>
 
-        {/* Right */}
-        <div className="w-1/4 flex items-center justify-end gap-3 group pr-4">
+        {/* Right: volume */}
+        <div className="w-1/4 flex items-center justify-end gap-3 pr-4">
           <button onClick={toggleMute} className="focus:outline-none shrink-0">
-            {volume === 0 ? <VolumeX size={18} className="text-red-500 hover:text-red-400 transition-colors" /> : <Volume2 size={18} className="text-neutral-400 hover:text-white transition-colors" />}
+            {volume === 0 ? <VolumeX size={18} className="text-red-500" /> : <Volume2 size={18} className="text-neutral-400 hover:text-white transition-colors" />}
           </button>
-          <div
-            ref={volumeRef}
+          <div ref={volumeRef}
             className="slider-track relative w-24 h-1 bg-neutral-800 rounded-full cursor-pointer hover:h-1.5 transition-[height] duration-150 ease-out"
-            onMouseDown={(e) => { setIsDraggingVolume(true); updateVolumeFromEvent(e.clientX); }}
-          >
-            <div
-              className="absolute top-0 left-0 h-full rounded-full pointer-events-none"
-              style={{ width: `${volume}%`, background: volume > 0 ? '#39FF14' : '#404040', boxShadow: volume > 0 ? '0 0 5px rgba(57,255,20,0.45)' : 'none', transition: isDraggingVolume ? 'none' : 'width 0.15s ease-out' }}
-            >
-              <div className="slider-thumb absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-[0_0_5px_rgba(255,255,255,0.7)] opacity-0 pointer-events-none" />
+            onMouseDown={e => { setIsDraggingVolume(true); updateVolumeFromEvent(e.clientX); }}>
+            <div className="absolute top-0 left-0 h-full rounded-full pointer-events-none"
+              style={{ width: `${volume}%`, background: volume > 0 ? '#39FF14' : '#404040', boxShadow: volume > 0 ? '0 0 5px rgba(57,255,20,0.45)' : 'none', transition: isDraggingVolume ? 'none' : 'width 0.15s ease-out' }}>
+              <div className="slider-thumb absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 pointer-events-none" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── UNIVERSAL CONTEXT MENU ── */}
+      {/* ── CONTEXT MENU ── */}
       {ctxMenu && (() => {
-        const track = ctxMenu.track;
-        const playlist = ctxMenu.playlist;
-
+        const { track, playlist } = ctxMenu;
         if ((ctxMenu.type === 'track' || ctxMenu.type === 'quickpick' || ctxMenu.type === 'queue-track') && track) {
           return (
             <div className="fixed z-50 bg-[#0a0a0a] border border-neutral-800 rounded-xl shadow-2xl py-2 w-64 text-sm font-medium text-neutral-300"
-              style={{ top: ctxMenu.y, left: ctxMenu.x }} onClick={(e) => e.stopPropagation()}>
+              style={{ top: ctxMenu.y, left: ctxMenu.x }} onClick={e => e.stopPropagation()}>
               <div className="px-4 py-3 border-b border-neutral-800 mb-1 flex items-center gap-3">
                 <img src={track.cover} className="w-10 h-10 rounded-md object-cover shrink-0" alt="" />
                 <div className="flex flex-col overflow-hidden">
@@ -1222,15 +2328,15 @@ export default function VanguardPlayer() {
                 </div>
               </div>
               <button onClick={() => { handlePlayTrack(track); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Play size={15} /> Play Now</button>
-              <button onClick={() => { setQueue([track, ...queue]); showToast("Playing next"); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><PlaySquare size={15} /> Play Next</button>
-              <button onClick={() => { setQueue([...queue, track]); showToast("Added to queue"); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><ListPlus size={15} /> Add to Queue</button>
+              <button onClick={() => { setQueue(p => [track, ...p]); showToast('Playing next'); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><PlaySquare size={15} /> Play Next</button>
+              <button onClick={() => { setQueue(p => [...p, track]); showToast('Added to queue'); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><ListPlus size={15} /> Add to Queue</button>
               <button onClick={() => { toggleLikeTrack(track); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors">
                 <Heart size={15} className={isTrackLiked(track.url) ? 'text-[#39FF14] fill-[#39FF14]' : ''} />
                 {isTrackLiked(track.url) ? 'Remove from Liked' : 'Add to Liked Songs'}
               </button>
-              <button onClick={(e) => { e.stopPropagation(); setAddToPlaylistTrack(track); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><PlusCircle size={15} /> Add to Playlist</button>
+              <button onClick={e => { e.stopPropagation(); setAddToPlaylistTrack(track); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><PlusCircle size={15} /> Add to Playlist</button>
               {ctxMenu.type === 'queue-track' && (
-                <button onClick={() => { removeFromQueue(queue.findIndex(q => q.url === track.url)); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-500/20 hover:text-red-400 transition-colors"><X size={15} /> Remove from Queue</button>
+                <button onClick={() => { removeFromQueue(track.url); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-500/20 hover:text-red-400 transition-colors"><X size={15} /> Remove from Queue</button>
               )}
               <div className="h-px bg-neutral-800 my-1" />
               <button onClick={() => { setInfoModalTrack(track); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Info size={15} /> Track Info</button>
@@ -1243,28 +2349,21 @@ export default function VanguardPlayer() {
             </div>
           );
         }
-
         if ((ctxMenu.type === 'playlist' || ctxMenu.type === 'sidebar-playlist') && playlist) {
           return (
             <div className="fixed z-50 bg-[#0a0a0a] border border-neutral-800 rounded-xl shadow-2xl py-2 w-56 text-sm font-medium text-neutral-300"
-              style={{ top: ctxMenu.y, left: ctxMenu.x }} onClick={(e) => e.stopPropagation()}>
+              style={{ top: ctxMenu.y, left: ctxMenu.x }} onClick={e => e.stopPropagation()}>
               <div className="px-4 py-2.5 border-b border-neutral-800 mb-1">
                 <span className="text-white font-bold text-[13px] truncate block">{playlist.name}</span>
                 <span className="text-xs text-neutral-600">{playlist.tracks.length} tracks</span>
               </div>
               <button onClick={() => { playAll(playlist.tracks); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Play size={15} /> Play All</button>
-              <button onClick={() => {
-                const shuffled = [...playlist.tracks].sort(() => Math.random() - 0.5);
-                if (shuffled.length) { handlePlayTrack(shuffled[0]); setQueue(shuffled.slice(1)); }
-                setCtxMenu(null);
-              }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Shuffle size={15} /> Shuffle Play</button>
-              <button onClick={() => { setQueue(prev => [...prev, ...playlist.tracks]); showToast(`Added ${playlist.tracks.length} tracks to queue`); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><ListPlus size={15} /> Add to Queue</button>
+              <button onClick={() => { const s = [...playlist.tracks].sort(() => Math.random() - 0.5); if (s.length) { handlePlayTrack(s[0]); setQueue(s.slice(1)); } setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Shuffle size={15} /> Shuffle Play</button>
+              <button onClick={() => { setQueue(p => [...p, ...playlist.tracks]); showToast(`Added ${playlist.tracks.length} tracks`); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><ListPlus size={15} /> Add to Queue</button>
               <div className="h-px bg-neutral-800 my-1" />
-              <button onClick={() => { setRenamingPlaylist(playlist); setRenameValue(playlist.name); setRenameDescValue(playlist.description); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Pencil size={15} /> Edit Playlist</button>
+              <button onClick={() => { setRenamingPlaylist(playlist); setRenameVal(playlist.name); setRenameDescVal(playlist.description); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Pencil size={15} /> Edit</button>
               <button onClick={() => { handleCoverUpload(playlist.id); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><ImagePlus size={15} /> Change Cover</button>
-              {playlist.id !== 'p1' && (
-                <button onClick={() => { deletePlaylist(playlist.id); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-500/20 hover:text-red-400 transition-colors"><Trash2 size={15} /> Delete Playlist</button>
-              )}
+              {playlist.id !== 'p1' && <button onClick={() => { deletePlaylist(playlist.id); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-500/20 hover:text-red-400 transition-colors"><Trash2 size={15} /> Delete</button>}
             </div>
           );
         }
@@ -1274,7 +2373,7 @@ export default function VanguardPlayer() {
       {/* ── ADD TO PLAYLIST MODAL ── */}
       {addToPlaylistTrack && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setAddToPlaylistTrack(null)}>
-          <div className="bg-[#111] border border-neutral-800 rounded-xl w-80 overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[#111] border border-neutral-800 rounded-xl w-80 overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800">
               <h3 className="font-bold text-white">Add to Playlist</h3>
               <button onClick={() => setAddToPlaylistTrack(null)} className="text-neutral-500 hover:text-white transition-colors"><X size={18} /></button>
@@ -1311,16 +2410,15 @@ export default function VanguardPlayer() {
               <button onClick={() => setInfoModalTrack(null)} className="absolute top-4 right-4 bg-black/60 p-2 rounded-full hover:bg-white hover:text-black transition-colors"><X size={18} /></button>
             </div>
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-gradient-to-b from-[#111] to-[#0a0a0a]">
-              <div className="flex gap-2 mb-6">
+              <div className="flex gap-2 mb-6 flex-wrap">
                 <span className="bg-[#1a1a1a] px-3 py-1.5 rounded-full text-xs font-bold border border-neutral-800 flex items-center gap-2 text-cyan-400"><Clock size={12} /> {infoModalTrack.duration}</span>
                 <span className="bg-[#1a1a1a] px-3 py-1.5 rounded-full text-xs font-bold border border-neutral-800 flex items-center gap-2 text-red-500"><Youtube size={12} /> YouTube</span>
+                {audioInfo && <span className="bg-[#1a1a1a] px-3 py-1.5 rounded-full text-xs font-bold border border-neutral-800 flex items-center gap-2 text-emerald-400"><BarChart2 size={12} /> {audioInfo.codec.toUpperCase()}{audioInfo.bitrate > 0 ? ` ${Math.round(audioInfo.bitrate / 1000)}kbps` : ''}</span>}
               </div>
               <div className="space-y-2 mb-6">
                 {[
                   { icon: Music, label: 'Title', value: infoModalTrack.title, color: 'text-blue-400', bg: 'bg-blue-500/10' },
                   { icon: FileBadge2, label: 'Artist', value: infoModalTrack.artist, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-                  { icon: Disc, label: 'Album', value: 'Unknown', color: 'text-pink-400', bg: 'bg-pink-500/10' },
-                  { icon: Hash, label: 'Genre', value: 'VIDEO', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
                 ].map(({ icon: Icon, label, value, color, bg }) => (
                   <div key={label} className="flex items-center gap-4 p-3 bg-[#111] rounded-xl border border-neutral-800/50">
                     <div className={`w-10 h-10 rounded-lg ${bg} flex items-center justify-center ${color}`}><Icon size={20} /></div>
@@ -1331,15 +2429,8 @@ export default function VanguardPlayer() {
                   </div>
                 ))}
               </div>
-              <div className="flex items-center gap-4 p-3 bg-[#111] rounded-xl border border-neutral-800/50 mb-6">
-                <div className="w-10 h-10 rounded-lg bg-neutral-800 flex items-center justify-center text-neutral-400"><FileCode2 size={20} /></div>
-                <div className="flex flex-col overflow-hidden">
-                  <span className="text-xs text-neutral-500">Media ID</span>
-                  <span className="font-mono text-sm text-neutral-300">{infoModalTrack.url.split('v=')[1] || 'Unknown'}</span>
-                </div>
-              </div>
               <div className="grid grid-cols-2 gap-3 mb-3">
-                <button onClick={() => copyToClipboard(infoModalTrack.url.split('v=')[1])} className="p-3 bg-[#111] rounded-xl hover:bg-neutral-800 transition-colors border border-neutral-800 flex items-center justify-center gap-2 text-sm font-medium"><Copy size={16} /> Copy ID</button>
+                <button onClick={() => copyToClipboard(infoModalTrack.url.split('v=')[1] || '')} className="p-3 bg-[#111] rounded-xl hover:bg-neutral-800 transition-colors border border-neutral-800 flex items-center justify-center gap-2 text-sm font-medium"><Copy size={16} /> Copy ID</button>
                 <button onClick={() => copyToClipboard(infoModalTrack.url)} className="p-3 bg-[#111] rounded-xl hover:bg-neutral-800 transition-colors border border-neutral-800 flex items-center justify-center gap-2 text-sm font-medium"><Share2 size={16} /> Copy Link</button>
               </div>
               <button onClick={() => openInYouTube(infoModalTrack.url)} className="w-full p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20 transition-colors border border-red-500/20 flex items-center justify-center gap-2 text-sm font-bold"><ExternalLink size={18} /> Open in YouTube</button>
@@ -1356,16 +2447,14 @@ export default function VanguardPlayer() {
             <div className="flex flex-col gap-3 mb-6">
               <div>
                 <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1.5 block">Name</label>
-                <input autoFocus type="text" value={newPlaylistName} onChange={(e) => setNewPlaylistName(e.target.value)} placeholder="e.g. Cyberpunk Mix"
-                  className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] transition-all placeholder-neutral-700"
-                  onKeyDown={(e) => e.key === 'Enter' && confirmCreatePlaylist()} />
+                <input autoFocus type="text" value={newPlaylistName} onChange={e => setNewPlaylistName(e.target.value)} placeholder="e.g. Cyberpunk Mix"
+                  className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] placeholder-neutral-700"
+                  onKeyDown={e => e.key === 'Enter' && confirmCreatePlaylist()} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                  <AlignLeft size={11} /> Description <span className="text-neutral-700 normal-case font-normal">(optional)</span>
-                </label>
-                <textarea value={newPlaylistDesc} onChange={(e) => setNewPlaylistDesc(e.target.value)} placeholder="What's this playlist about?" rows={2}
-                  className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] transition-all placeholder-neutral-700 resize-none text-sm" />
+                <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><AlignLeft size={11} /> Description <span className="text-neutral-700 normal-case font-normal">(optional)</span></label>
+                <textarea value={newPlaylistDesc} onChange={e => setNewPlaylistDesc(e.target.value)} placeholder="What's this playlist about?" rows={2}
+                  className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] placeholder-neutral-700 resize-none text-sm" />
               </div>
             </div>
             <div className="flex justify-end gap-3">
@@ -1382,17 +2471,11 @@ export default function VanguardPlayer() {
           <div className="bg-[#111] border border-neutral-800 p-6 rounded-xl w-96 shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-5">Edit Playlist</h3>
             <div className="flex flex-col gap-3 mb-6">
-              <div>
-                <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1.5 block">Name</label>
-                <input autoFocus type="text" value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
-                  className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] transition-all"
-                  onKeyDown={(e) => { if (e.key === 'Enter') confirmRenamePlaylist(); if (e.key === 'Escape') setRenamingPlaylist(null); }} />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><AlignLeft size={11} /> Description</label>
-                <textarea value={renameDescValue} onChange={(e) => setRenameDescValue(e.target.value)} rows={2}
-                  className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] transition-all resize-none text-sm" />
-              </div>
+              <input autoFocus type="text" value={renameVal} onChange={e => setRenameVal(e.target.value)}
+                className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] transition-all"
+                onKeyDown={e => { if (e.key === 'Enter') confirmRenamePlaylist(); if (e.key === 'Escape') setRenamingPlaylist(null); }} />
+              <textarea value={renameDescVal} onChange={e => setRenameDescVal(e.target.value)} rows={2}
+                className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] resize-none text-sm" />
             </div>
             <div className="flex justify-end gap-3">
               <button onClick={() => setRenamingPlaylist(null)} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">Cancel</button>
