@@ -65,12 +65,13 @@ type CtxMenu = {
   playlist?: Playlist;
 };
 
-type DepsStatus = { mpv: boolean; yt_dlp: boolean; ffprobe: boolean };
+type DepsStatus = { mpv: boolean; yt_dlp: boolean; ffprobe: boolean; spotdl: boolean };
 type AudioInfo = { codec: string; bitrate: number; samplerate: number; channels: number };
 type DiskInfo = { used_bytes: number; track_count: number };
 type BatchProgress = { index: number; total: number; title: string; success: boolean; error?: string };
 type InstallResult = { success: boolean; message: string };
 type SettingsTab = 'dependencies' | 'downloads' | 'storage';
+type NavPage = 'home' | 'downloads' | 'settings' | 'library' | 'stats';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function parseDurationToSeconds(d: string): number {
@@ -187,15 +188,25 @@ const SleepTimerPopover = React.memo(({
 // ─── DEPS BANNER ─────────────────────────────────────────────────────────────
 const DepsBanner = React.memo(({ deps, onGoToSettings }: { deps: DepsStatus | null; onGoToSettings: () => void }) => {
   if (!deps) return null;
-  const missing = [!deps.mpv && 'mpv', !deps.yt_dlp && 'yt-dlp'].filter(Boolean) as string[];
-  if (missing.length === 0) return null;
+  const playbackMissing = [!deps.mpv && 'mpv', !deps.yt_dlp && 'yt-dlp'].filter(Boolean) as string[];
+  const spotdlMissing = !deps.spotdl;
+  if (playbackMissing.length === 0 && !spotdlMissing) return null;
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-500/10 border-b border-amber-500/20 text-amber-400 text-xs font-medium shrink-0 z-30">
-      <WifiOff size={13} className="shrink-0" />
-      <span className="flex-1"><strong>{missing.join(', ')}</strong> not found — playback won't work.</span>
-      <button onClick={onGoToSettings} className="shrink-0 px-2.5 py-1 bg-amber-500/20 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 transition-colors">
-        Install →
-      </button>
+    <div className="flex flex-col shrink-0 z-30">
+      {playbackMissing.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-red-400 text-xs font-medium">
+          <WifiOff size={13} className="shrink-0" />
+          <span className="flex-1"><strong>{playbackMissing.join(', ')}</strong> not found — playback won't work.</span>
+          <button onClick={onGoToSettings} className="shrink-0 px-2.5 py-1 bg-red-500/20 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors">Install →</button>
+        </div>
+      )}
+      {spotdlMissing && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-400 text-xs font-medium">
+          <AlertTriangle size={13} className="shrink-0" />
+          <span className="flex-1"><strong>spotdl</strong> not installed — Spotify playlists can't be imported.</span>
+          <button onClick={onGoToSettings} className="shrink-0 px-2.5 py-1 bg-amber-500/20 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 transition-colors">Install →</button>
+        </div>
+      )}
     </div>
   );
 });
@@ -610,8 +621,14 @@ function SettingsPanel({
   sleepTimer, setSleepTimerMinutes, cancelSleepTimer,
   deps, setDeps, ytDlpVersion, setYtDlpVersion,
   onUpdateYtDlp, isUpdatingYtDlp,
+  spotdlVersion, setSpotdlVersion,
+  onInstallSpotdl, onUpdateSpotdl,
+  isInstallingSpotdl, isUpdatingSpotdl, spotdlLog,
   onBackup, onRestore,
   backupPath, setBackupPath,
+  cachePath, setCachePath,
+  crossfadeSeconds, setCrossfadeSeconds,
+  pitchSemitones, setPitchSemitones,
   showToast,
 }: {
   downloadQuality: string; setDownloadQuality: (q: string) => void;
@@ -622,18 +639,30 @@ function SettingsPanel({
   deps: DepsStatus | null; setDeps: (d: DepsStatus) => void;
   ytDlpVersion: string; setYtDlpVersion: (v: string) => void;
   onUpdateYtDlp: () => void; isUpdatingYtDlp: boolean;
+  spotdlVersion: string; setSpotdlVersion: (v: string) => void;
+  onInstallSpotdl: () => void; onUpdateSpotdl: () => void;
+  isInstallingSpotdl: boolean; isUpdatingSpotdl: boolean; spotdlLog: string;
   onBackup: () => void; onRestore: () => void;
   backupPath: string; setBackupPath: (p: string) => void;
+  cachePath: string; setCachePath: (p: string) => void;
+  crossfadeSeconds: number; setCrossfadeSeconds: (s: number) => void;
+  pitchSemitones: number; setPitchSemitones: (s: number) => void;
   showToast: (m: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('dependencies');
   const [isInstalling, setIsInstalling] = useState(false);
   const [installLog, setInstallLog] = useState('');
   const [diskInfo, setDiskInfo] = useState<DiskInfo | null>(null);
+  const [cacheSize, setCacheSize] = useState<number>(0);
 
   useEffect(() => {
     invoke<DiskInfo>('get_disk_usage', { path: downloadPath }).then(setDiskInfo).catch(() => {});
   }, [downloadPath]);
+  useEffect(() => {
+    invoke<number>('get_cache_size').then(setCacheSize).catch(() => {});
+  }, [cachePath]);
+
+  const fmtBytes = (b: number) => b < 1024 * 1024 ? `${(b/1024).toFixed(1)} KB` : b < 1024**3 ? `${(b/1024**2).toFixed(1)} MB` : `${(b/1024**3).toFixed(2)} GB`;
 
   const handleInstall = async () => {
     setIsInstalling(true);
@@ -645,6 +674,7 @@ function SettingsPanel({
       // Re-check
       const d: DepsStatus = await invoke('check_dependencies');
       setDeps(d);
+      invoke<string>('get_spotdl_version').then(setSpotdlVersion).catch(() => {});
       const v: string = await invoke('get_yt_dlp_version').catch(() => '');
       setYtDlpVersion(v);
     } catch (e) {
@@ -660,7 +690,7 @@ function SettingsPanel({
     { id: 'storage', label: 'Storage', icon: <Database size={15} /> },
   ];
 
-  const allInstalled = deps?.mpv && deps?.yt_dlp && deps?.ffprobe;
+  const allInstalled = deps?.mpv && deps?.yt_dlp && deps?.ffprobe && deps?.spotdl;
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -694,11 +724,12 @@ function SettingsPanel({
             </div>
 
             {/* Status cards */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               {([
                 { key: 'mpv', label: 'mpv', desc: 'Audio playback', ok: deps?.mpv },
                 { key: 'yt_dlp', label: 'yt-dlp', desc: 'YouTube streaming', ok: deps?.yt_dlp },
                 { key: 'ffprobe', label: 'ffprobe', desc: 'Metadata & waveforms', ok: deps?.ffprobe },
+                { key: 'spotdl', label: 'spotdl', desc: 'Spotify import', ok: deps?.spotdl },
               ] as { key: string; label: string; desc: string; ok: boolean | undefined }[]).map(d => (
                 <div key={d.key} className={`p-4 rounded-xl border transition-all ${d.ok ? 'border-[#39FF14]/20 bg-[#39FF14]/[0.04]' : 'border-red-500/20 bg-red-500/[0.04]'}`}>
                   <div className="flex items-center justify-between mb-2">
@@ -717,12 +748,12 @@ function SettingsPanel({
               ))}
             </div>
 
-            {/* yt-dlp version + update */}
-            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+            {/* yt-dlp + spotdl version rows */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden divide-y divide-neutral-800/60">
               <div className="px-5 py-4 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-white">yt-dlp version</p>
-                  <p className="text-xs text-neutral-600 font-mono mt-0.5">{ytDlpVersion || (deps?.yt_dlp ? 'Loading...' : 'Not installed')}</p>
+                  <p className="text-sm font-semibold text-white">yt-dlp</p>
+                  <p className="text-xs text-neutral-600 font-mono mt-0.5">{ytDlpVersion || (deps?.yt_dlp ? 'checking...' : 'Not installed')}</p>
                 </div>
                 <button onClick={onUpdateYtDlp} disabled={isUpdatingYtDlp || !deps?.yt_dlp}
                   className="flex items-center gap-2 px-4 py-2 bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] rounded-lg text-sm font-semibold hover:bg-[#39FF14]/20 disabled:opacity-40 transition-colors">
@@ -730,6 +761,35 @@ function SettingsPanel({
                   Update
                 </button>
               </div>
+              <div className="px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white flex items-center gap-2">
+                    spotdl
+                    <span className="text-[10px] font-normal px-1.5 py-0.5 rounded-full bg-[#39FF14]/10 text-[#39FF14] border border-[#39FF14]/20">Spotify import</span>
+                  </p>
+                  <p className="text-xs text-neutral-600 font-mono mt-0.5">{spotdlVersion || (deps?.spotdl ? 'checking...' : 'Not installed — required for Spotify import')}</p>
+                </div>
+                <div className="flex gap-2">
+                  {!deps?.spotdl ? (
+                    <button onClick={onInstallSpotdl} disabled={isInstallingSpotdl}
+                      className="flex items-center gap-2 px-4 py-2 bg-[#39FF14] text-black rounded-lg text-sm font-bold hover:shadow-[0_0_15px_#39FF14] disabled:opacity-40 transition-all">
+                      {isInstallingSpotdl ? <div className="w-3.5 h-3.5 border-2 border-black/40 border-t-transparent rounded-full animate-spin" /> : <Download size={14} />}
+                      Install
+                    </button>
+                  ) : (
+                    <button onClick={onUpdateSpotdl} disabled={isUpdatingSpotdl}
+                      className="flex items-center gap-2 px-4 py-2 bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] rounded-lg text-sm font-semibold hover:bg-[#39FF14]/20 disabled:opacity-40 transition-colors">
+                      {isUpdatingSpotdl ? <div className="w-3.5 h-3.5 border-2 border-[#39FF14]/70 border-t-transparent rounded-full animate-spin" /> : <RotateCcw size={14} />}
+                      Update
+                    </button>
+                  )}
+                </div>
+              </div>
+              {spotdlLog && (
+                <div className="px-5 py-3 border-t border-neutral-800/40 bg-black/40">
+                  <p className="text-[11px] font-mono text-neutral-400 whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{spotdlLog}</p>
+                </div>
+              )}
             </div>
 
             {/* Install button */}
@@ -739,7 +799,7 @@ function SettingsPanel({
                   <Terminal size={15} className="text-[#39FF14]" /> Install All Dependencies
                 </h3>
                 <p className="text-xs text-neutral-600 mt-1">
-                  Installs mpv, ffmpeg, and yt-dlp using your system's package manager (apt, pacman, dnf, winget, brew).
+                  Installs mpv, ffmpeg, yt-dlp, and spotdl using your system's package manager (apt, pacman, dnf, winget, brew).
                 </p>
               </div>
               <div className="px-5 py-4 flex flex-col gap-3">
@@ -826,6 +886,41 @@ function SettingsPanel({
             <div>
               <h2 className="text-xl font-bold text-white mb-1">Storage</h2>
               <p className="text-sm text-neutral-500">Backup and restore your playlists, queue, settings, and history.</p>
+            </div>
+
+            {/* Stream Cache Location */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Zap size={14} className="text-[#39FF14]" /> Stream Cache</h3>
+                <p className="text-xs text-neutral-600 mt-0.5">Audio chunks cached to disk for instant replay and faster loading. Default: Documents/VanguardCache</p>
+              </div>
+              <div className="flex items-center justify-between px-5 py-4 cursor-pointer group hover:bg-white/[0.02] transition-colors"
+                onClick={async () => {
+                  try {
+                    const sel = await (await import('@tauri-apps/plugin-dialog')).open({ directory: true, multiple: false, defaultPath: cachePath });
+                    if (sel) setCachePath(sel as string);
+                  } catch {}
+                }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-mono text-neutral-300 truncate">{cachePath || 'Documents/VanguardCache'}</p>
+                  <p className="text-xs text-neutral-600 mt-1">Cache size: <span className="text-neutral-400">{fmtBytes(cacheSize)}</span></p>
+                </div>
+                <button className="p-2 ml-4 text-neutral-600 group-hover:text-[#39FF14] transition-colors shrink-0 rounded-lg"><FolderOpen size={17} /></button>
+              </div>
+              <div className="px-5 py-3 border-t border-neutral-800/40 flex items-center justify-between">
+                <p className="text-xs text-neutral-600">Clear to free disk space</p>
+                <button
+                  onClick={async () => {
+                    try {
+                      const freed = await invoke<number>('clear_cache');
+                      setCacheSize(0);
+                      showToast(`Cache cleared — freed ${fmtBytes(freed)}`);
+                    } catch (e) { showToast(`Failed: ${e}`); }
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors">
+                  Clear Cache
+                </button>
+              </div>
             </div>
 
             {/* Backup Location — explicit picker */}
@@ -1175,6 +1270,8 @@ export default function VanguardPlayer() {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
   const [renamingPlaylist, setRenamingPlaylist] = useState<Playlist | null>(null);
+  const [showDuplicatesPlaylist, setShowDuplicatesPlaylist] = useState<Playlist | null>(null);
+  const [bulkEditPlaylist, setBulkEditPlaylist] = useState<Playlist | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const [renameDescVal, setRenameDescVal] = useState('');
   const [addToPlaylistTrack, setAddToPlaylistTrack] = useState<Track | null>(null);
@@ -1194,10 +1291,33 @@ export default function VanguardPlayer() {
   const [downloadPath, setDownloadPath] = useState<string>(() => loadLS('vg_dlPath', '~/Downloads'));
   const [backupPath, setBackupPathState] = useState<string>(() => loadLS('vg_backupPath', ''));
   const setBackupPath = useCallback((p: string) => { setBackupPathState(p); saveLS('vg_backupPath', p); }, []);
+  const [cachePath, setCachePathState] = useState<string>(() => loadLS('vg_cachePath', ''));
+  const setCachePath = useCallback((p: string) => {
+    setCachePathState(p);
+    saveLS('vg_cachePath', p);
+    invoke('set_cache_dir', { path: p }).catch(() => {});
+  }, []);
   const [playbackSpeed, setPlaybackSpeedState] = useState<number>(() => loadLS('vg_speed', 1));
+  const [pitchSemitones, setPitchSemitonesState] = useState<number>(() => loadLS('vg_pitch', 0));
+  const setPitchSemitones = useCallback((s: number) => {
+    setPitchSemitonesState(s);
+    saveLS('vg_pitch', s);
+    invoke('set_pitch', { semitones: s }).catch(() => {});
+  }, []);
+  const [crossfadeSeconds, setCrossfadeSecondsState] = useState<number>(() => loadLS('vg_crossfade', 0));
+  const setCrossfadeSeconds = useCallback((s: number) => {
+    setCrossfadeSecondsState(s);
+    saveLS('vg_crossfade', s);
+  }, []);
+  const [abLoop, setAbLoop] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
+  const abLoopRef = useRef<{ a: number | null; b: number | null }>({ a: null, b: null });
   const [eq, setEqState] = useState<{ bass: number; mid: number; treble: number }>(() => loadLS('vg_eq', { bass: 0, mid: 0, treble: 0 }));
   const [deps, setDeps] = useState<DepsStatus | null>(null);
   const [ytDlpVersion, setYtDlpVersion] = useState('');
+  const [spotdlVersion, setSpotdlVersion] = useState('');
+  const [isInstallingSpotdl, setIsInstallingSpotdl] = useState(false);
+  const [isUpdatingSpotdl, setIsUpdatingSpotdl] = useState(false);
+  const [spotdlLog, setSpotdlLog] = useState('');
   const [isUpdatingYtDlp, setIsUpdatingYtDlp] = useState(false);
   const [sleepTimer, setSleepTimerState] = useState(-1);
   const [audioInfo, setAudioInfo] = useState<AudioInfo | null>(null);
@@ -1229,7 +1349,27 @@ export default function VanguardPlayer() {
   useEffect(() => { saveLS('vg_shuffle', shuffle); }, [shuffle]);
   useEffect(() => { saveLS('vg_repeatMode', repeatMode); }, [repeatMode]);
   useEffect(() => { saveLS('vg_volume', volume); }, [volume]);
+  // Init cache dir — load from localStorage or get default from Rust
+  useEffect(() => {
+    const saved = loadLS('vg_cachePath', '');
+    if (saved) {
+      invoke('set_cache_dir', { path: saved }).catch(() => {});
+    } else {
+      invoke<string>('get_cache_dir').then(d => { setCachePathState(d); saveLS('vg_cachePath', d); }).catch(() => {});
+    }
+  }, []);
   useEffect(() => { saveLS('vg_currentTrack', currentTrack); }, [currentTrack]);
+  // Save position on page close/refresh
+  useEffect(() => {
+    const save = () => { saveLS('vg_lastPosition', progressSecondsRef.current); };
+    const clearRpc = () => { invoke('clear_discord_rpc').catch(() => {}); };
+    window.addEventListener('beforeunload', clearRpc);
+    window.addEventListener('beforeunload', save);
+    return () => {
+      window.removeEventListener('beforeunload', save);
+      window.removeEventListener('beforeunload', clearRpc);
+    };
+  }, []);
   useEffect(() => { saveLS('vg_searchHistory', searchHistory); }, [searchHistory]);
   useEffect(() => { saveLS('vg_dlQuality', downloadQuality); }, [downloadQuality]);
   useEffect(() => { saveLS('vg_dlPath', downloadPath); }, [downloadPath]);
@@ -1255,6 +1395,7 @@ export default function VanguardPlayer() {
   useEffect(() => {
     invoke<DepsStatus>('check_dependencies').then(setDeps).catch(() => {});
     invoke<string>('get_yt_dlp_version').then(setYtDlpVersion).catch(() => {});
+    invoke<string>('get_spotdl_version').then(setSpotdlVersion).catch(() => {});
   }, []);
 
   // ── Sleep timer poll — actually pauses when expired ──────────────────────
@@ -1336,6 +1477,7 @@ export default function VanguardPlayer() {
       setYtDlpVersion(v);
       const d: DepsStatus = await invoke('check_dependencies');
       setDeps(d);
+      invoke<string>('get_spotdl_version').then(setSpotdlVersion).catch(() => {});
     } catch (e) { showToast(`Update failed: ${e}`); }
     finally { setIsUpdatingYtDlp(false); }
   }, [showToast]);
@@ -1407,6 +1549,7 @@ export default function VanguardPlayer() {
   // ── PLAY YOUTUBE ──────────────────────────────────────────────────────────────
   const handlePlayTrack = useCallback(async (track: Track, fromQueue = false) => {
     endDetectedRef.current = false;
+    setAbLoop({ a: null, b: null }); abLoopRef.current = { a: null, b: null };
     setCurrentTrack(track); currentTrackRef.current = track;
     setCurrentLocalPath(null); currentLocalPathRef.current = null;
     setIsLoadingTrack(true); setIsPlayingSync(false);
@@ -1429,6 +1572,7 @@ export default function VanguardPlayer() {
       await invoke('play_audio', { url: track.url });
       await invoke('set_volume', { volume });
       await invoke('set_playback_speed', { speed: playbackSpeed });
+      if (pitchSemitones !== 0) { invoke('set_pitch', { semitones: pitchSemitones }).catch(() => {}); }
       await invoke('set_equalizer', { bass: eq.bass, mid: eq.mid, treble: eq.treble });
 
       let waited = 0;
@@ -1447,9 +1591,11 @@ export default function VanguardPlayer() {
       });
 
       setIsPlayingSync(true);
+      // Discord RPC — fire and forget, never block playback
+      invoke('update_discord_rpc', { title: track.title, artist: track.artist }).catch(() => {});
     } catch { setIsPlayingSync(false); }
     finally { setIsLoadingTrack(false); }
-  }, [volume, playbackSpeed, eq, setIsPlayingSync]);
+  }, [volume, playbackSpeed, eq, pitchSemitones, setIsPlayingSync]);
 
   // ── PLAY LOCAL ────────────────────────────────────────────────────────────────
   const handlePlayLocalTrack = useCallback(async (local: LocalTrack, localList?: LocalTrack[], localIndex?: number) => {
@@ -1505,6 +1651,8 @@ export default function VanguardPlayer() {
           if (s.duration > 0) { setTrackDurationSeconds(s.duration); trackDurationRef.current = s.duration; }
         } catch {}
       }, 500);
+      // Discord RPC for local track
+      invoke('update_discord_rpc', { title: synth.title, artist: synth.artist }).catch(() => {});
     } catch { setIsPlayingSync(false); }
     finally { setIsLoadingTrack(false); }
   }, [volume, playbackSpeed, setIsPlayingSync]);
@@ -1536,8 +1684,35 @@ export default function VanguardPlayer() {
   // ── Controls ──────────────────────────────────────────────────────────────────
   const togglePlayPause = useCallback(async () => {
     if (!currentTrackRef.current) return;
+    // Cold start: mpv not running — need to fully re-play the track from saved position
+    if (!isPlayingRef.current) {
+      try {
+        const state: { playing: boolean; paused: boolean; position: number; duration: number; eof_reached: boolean } =
+          await invoke('get_playback_state');
+        // If position is 0 and not paused, mpv is dead — resume from saved position
+        if (state.position === 0 && !state.paused) {
+          const savedPos: number = loadLS('vg_lastPosition', 0);
+          await handlePlayTrack(currentTrackRef.current, true);
+          if (savedPos > 3) {
+            // Wait for track to start then seek
+            await new Promise(r => setTimeout(r, 1500));
+            await invoke('seek_audio', { time: savedPos }).catch(() => {});
+          }
+          return;
+        }
+      } catch {
+        // mpv not running at all — full resume
+        const savedPos: number = loadLS('vg_lastPosition', 0);
+        await handlePlayTrack(currentTrackRef.current, true);
+        if (savedPos > 3) {
+          await new Promise(r => setTimeout(r, 1500));
+          await invoke('seek_audio', { time: savedPos }).catch(() => {});
+        }
+        return;
+      }
+    }
     try { await invoke('pause_audio'); setIsPlayingSync(!isPlayingRef.current); } catch {}
-  }, [setIsPlayingSync]);
+  }, [setIsPlayingSync, handlePlayTrack]);
 
   const toggleMute = useCallback(async () => {
     const v = volume === 0 ? previousVolume : 0;
@@ -1769,6 +1944,15 @@ export default function VanguardPlayer() {
 
         progressSecondsRef.current = s.position;
         setProgressSeconds(s.position);
+        // Persist position every ~5 seconds for resume-on-reopen
+        if (Math.floor(s.position) % 5 === 0 && s.position > 3) {
+          saveLS('vg_lastPosition', s.position);
+        }
+        // A-B loop: if B point set and we've passed it, jump back to A
+        const ab = abLoopRef.current;
+        if (ab.a !== null && ab.b !== null && s.position >= ab.b) {
+          invoke('seek_audio', { time: ab.a }).catch(() => {});
+        }
 
         if (s.duration > 0 && s.duration !== trackDurationRef.current) {
           trackDurationRef.current = s.duration; setTrackDurationSeconds(s.duration);
@@ -1780,6 +1964,27 @@ export default function VanguardPlayer() {
           if (playing !== isPlayingRef.current) setIsPlayingSync(playing);
         }
 
+        // Crossfade: when within crossfadeSeconds of end, trigger next track early
+        if (!s.eof_reached && !endDetectedRef.current && s.position > 3 && s.duration > 0
+            && crossfadeSeconds > 0 && s.position >= s.duration - crossfadeSeconds - 0.5
+            && s.position < s.duration - 0.2) {
+          // Start fade out via volume ramp, then trigger track end
+          const fadeSteps = Math.max(1, Math.round(crossfadeSeconds * 5));
+          const volStep = (volume / fadeSteps);
+          let step = 0;
+          const fadeInterval = setInterval(() => {
+            step++;
+            const newVol = Math.max(0, volume - volStep * step);
+            invoke('set_volume', { volume: newVol }).catch(() => {});
+            if (step >= fadeSteps) {
+              clearInterval(fadeInterval);
+              invoke('set_volume', { volume }).catch(() => {}); // restore after next track loads
+              if (!endDetectedRef.current) handleTrackEnd();
+            }
+          }, (crossfadeSeconds * 1000) / fadeSteps);
+          // endDetected already set above to prevent double-fire
+          return;
+        }
         // EOF detection — only fire if position is meaningful (> 3s to avoid false positives on load)
         if (s.eof_reached && !endDetectedRef.current && s.position > 3) {
           handleTrackEnd();
@@ -2010,7 +2215,7 @@ export default function VanguardPlayer() {
                   <p className="font-bold text-white mb-2 flex items-center gap-2 text-sm"><AlertTriangle size={15} className="text-amber-400" /> Getting Started</p>
                   <p className="text-xs text-neutral-300 leading-relaxed">Before using Vanguard, install the required dependencies:</p>
                   <p className="mt-2.5 text-[#39FF14] font-bold text-sm">Settings → Dependencies → Install</p>
-                  <p className="mt-2 text-xs text-neutral-500">Requires: mpv · yt-dlp · ffprobe</p>
+                  <p className="mt-2 text-xs text-neutral-500">Requires: mpv · yt-dlp · ffprobe · spotdl</p>
                   <button onClick={() => { navigateTo('settings'); setShowInfoHint(false); }}
                     className="mt-3 w-full py-2 bg-amber-500/15 border border-amber-500/30 text-amber-400 rounded-lg text-xs font-semibold hover:bg-amber-500/25 transition-colors">
                     Go to Settings →
@@ -2050,6 +2255,7 @@ export default function VanguardPlayer() {
             {([
               { id: 'home', label: 'Home', icon: Home },
               { id: 'downloads', label: 'Offline', icon: HardDrive },
+              { id: 'stats', label: 'Stats', icon: BarChart2 },
               { id: 'settings', label: 'Settings', icon: Settings },
             ] as { id: string; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[]).map(({ id, label, icon: Icon }) => (
               <button key={id} onClick={() => navigateTo(id)}
@@ -2211,7 +2417,7 @@ export default function VanguardPlayer() {
                   </div>
                 )}
 
-                {/* Quick picks */}
+              {/* Quick picks */}
                 {!isSearching && tracks.length === 0 && quickPicks.length > 0 && (
                   <div className="mb-6 pt-1">
                     <div className="flex items-center gap-3 mb-3">
@@ -2395,6 +2601,86 @@ export default function VanguardPlayer() {
           )}
 
           {/* ── SETTINGS ── */}
+          {activeNav === 'stats' && (() => {
+            const totalSecs = playHistory.reduce((sum, t) => sum + parseDurationToSeconds(t.duration || '0:00'), 0);
+            const totalHours = (totalSecs / 3600).toFixed(1);
+            const artistCounts: Record<string, number> = {};
+            playHistory.forEach(t => { if (t.artist) artistCounts[t.artist] = (artistCounts[t.artist] || 0) + 1; });
+            const topArtists = Object.entries(artistCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            const trackCounts: Record<string, { track: Track; count: number }> = {};
+            playHistory.forEach(t => {
+              const k = t.url;
+              if (!trackCounts[k]) trackCounts[k] = { track: t, count: 0 };
+              trackCounts[k].count++;
+            });
+            const topTracks = Object.values(trackCounts).sort((a, b) => b.count - a.count).slice(0, 5);
+            return (
+              <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                <div>
+                  <h1 className="text-2xl font-bold text-white">Your Stats</h1>
+                  <p className="text-sm text-neutral-500 mt-1">Based on your listening history.</p>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  {[
+                    { label: 'Tracks played', value: playHistory.length, icon: Music },
+                    { label: 'Total listen time', value: `${totalHours}h`, icon: Clock },
+                    { label: 'Artists heard', value: Object.keys(artistCounts).length, icon: BarChart2 },
+                  ].map(({ label, value, icon: Icon }) => (
+                    <div key={label} className="p-5 rounded-xl border border-[#39FF14]/15 bg-[#39FF14]/[0.04]">
+                      <Icon size={18} className="text-[#39FF14] mb-2" />
+                      <p className="text-2xl font-bold text-white">{value}</p>
+                      <p className="text-xs text-neutral-500 mt-0.5">{label}</p>
+                    </div>
+                  ))}
+                </div>
+                {topArtists.length > 0 && (
+                  <div>
+                    <h2 className="text-xs font-bold uppercase tracking-widest text-neutral-500 mb-3">Top Artists</h2>
+                    <div className="space-y-2">
+                      {topArtists.map(([artist, count], i) => (
+                        <div key={artist} className="flex items-center gap-4 p-3 rounded-xl bg-neutral-900/40 border border-neutral-800/40">
+                          <span className="text-sm font-bold text-neutral-600 w-4">{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-white truncate">{artist}</p>
+                            <div className="mt-1 h-1 bg-neutral-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-[#39FF14] rounded-full" style={{ width: `${(count / topArtists[0][1]) * 100}%` }} />
+                            </div>
+                          </div>
+                          <span className="text-xs font-mono text-neutral-500">{count}x</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {topTracks.length > 0 && (
+                  <div>
+                    <h2 className="text-xs font-bold uppercase tracking-widest text-neutral-500 mb-3">Most Played</h2>
+                    <div className="space-y-2">
+                      {topTracks.map(({ track, count }, i) => (
+                        <div key={track.url} onClick={() => handlePlayTrack(track)}
+                          className="flex items-center gap-3 p-3 rounded-xl bg-neutral-900/40 border border-neutral-800/40 cursor-pointer hover:bg-neutral-800/60 transition-colors group">
+                          <span className="text-sm font-bold text-neutral-600 w-4">{i + 1}</span>
+                          <img src={track.cover} className="w-10 h-10 rounded-lg object-cover shrink-0" alt="" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-white truncate group-hover:text-[#39FF14] transition-colors">{track.title}</p>
+                            <p className="text-xs text-neutral-500 truncate">{track.artist}</p>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-[#39FF14]">{count}x</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {playHistory.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-20 text-neutral-600">
+                    <BarChart2 size={40} className="mb-3 opacity-30" />
+                    <p className="text-sm">Play some tracks to see your stats.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {activeNav === 'settings' && (
             <SettingsPanel
               downloadQuality={downloadQuality} setDownloadQuality={setDownloadQuality}
@@ -2404,8 +2690,50 @@ export default function VanguardPlayer() {
               sleepTimer={sleepTimer} setSleepTimerMinutes={setSleepTimerMinutes} cancelSleepTimer={cancelSleepTimer}
               deps={deps} setDeps={setDeps} ytDlpVersion={ytDlpVersion} setYtDlpVersion={setYtDlpVersion}
               onUpdateYtDlp={handleUpdateYtDlp} isUpdatingYtDlp={isUpdatingYtDlp}
+              spotdlVersion={spotdlVersion} setSpotdlVersion={setSpotdlVersion}
+              onInstallSpotdl={async () => {
+                setIsInstallingSpotdl(true);
+                setSpotdlLog('Installing spotdl via pip...\nThis may take 30–60 seconds.');
+                try {
+                  const result = await invoke<string>('install_spotdl');
+                  setSpotdlLog(result || 'Installation complete.');
+                  const v = await invoke<string>('get_spotdl_version').catch(() => '');
+                  setSpotdlVersion(v);
+                  const d = await invoke<DepsStatus>('check_dependencies');
+                  setDeps(d);
+                  showToast(v ? `spotdl ${v} installed` : 'spotdl installed');
+                } catch (e) {
+                  setSpotdlLog(`Failed: ${e}\n\nTry manually: pip install spotdl`);
+                  showToast('spotdl install failed — see Dependencies tab');
+                }
+                finally {
+                  setIsInstallingSpotdl(false);
+                  // Re-check deps so banner disappears immediately after install
+                  const fresh = await invoke<DepsStatus>('check_dependencies').catch(() => null);
+                  if (fresh) setDeps(fresh);
+                }
+              }}
+              onUpdateSpotdl={async () => {
+                setIsUpdatingSpotdl(true);
+                setSpotdlLog('Updating spotdl...');
+                try {
+                  const result = await invoke<string>('update_spotdl');
+                  setSpotdlLog(result || 'Update complete.');
+                  const v = await invoke<string>('get_spotdl_version').catch(() => '');
+                  setSpotdlVersion(v);
+                  showToast(v ? `spotdl updated to ${v}` : 'spotdl updated');
+                } catch (e) {
+                  setSpotdlLog(`Failed: ${e}`);
+                  showToast('spotdl update failed');
+                }
+                finally { setIsUpdatingSpotdl(false); }
+              }}
+              isInstallingSpotdl={isInstallingSpotdl} isUpdatingSpotdl={isUpdatingSpotdl} spotdlLog={spotdlLog}
               onBackup={handleBackup} onRestore={handleRestore}
               backupPath={backupPath} setBackupPath={setBackupPath}
+              cachePath={cachePath} setCachePath={setCachePath}
+              crossfadeSeconds={crossfadeSeconds} setCrossfadeSeconds={setCrossfadeSeconds}
+              pitchSemitones={pitchSemitones} setPitchSemitones={setPitchSemitones}
               showToast={showToast}
             />
           )}
@@ -2543,6 +2871,31 @@ export default function VanguardPlayer() {
           <div className="w-full flex items-center gap-2 mt-1">
             {/* Speed selector — left of time */}
             <SpeedSelector speed={playbackSpeed} onChange={setPlaybackSpeed} />
+            {/* A-B Loop button */}
+            <button
+              title={abLoop.a === null ? 'Set A point' : abLoop.b === null ? 'Set B point' : 'Clear A-B loop'}
+              onClick={() => {
+                if (abLoop.a === null) {
+                  const a = progressSecondsRef.current;
+                  setAbLoop({ a, b: null }); abLoopRef.current = { a, b: null };
+                  showToast(`A: ${formatTime(a)}`);
+                } else if (abLoop.b === null) {
+                  const b = progressSecondsRef.current;
+                  if (b > (abLoop.a ?? 0) + 1) {
+                    setAbLoop(prev => ({ ...prev, b })); abLoopRef.current = { ...abLoopRef.current, b };
+                    showToast(`Loop: ${formatTime(abLoop.a!)} → ${formatTime(b)}`);
+                  } else { showToast('B must be after A'); }
+                } else {
+                  setAbLoop({ a: null, b: null }); abLoopRef.current = { a: null, b: null };
+                  showToast('A-B loop cleared');
+                }
+              }}
+              className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-colors shrink-0 ${
+                abLoop.b !== null ? 'text-[#39FF14] bg-[#39FF14]/15 border border-[#39FF14]/30' :
+                abLoop.a !== null ? 'text-amber-400 bg-amber-400/15 border border-amber-400/30' :
+                'text-neutral-700 hover:text-neutral-400 border border-neutral-800'}`}>
+              {abLoop.b !== null ? 'A-B✓' : abLoop.a !== null ? 'A-…' : 'A-B'}
+            </button>
             <span className="text-xs font-medium text-neutral-400 tabular-nums min-w-[32px] text-right">
               {currentTrack ? formatTime(progressSeconds) : '0:00'}
             </span>
@@ -2561,8 +2914,26 @@ export default function VanguardPlayer() {
           </div>
         </div>
 
-        {/* Right: volume */}
+        {/* Right: pitch + crossfade + volume */}
         <div className="w-1/4 flex items-center justify-end gap-3 pr-4">
+          {/* Pitch shift */}
+          <div className="flex flex-col items-center gap-0.5 group relative">
+            <button
+              className={`text-[10px] font-bold tabular-nums w-8 text-center rounded px-1 py-0.5 transition-colors ${pitchSemitones !== 0 ? 'text-cyan-400 bg-cyan-400/10' : 'text-neutral-600 hover:text-neutral-400'}`}
+              title="Pitch shift (semitones)"
+              onClick={() => {
+                const v = parseFloat(window.prompt('Pitch shift in semitones (-12 to +12):', String(pitchSemitones)) || String(pitchSemitones));
+                if (!isNaN(v)) setPitchSemitones(Math.max(-12, Math.min(12, v)));
+              }}>
+              {pitchSemitones > 0 ? `+${pitchSemitones}` : pitchSemitones}♪
+            </button>
+          </div>
+          {/* Crossfade indicator */}
+          {crossfadeSeconds > 0 && (
+            <span className="text-[10px] text-purple-400 font-bold tabular-nums" title={`Crossfade: ${crossfadeSeconds}s`}>
+              ×{crossfadeSeconds}s
+            </span>
+          )}
           <button onClick={toggleMute} className="focus:outline-none shrink-0">
             {volume === 0 ? <VolumeX size={18} className="text-red-500" /> : <Volume2 size={18} className="text-neutral-400 hover:text-white transition-colors" />}
           </button>
@@ -2626,6 +2997,8 @@ export default function VanguardPlayer() {
               <button onClick={() => { setQueue(p => [...p, ...playlist.tracks]); showToast(`Added ${playlist.tracks.length} tracks`); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><ListPlus size={15} /> Add to Queue</button>
               <div className="h-px bg-neutral-800 my-1" />
               <button onClick={() => { setRenamingPlaylist(playlist); setRenameVal(playlist.name); setRenameDescVal(playlist.description); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Pencil size={15} /> Edit</button>
+              <button onClick={() => { setShowDuplicatesPlaylist(playlist); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Copy size={15} /> Find Duplicates</button>
+              <button onClick={() => { setBulkEditPlaylist(playlist); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><Pencil size={15} /> Bulk Edit Tags</button>
               <button onClick={() => { handleCoverUpload(playlist.id); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/80 hover:text-white transition-colors"><ImagePlus size={15} /> Change Cover</button>
               {playlist.id !== 'p1' && <button onClick={() => { deletePlaylist(playlist.id); setCtxMenu(null); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-500/20 hover:text-red-400 transition-colors"><Trash2 size={15} /> Delete</button>}
             </div>
@@ -2664,8 +3037,8 @@ export default function VanguardPlayer() {
 
       {/* ── INFO MODAL ── */}
       {infoModalTrack && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
-          <div className="bg-[#0a0a0a] border border-neutral-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)" }}>
+          <div className="rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]" style={{ background: "rgba(12,12,12,0.85)", backdropFilter: "blur(40px)", WebkitBackdropFilter: "blur(40px)", border: "1px solid rgba(255,255,255,0.07)" }}>
             <div className="relative h-48 w-full shrink-0">
               <img src={infoModalTrack.cover} className="w-full h-full object-cover opacity-40 blur-md" alt="" />
               <div className="absolute inset-0 flex items-center justify-center pt-4">
@@ -2702,6 +3075,125 @@ export default function VanguardPlayer() {
           </div>
         </div>
       )}
+
+      {/* ── DUPLICATE FINDER MODAL ── */}
+      {showDuplicatesPlaylist && (() => {
+        const seen = new Map<string, Track>();
+        const dupes: Track[] = [];
+        showDuplicatesPlaylist.tracks.forEach(t => {
+          const key = `${t.title.toLowerCase().trim()}|||${t.artist.toLowerCase().trim()}`;
+          if (seen.has(key)) dupes.push(t);
+          else seen.set(key, t);
+        });
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)' }}>
+            <div className="bg-[#0d0d0d] border border-neutral-800 rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl">
+              <div className="p-5 border-b border-neutral-800 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-white">Duplicate Finder</h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">{showDuplicatesPlaylist.name}</p>
+                </div>
+                <button onClick={() => setShowDuplicatesPlaylist(null)} className="p-2 hover:bg-neutral-800 rounded-lg transition-colors"><X size={16} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                {dupes.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-neutral-600">
+                    <CheckCircle size={32} className="mb-2 text-[#39FF14]" />
+                    <p className="text-sm text-white">No duplicates found.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-amber-400 mb-3">{dupes.length} duplicate{dupes.length > 1 ? 's' : ''} found</p>
+                    {dupes.map((t, i) => (
+                      <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-neutral-900/60 border border-amber-500/20">
+                        <img src={t.cover} className="w-10 h-10 rounded-md object-cover shrink-0" alt="" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{t.title}</p>
+                          <p className="text-xs text-neutral-500 truncate">{t.artist}</p>
+                        </div>
+                        <button onClick={() => {
+                          setPlaylists(prev => prev.map(p => p.id === showDuplicatesPlaylist.id
+                            ? { ...p, tracks: (() => { let removed = false; return p.tracks.filter(x => { if (!removed && x.url === t.url) { removed = true; return false; } return true; }); })() }
+                            : p));
+                          setShowDuplicatesPlaylist(prev => prev ? { ...prev, tracks: (() => { let removed = false; return prev.tracks.filter(x => { if (!removed && x.url === t.url) { removed = true; return false; } return true; }); })() } : null);
+                          showToast('Duplicate removed');
+                        }} className="text-xs px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition-colors shrink-0">Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── BULK TAG EDITOR MODAL ── */}
+      {bulkEditPlaylist && (() => {
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)' }}>
+            <div className="bg-[#0d0d0d] border border-neutral-800 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+              <div className="p-5 border-b border-neutral-800 flex items-center justify-between shrink-0">
+                <div>
+                  <h3 className="font-bold text-white">Bulk Tag Editor</h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">{bulkEditPlaylist.tracks.length} tracks in {bulkEditPlaylist.name}</p>
+                </div>
+                <button onClick={() => setBulkEditPlaylist(null)} className="p-2 hover:bg-neutral-800 rounded-lg transition-colors"><X size={16} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-[#0d0d0d] border-b border-neutral-800 z-10">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 w-8">#</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500">Title</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500">Artist</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkEditPlaylist.tracks.map((t, i) => (
+                      <tr key={t.url} className="border-b border-neutral-800/40 hover:bg-neutral-900/40">
+                        <td className="px-4 py-2 text-neutral-600 text-xs">{i + 1}</td>
+                        <td className="px-4 py-2">
+                          <input defaultValue={t.title}
+                            onBlur={e => {
+                              const newTitle = e.target.value.trim();
+                              if (newTitle && newTitle !== t.title) {
+                                setPlaylists(prev => prev.map(p => p.id === bulkEditPlaylist.id
+                                  ? { ...p, tracks: p.tracks.map(x => x.url === t.url ? { ...x, title: newTitle } : x) }
+                                  : p));
+                                setBulkEditPlaylist(prev => prev ? { ...prev, tracks: prev.tracks.map(x => x.url === t.url ? { ...x, title: newTitle } : x) } : null);
+                              }
+                            }}
+                            className="w-full bg-transparent text-white text-sm px-2 py-1 rounded border border-transparent hover:border-neutral-700 focus:border-[#39FF14] focus:outline-none transition-colors" />
+                        </td>
+                        <td className="px-4 py-2">
+                          <input defaultValue={t.artist}
+                            onBlur={e => {
+                              const newArtist = e.target.value.trim();
+                              if (newArtist !== t.artist) {
+                                setPlaylists(prev => prev.map(p => p.id === bulkEditPlaylist.id
+                                  ? { ...p, tracks: p.tracks.map(x => x.url === t.url ? { ...x, artist: newArtist } : x) }
+                                  : p));
+                                setBulkEditPlaylist(prev => prev ? { ...prev, tracks: prev.tracks.map(x => x.url === t.url ? { ...x, artist: newArtist } : x) } : null);
+                              }
+                            }}
+                            className="w-full bg-transparent text-neutral-400 text-sm px-2 py-1 rounded border border-transparent hover:border-neutral-700 focus:border-[#39FF14] focus:outline-none transition-colors" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="p-4 border-t border-neutral-800 flex justify-end gap-3 shrink-0">
+                <button onClick={() => { showToast('Tags saved'); setBulkEditPlaylist(null); }}
+                  className="px-5 py-2 bg-[#39FF14] text-black font-bold rounded-lg hover:shadow-[0_0_15px_#39FF14] transition-all">
+                  Save & Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── CREATE PLAYLIST MODAL ── */}
       {isPlaylistModalOpen && (
