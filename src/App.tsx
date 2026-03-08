@@ -30,13 +30,6 @@ type Track = {
 
 
 // ─── SPOTIFY IMPORT ──────────────────────────────────────────────────────────
-type SpotifyTrackResult = {
-  spotifyTitle: string;
-  spotifyArtist: string;
-  status: 'pending' | 'fetching' | 'matched' | 'failed';
-  youtubeUrl?: string;
-  youtubeCover?: string;
-};
 
 
 type LocalTrack = {
@@ -65,7 +58,7 @@ type CtxMenu = {
   playlist?: Playlist;
 };
 
-type DepsStatus = { mpv: boolean; yt_dlp: boolean; ffprobe: boolean; spotdl: boolean };
+type DepsStatus = { mpv: boolean; yt_dlp: boolean; ffprobe: boolean };
 type AudioInfo = { codec: string; bitrate: number; samplerate: number; channels: number };
 type DiskInfo = { used_bytes: number; track_count: number };
 type BatchProgress = { index: number; total: number; title: string; success: boolean; error?: string };
@@ -189,8 +182,7 @@ const SleepTimerPopover = React.memo(({
 const DepsBanner = React.memo(({ deps, onGoToSettings }: { deps: DepsStatus | null; onGoToSettings: () => void }) => {
   if (!deps) return null;
   const playbackMissing = [!deps.mpv && 'mpv', !deps.yt_dlp && 'yt-dlp'].filter(Boolean) as string[];
-  const spotdlMissing = !deps.spotdl;
-  if (playbackMissing.length === 0 && !spotdlMissing) return null;
+  if (playbackMissing.length === 0) return null;
   return (
     <div className="flex flex-col shrink-0 z-30">
       {playbackMissing.length > 0 && (
@@ -200,13 +192,7 @@ const DepsBanner = React.memo(({ deps, onGoToSettings }: { deps: DepsStatus | nu
           <button onClick={onGoToSettings} className="shrink-0 px-2.5 py-1 bg-red-500/20 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors">Install →</button>
         </div>
       )}
-      {spotdlMissing && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-400 text-xs font-medium">
-          <AlertTriangle size={13} className="shrink-0" />
-          <span className="flex-1"><strong>spotdl</strong> not installed — Spotify playlists can't be imported.</span>
-          <button onClick={onGoToSettings} className="shrink-0 px-2.5 py-1 bg-amber-500/20 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 transition-colors">Install →</button>
-        </div>
-      )}
+      
     </div>
   );
 });
@@ -364,7 +350,9 @@ const ThemedSelect = ({ value, options, onChange }: {
 };
 
 // ─── SPOTIFY IMPORT MODAL ────────────────────────────────────────────────────
-function SpotifyImportModal({
+// ── CSV Playlist Import Modal ─────────────────────────────────────────────────
+// Uses exportify.net — no API keys or spotdl needed
+function CsvImportModal({
   onClose,
   onSavePlaylist,
   showToast,
@@ -373,131 +361,129 @@ function SpotifyImportModal({
   onSavePlaylist: (name: string, tracks: Track[]) => void;
   showToast: (m: string) => void;
 }) {
-  const [url, setUrl] = useState('');
-  const [phase, setPhase] = useState<'idle' | 'fetching' | 'done'>('idle');
-  const [playlistName, setPlaylistName] = useState('');
-  const [results, setResults] = useState<SpotifyTrackResult[]>([]);
+  const [phase, setPhase] = useState<'instructions' | 'matching' | 'done'>('instructions');
+  const [playlistName, setPlaylistName] = useState('Spotify Import');
+  const [results, setResults] = useState<{ title: string; artist: string; status: 'pending' | 'fetching' | 'matched' | 'failed'; url?: string; cover?: string }[]>([]);
+  const [statusMsg, setStatusMsg] = useState('');
   const abortRef = useRef(false);
-  const inputRef = useRef<HTMLInputElement>(null);
   const savedRef = useRef(false);
-  const playlistNameRef = useRef('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  const handleFile = async (file: File) => {
+    if (!file.name.endsWith('.csv')) { showToast('Please upload a .csv file from Exportify'); return; }
+    const text = await file.text();
 
-  const [debugMsg, setDebugMsg] = useState('');
+    // Parse playlist name from filename e.g. "my playlist.csv"
+    const nameFromFile = file.name.replace(/\.csv$/i, '').trim();
+    if (nameFromFile) setPlaylistName(nameFromFile);
 
-  const handleFetch = async () => {
-    const trimmed = url.trim();
-    if (!trimmed) return;
-    if (!trimmed.includes('spotify.com/playlist/')) {
-      showToast('Please paste a public Spotify playlist URL');
+    setStatusMsg('Parsing CSV...');
+    let raw: string;
+    try {
+      raw = await invoke<string>('import_csv_playlist', { csvContent: text });
+    } catch (e) {
+      showToast(`Failed to parse CSV: ${e}`);
+      setStatusMsg('');
       return;
     }
 
-    setPhase('fetching');
-    setDebugMsg('Calling backend...');
+    const lines = raw.trim().split('\n').filter(Boolean);
+    let trackLines = lines;
+    if (lines[0]?.startsWith('PLAYLIST:')) {
+      const pName = lines[0].replace('PLAYLIST:', '').trim();
+      if (pName && pName !== 'Spotify Import') setPlaylistName(pName);
+      trackLines = lines.slice(1);
+    }
+
+    if (trackLines.length === 0) { showToast('No tracks found in CSV'); return; }
+
+    const initial = trackLines.map(l => {
+      const [title, artist] = l.split('====');
+      return { title: title?.trim() || 'Unknown', artist: artist?.trim() || '', status: 'pending' as const };
+    });
+
+    setResults(initial);
+    setPhase('matching');
+    setStatusMsg(`Matching ${initial.length} tracks to YouTube...`);
     abortRef.current = false;
-    setResults([]);
-    setPlaylistName('');
+    savedRef.current = false;
 
-    try {
-      setDebugMsg('invoke: search_spotify_playlist');
-      const raw: string = await invoke('search_spotify_playlist', { url: trimmed });
-      setDebugMsg(`Got response: ${raw.length} chars`);
-      const lines = raw.trim().split('\n').filter(Boolean);
-      if (lines.length === 0) { showToast('No tracks found. Is the playlist public?'); setPhase('idle'); setDebugMsg('No tracks'); return; }
-
-      let trackLines = lines;
-      if (lines[0].startsWith('PLAYLIST:')) {
-        const pName = lines[0].replace('PLAYLIST:', '').trim();
-        setPlaylistName(pName);
-        playlistNameRef.current = pName;
-        trackLines = lines.slice(1);
-      }
-
-      const initial: SpotifyTrackResult[] = trackLines.map(l => {
-        const [title, artist] = l.split('====');
-        return { spotifyTitle: title?.trim() || 'Unknown', spotifyArtist: artist?.trim() || '', status: 'pending' };
-      });
-      setResults(initial);
-      setPhase('done');
-      setDebugMsg(`${initial.length} tracks found — matching to YouTube...`);
-
-      const BATCH = 5;
-      for (let start = 0; start < initial.length; start += BATCH) {
-        if (abortRef.current) break;
-        setResults(prev => prev.map((r, idx) =>
-          idx >= start && idx < start + BATCH ? { ...r, status: 'fetching' } : r
-        ));
-        await Promise.all(
-          initial.slice(start, start + BATCH).map(async (track, bi) => {
-            const i = start + bi;
-            try {
-              const q = `${track.spotifyTitle} ${track.spotifyArtist} audio`;
-              const res: string = await invoke('search_youtube', { query: q });
-              const firstLine = res.trim().split('\n')[0];
-              const parts = firstLine?.split('====') || [];
-              const cleanId = parts[3]?.trim();
-              if (cleanId) {
-                setResults(prev => prev.map((r, idx) => idx === i ? {
-                  ...r, status: 'matched',
-                  youtubeUrl: `https://youtube.com/watch?v=${cleanId}`,
-                  youtubeCover: `https://i.ytimg.com/vi/${cleanId}/mqdefault.jpg`,
-                } : r));
-              } else {
-                setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: 'failed' } : r));
-              }
-            } catch {
+    const BATCH = 6;
+    for (let start = 0; start < initial.length; start += BATCH) {
+      if (abortRef.current) break;
+      setResults(prev => prev.map((r, idx) =>
+        idx >= start && idx < start + BATCH ? { ...r, status: 'fetching' } : r
+      ));
+      await Promise.all(
+        initial.slice(start, start + BATCH).map(async (track, bi) => {
+          const i = start + bi;
+          try {
+            const q = `${track.title} ${track.artist} audio`;
+            const res: string = await invoke('search_youtube', { query: q });
+            const firstLine = res.trim().split('\n')[0];
+            const parts = firstLine?.split('====') || [];
+            const cleanId = parts[3]?.trim();
+            if (cleanId) {
+              setResults(prev => prev.map((r, idx) => idx === i ? {
+                ...r, status: 'matched',
+                url: `https://youtube.com/watch?v=${cleanId}`,
+                cover: `https://i.ytimg.com/vi/${cleanId}/mqdefault.jpg`,
+              } : r));
+            } else {
               setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: 'failed' } : r));
             }
-          })
-        );
-      }
-      // Auto-save as playlist when all done
-      setResults(prev => {
-        const finalMatched = prev.filter(r => r.status === 'matched');
-        if (finalMatched.length > 0 && !savedRef.current) {
-          savedRef.current = true;
-          const tracks: Track[] = finalMatched.map((r, i) => ({
-            id: i, title: r.spotifyTitle, artist: r.spotifyArtist,
-            duration: '0:00', url: r.youtubeUrl!, cover: r.youtubeCover || '',
-          }));
-          onSavePlaylist(playlistNameRef.current || 'Spotify Import', tracks);
-        }
-        return prev;
-      });
-      setDebugMsg('Done — saved to Playlists');
-    } catch (e) {
-      const msg = String(e);
-      setDebugMsg(`ERROR: ${msg}`);
-      showToast(`Import failed: ${msg}`);
-      console.error('[Spotify Import]', e);
-      setPhase('idle');
+          } catch {
+            setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: 'failed' } : r));
+          }
+        })
+      );
+      // Scroll to bottom of list to follow progress
+      if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+      const matched = initial.slice(0, start + BATCH).filter((_, i) => {
+        const r = (document.querySelector(`[data-idx="${i}"]`) as HTMLElement);
+        return r?.dataset.status === 'matched';
+      }).length;
+      setStatusMsg(`Matched ${start + BATCH >= initial.length ? 'all' : start + BATCH} / ${initial.length} tracks...`);
     }
+
+    // Auto-save
+    setResults(prev => {
+      const finalMatched = prev.filter(r => r.status === 'matched');
+      if (finalMatched.length > 0 && !savedRef.current) {
+        savedRef.current = true;
+        const tracks: Track[] = finalMatched.map((r, i) => ({
+          id: i, title: r.title, artist: r.artist,
+          duration: '0:00', url: r.url!, cover: r.cover || '',
+        }));
+        onSavePlaylist(playlistName, tracks);
+      }
+      return prev;
+    });
+    setPhase('done');
+    setStatusMsg('');
   };
 
   const matched = results.filter(r => r.status === 'matched');
   const pending = results.filter(r => r.status === 'fetching' || r.status === 'pending');
   const failed = results.filter(r => r.status === 'failed');
-  const isDone = phase === 'done' && pending.length === 0;
-
-
+  const isDone = phase === 'done';
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-md" onClick={onClose}>
-      <div className="w-[620px] max-h-[80vh] flex flex-col rounded-2xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.95)]"
+      <div className="w-[640px] max-h-[85vh] flex flex-col rounded-2xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.95)]"
         style={{ background: '#0e0e0e', border: '1px solid rgba(57,255,20,0.15)' }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-7 py-5 border-b border-neutral-800/60">
+        <div className="flex items-center justify-between px-7 py-5 border-b border-neutral-800/60 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#1DB954' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
             </div>
             <div>
               <h2 className="text-base font-bold text-white">Import Spotify Playlist</h2>
-              {playlistName && <p className="text-xs text-neutral-500 mt-0.5">{playlistName}</p>}
+              {playlistName && phase !== 'instructions' && <p className="text-xs text-neutral-500 mt-0.5">{playlistName}</p>}
             </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-neutral-500 hover:text-white hover:bg-white/[0.06] transition-all">
@@ -505,130 +491,127 @@ function SpotifyImportModal({
           </button>
         </div>
 
-        {/* URL Input */}
-        <div className="px-7 py-5 border-b border-neutral-800/40">
-          <p className="text-xs text-neutral-500 mb-3">Paste your public Spotify playlist link below</p>
-          <div className="flex gap-3">
-            <div className="flex-1 flex items-center gap-2 bg-[#0a0a0a] border border-neutral-800 rounded-xl px-4 py-2.5 focus-within:border-[#39FF14]/40 transition-colors">
-              <Link2 size={14} className="text-neutral-600 shrink-0" />
-              <input ref={inputRef} type="text" value={url} onChange={e => setUrl(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && phase === 'idle') handleFetch(); }}
-                placeholder="https://open.spotify.com/playlist/37i9dQZF1DX..."
-                className="flex-1 bg-transparent text-sm text-neutral-300 placeholder-neutral-700 outline-none"
-                disabled={phase !== 'idle'} />
-            </div>
-            <button onClick={handleFetch} disabled={phase !== 'idle' || !url.trim()}
-              className="px-5 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ background: '#39FF14', color: '#000' }}>
-              {phase === 'fetching' && results.length === 0 ? <Loader2 size={16} className="animate-spin" /> : 'Import'}
-            </button>
-          </div>
-          {debugMsg && (
-            <p className="mt-2 text-[11px] font-mono px-1" style={{ color: debugMsg.startsWith('ERROR') ? '#ff4444' : '#39FF14' }}>
-              {debugMsg}
+        {/* Instructions phase */}
+        {phase === 'instructions' && (
+          <div className="flex-1 flex flex-col px-7 py-6 gap-5 overflow-y-auto custom-scrollbar">
+            <p className="text-sm text-neutral-400 leading-relaxed">
+              Vanguard uses <span className="text-white font-semibold">Exportify</span> to import Spotify playlists — no extra software needed.
+              Follow these steps:
             </p>
-          )}
-          <button
-            className="mt-2 text-[10px] text-neutral-700 hover:text-neutral-400 underline"
-            onClick={async () => {
-              try {
-                const r = await invoke('ping');
-                setDebugMsg(`invoke works: ${r}`);
-              } catch (e) {
-                setDebugMsg(`invoke BROKEN: ${e}`);
-              }
-            }}>
-            test invoke
-          </button>
-        </div>
 
-        {/* Progress bar + count */}
-        {phase !== 'idle' && results.length > 0 && (
-          <div className="px-7 py-3 border-b border-neutral-800/40">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold tracking-widest uppercase" style={{ color: '#39FF14' }}>
-                {isDone ? `Done · ${matched.length} matched` : `Fetching Tracks · ${matched.length + failed.length} / ${results.length}`}
-                {failed.length > 0 && !isDone && <span className="text-neutral-600 ml-2">({failed.length} failed)</span>}
-              </span>
-              {isDone && failed.length > 0 && (
-                <span className="text-[11px] text-neutral-600">{failed.length} not found</span>
-              )}
-            </div>
-            <div className="h-1 rounded-full bg-neutral-800 overflow-hidden">
-              <div className="h-full rounded-full transition-all duration-300"
-                style={{ width: `${results.length > 0 ? ((matched.length + failed.length) / results.length) * 100 : 0}%`, background: '#39FF14' }} />
-            </div>
-          </div>
-        )}
-
-        {/* Track list */}
-        {results.length > 0 && (
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {results.map((r, i) => (
-              <div key={i} className="flex items-center gap-4 px-7 py-3 border-b border-neutral-800/30 last:border-0">
-                {/* Cover or placeholder */}
-                <div className="w-9 h-9 rounded-lg shrink-0 overflow-hidden bg-neutral-900 flex items-center justify-center">
-                  {r.youtubeCover
-                    ? <img src={r.youtubeCover} className="w-full h-full object-cover" alt="" />
-                    : <Music size={14} className="text-neutral-700" />}
+            {/* Steps */}
+            {[
+              { n: '1', title: 'Go to Exportify', desc: 'Open exportify.net in your browser', link: 'https://exportify.net', linkLabel: 'exportify.net →' },
+              { n: '2', title: 'Log in with Spotify', desc: 'Click "Log in with Spotify" and authorise Exportify to read your playlists.' },
+              { n: '3', title: 'Export your playlist', desc: 'Find the playlist you want and click the green Export button. A .csv file will download.' },
+              { n: '4', title: 'Upload here', desc: 'Click the button below and select the downloaded .csv file.' },
+            ].map(step => (
+              <div key={step.n} className="flex gap-4 items-start">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold text-black mt-0.5" style={{ background: '#39FF14' }}>
+                  {step.n}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">{r.spotifyTitle}</p>
-                  <p className="text-xs text-neutral-500 truncate">{r.spotifyArtist}</p>
-                </div>
-                <div className="shrink-0 flex items-center gap-1.5">
-                  {r.status === 'pending' && <span className="text-xs text-neutral-700">Waiting</span>}
-                  {r.status === 'fetching' && <><Loader2 size={13} className="animate-spin text-neutral-500" /><span className="text-xs text-neutral-500">Fetching...</span></>}
-                  {r.status === 'matched' && <><CheckCircle2 size={13} style={{ color: '#39FF14' }} /><span className="text-xs font-semibold" style={{ color: '#39FF14' }}>Matched</span></>}
-                  {r.status === 'failed' && <><XCircle size={13} className="text-red-500" /><span className="text-xs text-red-500">Not found</span></>}
+                <div>
+                  <p className="text-sm font-semibold text-white">{step.title}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{step.desc}</p>
+                  {step.link && (
+                    <a href={step.link} target="_blank" rel="noreferrer"
+                      className="text-xs mt-1 inline-block font-semibold hover:underline" style={{ color: '#39FF14' }}>
+                      {step.linkLabel}
+                    </a>
+                  )}
                 </div>
               </div>
             ))}
-          </div>
-        )}
 
-        {/* Empty state */}
-        {phase === 'idle' && results.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12 text-neutral-700">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor" opacity="0.3"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
-            <p className="text-sm">Paste a public Spotify playlist URL above</p>
-          </div>
-        )}
-
-        {/* Footer */}
-        {isDone && matched.length > 0 && (
-          <div className="px-7 py-4 border-t border-neutral-800/60 flex items-center justify-between gap-3">
-            <span className="text-xs text-neutral-500">
-              Saved <span style={{ color: '#39FF14' }} className="font-bold">{matched.length}</span> tracks to Playlists
-              {failed.length > 0 && <span className="text-neutral-600 ml-1">· {failed.length} not found</span>}
-            </span>
-            <button onClick={onClose}
-              className="px-5 py-2 rounded-xl text-sm font-bold transition-all hover:shadow-[0_0_20px_rgba(57,255,20,0.3)] active:scale-95"
+            {/* Upload button */}
+            <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-2 w-full py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all hover:shadow-[0_0_20px_rgba(57,255,20,0.35)] active:scale-[0.98]"
               style={{ background: '#39FF14', color: '#000' }}>
-              Done
+              <Upload size={16} />
+              Upload Exportify CSV
             </button>
           </div>
+        )}
+
+        {/* Matching / done phase */}
+        {(phase === 'matching' || phase === 'done') && (
+          <>
+            {/* Progress bar */}
+            <div className="px-7 py-3 border-b border-neutral-800/40 shrink-0">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold tracking-widest uppercase" style={{ color: '#39FF14' }}>
+                  {isDone
+                    ? `Done · ${matched.length} matched`
+                    : `Matching · ${matched.length + failed.length} / ${results.length}`}
+                  {failed.length > 0 && <span className="text-neutral-600 ml-2">· {failed.length} not found</span>}
+                </span>
+                {statusMsg && <span className="text-[10px] text-neutral-600 font-mono">{statusMsg}</span>}
+              </div>
+              <div className="h-1 rounded-full bg-neutral-800 overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${results.length > 0 ? ((matched.length + failed.length) / results.length) * 100 : 0}%`, background: '#39FF14' }} />
+              </div>
+            </div>
+
+            {/* Track list */}
+            <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar">
+              {results.map((r, i) => (
+                <div key={i} data-idx={i} data-status={r.status}
+                  className="flex items-center gap-4 px-7 py-3 border-b border-neutral-800/30 last:border-0">
+                  <div className="w-9 h-9 rounded-lg shrink-0 overflow-hidden bg-neutral-900 flex items-center justify-center">
+                    {r.cover
+                      ? <img src={r.cover} className="w-full h-full object-cover" alt="" />
+                      : <Music size={14} className="text-neutral-700" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{r.title}</p>
+                    <p className="text-xs text-neutral-500 truncate">{r.artist}</p>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    {r.status === 'pending'  && <span className="text-xs text-neutral-700">—</span>}
+                    {r.status === 'fetching' && <><Loader2 size={13} className="animate-spin text-neutral-500" /><span className="text-xs text-neutral-500">Matching...</span></>}
+                    {r.status === 'matched'  && <><CheckCircle2 size={13} style={{ color: '#39FF14' }} /><span className="text-xs font-semibold" style={{ color: '#39FF14' }}>Matched</span></>}
+                    {r.status === 'failed'   && <><XCircle size={13} className="text-red-500" /><span className="text-xs text-red-500">Not found</span></>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            {isDone && (
+              <div className="px-7 py-4 border-t border-neutral-800/60 flex items-center justify-between gap-3 shrink-0">
+                <span className="text-xs text-neutral-500">
+                  Saved <span style={{ color: '#39FF14' }} className="font-bold">{matched.length}</span> tracks to Playlists
+                  {failed.length > 0 && <span className="text-neutral-600 ml-1">· {failed.length} not found</span>}
+                </span>
+                <button onClick={onClose}
+                  className="px-5 py-2 rounded-xl text-sm font-bold transition-all hover:shadow-[0_0_20px_rgba(57,255,20,0.3)] active:scale-95"
+                  style={{ background: '#39FF14', color: '#000' }}>
+                  Done
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-// ─── SETTINGS PANEL ──────────────────────────────────────────────────────────
+
 function SettingsPanel({
   downloadQuality, setDownloadQuality, downloadPath, handleSelectDirectory,
   playbackSpeed, setPlaybackSpeed, eq, setEq,
   sleepTimer, setSleepTimerMinutes, cancelSleepTimer,
   deps, setDeps, ytDlpVersion, setYtDlpVersion,
   onUpdateYtDlp, isUpdatingYtDlp,
-  spotdlVersion, setSpotdlVersion,
-  onInstallSpotdl, onUpdateSpotdl,
-  isInstallingSpotdl, isUpdatingSpotdl, spotdlLog,
   onBackup, onRestore,
   backupPath, setBackupPath,
   cachePath, setCachePath,
   crossfadeSeconds, setCrossfadeSeconds,
-  pitchSemitones, setPitchSemitones,
   showToast,
 }: {
   downloadQuality: string; setDownloadQuality: (q: string) => void;
@@ -639,14 +622,10 @@ function SettingsPanel({
   deps: DepsStatus | null; setDeps: (d: DepsStatus) => void;
   ytDlpVersion: string; setYtDlpVersion: (v: string) => void;
   onUpdateYtDlp: () => void; isUpdatingYtDlp: boolean;
-  spotdlVersion: string; setSpotdlVersion: (v: string) => void;
-  onInstallSpotdl: () => void; onUpdateSpotdl: () => void;
-  isInstallingSpotdl: boolean; isUpdatingSpotdl: boolean; spotdlLog: string;
   onBackup: () => void; onRestore: () => void;
   backupPath: string; setBackupPath: (p: string) => void;
   cachePath: string; setCachePath: (p: string) => void;
   crossfadeSeconds: number; setCrossfadeSeconds: (s: number) => void;
-  pitchSemitones: number; setPitchSemitones: (s: number) => void;
   showToast: (m: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('dependencies');
@@ -674,8 +653,7 @@ function SettingsPanel({
       // Re-check
       const d: DepsStatus = await invoke('check_dependencies');
       setDeps(d);
-      invoke<string>('get_spotdl_version').then(setSpotdlVersion).catch(() => {});
-      const v: string = await invoke('get_yt_dlp_version').catch(() => '');
+        const v: string = await invoke('get_yt_dlp_version').catch(() => '');
       setYtDlpVersion(v);
     } catch (e) {
       setInstallLog(`Error: ${e}`);
@@ -690,7 +668,7 @@ function SettingsPanel({
     { id: 'storage', label: 'Storage', icon: <Database size={15} /> },
   ];
 
-  const allInstalled = deps?.mpv && deps?.yt_dlp && deps?.ffprobe && deps?.spotdl;
+  const allInstalled = deps?.mpv && deps?.yt_dlp && deps?.ffprobe;
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -729,7 +707,6 @@ function SettingsPanel({
                 { key: 'mpv', label: 'mpv', desc: 'Audio playback', ok: deps?.mpv },
                 { key: 'yt_dlp', label: 'yt-dlp', desc: 'YouTube streaming', ok: deps?.yt_dlp },
                 { key: 'ffprobe', label: 'ffprobe', desc: 'Metadata & waveforms', ok: deps?.ffprobe },
-                { key: 'spotdl', label: 'spotdl', desc: 'Spotify import', ok: deps?.spotdl },
               ] as { key: string; label: string; desc: string; ok: boolean | undefined }[]).map(d => (
                 <div key={d.key} className={`p-4 rounded-xl border transition-all ${d.ok ? 'border-[#39FF14]/20 bg-[#39FF14]/[0.04]' : 'border-red-500/20 bg-red-500/[0.04]'}`}>
                   <div className="flex items-center justify-between mb-2">
@@ -748,7 +725,7 @@ function SettingsPanel({
               ))}
             </div>
 
-            {/* yt-dlp + spotdl version rows */}
+            {/* yt-dlp version row */}
             <div className="border border-neutral-800/60 rounded-xl overflow-hidden divide-y divide-neutral-800/60">
               <div className="px-5 py-4 flex items-center justify-between">
                 <div>
@@ -761,35 +738,6 @@ function SettingsPanel({
                   Update
                 </button>
               </div>
-              <div className="px-5 py-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white flex items-center gap-2">
-                    spotdl
-                    <span className="text-[10px] font-normal px-1.5 py-0.5 rounded-full bg-[#39FF14]/10 text-[#39FF14] border border-[#39FF14]/20">Spotify import</span>
-                  </p>
-                  <p className="text-xs text-neutral-600 font-mono mt-0.5">{spotdlVersion || (deps?.spotdl ? 'checking...' : 'Not installed — required for Spotify import')}</p>
-                </div>
-                <div className="flex gap-2">
-                  {!deps?.spotdl ? (
-                    <button onClick={onInstallSpotdl} disabled={isInstallingSpotdl}
-                      className="flex items-center gap-2 px-4 py-2 bg-[#39FF14] text-black rounded-lg text-sm font-bold hover:shadow-[0_0_15px_#39FF14] disabled:opacity-40 transition-all">
-                      {isInstallingSpotdl ? <div className="w-3.5 h-3.5 border-2 border-black/40 border-t-transparent rounded-full animate-spin" /> : <Download size={14} />}
-                      Install
-                    </button>
-                  ) : (
-                    <button onClick={onUpdateSpotdl} disabled={isUpdatingSpotdl}
-                      className="flex items-center gap-2 px-4 py-2 bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] rounded-lg text-sm font-semibold hover:bg-[#39FF14]/20 disabled:opacity-40 transition-colors">
-                      {isUpdatingSpotdl ? <div className="w-3.5 h-3.5 border-2 border-[#39FF14]/70 border-t-transparent rounded-full animate-spin" /> : <RotateCcw size={14} />}
-                      Update
-                    </button>
-                  )}
-                </div>
-              </div>
-              {spotdlLog && (
-                <div className="px-5 py-3 border-t border-neutral-800/40 bg-black/40">
-                  <p className="text-[11px] font-mono text-neutral-400 whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{spotdlLog}</p>
-                </div>
-              )}
             </div>
 
             {/* Install button */}
@@ -799,7 +747,7 @@ function SettingsPanel({
                   <Terminal size={15} className="text-[#39FF14]" /> Install All Dependencies
                 </h3>
                 <p className="text-xs text-neutral-600 mt-1">
-                  Installs mpv, ffmpeg, yt-dlp, and spotdl using your system's package manager (apt, pacman, dnf, winget, brew).
+                  Installs mpv, ffmpeg, and yt-dlp using your system's package manager (apt, pacman, dnf, winget, brew).
                 </p>
               </div>
               <div className="px-5 py-4 flex flex-col gap-3">
@@ -1228,13 +1176,11 @@ export default function VanguardPlayer() {
     setActiveNav(nav);
   }, [activeNav]);
 
+  // navigateBack always goes to home and resets search state
+  // (search state refs are set below — JS closures capture them at call time, not definition time)
   const navigateBack = useCallback(() => {
-    setNavHistory(prev => {
-      if (prev.length === 0) return prev;
-      const last = prev[prev.length - 1];
-      setActiveNav(last);
-      return prev.slice(0, -1);
-    });
+    setActiveNav('home');
+    setNavHistory([]);
   }, []);
 
   const [trackDurationSeconds, setTrackDurationSeconds] = useState(0);
@@ -1243,6 +1189,16 @@ export default function VanguardPlayer() {
   const progressSecondsRef = useRef(0);
 
   const [isSearching, setIsSearching] = useState(false);
+
+  // When navigating to home (via back button or sidebar), clear search results
+  useEffect(() => {
+    if (activeNav === 'home') {
+      setSearchQuery('');
+      setTracks([]);
+      setIsSearching(false);
+    }
+  }, [activeNav]);
+
   const [quickPicks, setQuickPicks] = useState<Track[]>(() => loadLS('vg_quickPicks', []));
 
   const [queue, setQueue] = useState<Track[]>(() => loadLS('vg_queue', []));
@@ -1270,6 +1226,7 @@ export default function VanguardPlayer() {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
   const [renamingPlaylist, setRenamingPlaylist] = useState<Playlist | null>(null);
+  const [showCsvImportModal, setShowCsvImportModal] = useState(false);
   const [showDuplicatesPlaylist, setShowDuplicatesPlaylist] = useState<Playlist | null>(null);
   const [bulkEditPlaylist, setBulkEditPlaylist] = useState<Playlist | null>(null);
   const [renameVal, setRenameVal] = useState('');
@@ -1281,7 +1238,6 @@ export default function VanguardPlayer() {
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [infoModalTrack, setInfoModalTrack] = useState<Track | null>(null);
   const [downloadingTracks, setDownloadingTracks] = useState<Record<string, boolean>>({});
-  const [showSpotifyModal, setShowSpotifyModal] = useState(false);
   const [hoveredTrackUrl, setHoveredTrackUrl] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1298,12 +1254,6 @@ export default function VanguardPlayer() {
     invoke('set_cache_dir', { path: p }).catch(() => {});
   }, []);
   const [playbackSpeed, setPlaybackSpeedState] = useState<number>(() => loadLS('vg_speed', 1));
-  const [pitchSemitones, setPitchSemitonesState] = useState<number>(() => loadLS('vg_pitch', 0));
-  const setPitchSemitones = useCallback((s: number) => {
-    setPitchSemitonesState(s);
-    saveLS('vg_pitch', s);
-    invoke('set_pitch', { semitones: s }).catch(() => {});
-  }, []);
   const [crossfadeSeconds, setCrossfadeSecondsState] = useState<number>(() => loadLS('vg_crossfade', 0));
   const setCrossfadeSeconds = useCallback((s: number) => {
     setCrossfadeSecondsState(s);
@@ -1314,10 +1264,6 @@ export default function VanguardPlayer() {
   const [eq, setEqState] = useState<{ bass: number; mid: number; treble: number }>(() => loadLS('vg_eq', { bass: 0, mid: 0, treble: 0 }));
   const [deps, setDeps] = useState<DepsStatus | null>(null);
   const [ytDlpVersion, setYtDlpVersion] = useState('');
-  const [spotdlVersion, setSpotdlVersion] = useState('');
-  const [isInstallingSpotdl, setIsInstallingSpotdl] = useState(false);
-  const [isUpdatingSpotdl, setIsUpdatingSpotdl] = useState(false);
-  const [spotdlLog, setSpotdlLog] = useState('');
   const [isUpdatingYtDlp, setIsUpdatingYtDlp] = useState(false);
   const [sleepTimer, setSleepTimerState] = useState(-1);
   const [audioInfo, setAudioInfo] = useState<AudioInfo | null>(null);
@@ -1359,6 +1305,29 @@ export default function VanguardPlayer() {
     }
   }, []);
   useEffect(() => { saveLS('vg_currentTrack', currentTrack); }, [currentTrack]);
+
+  // Discord RPC — real-time: fires on every track change with retry
+  // Discord auto-increments the elapsed timer from start_ts, so one call per track is enough.
+  // We retry up to 3 times with 2s delay to handle Discord slow-start on app launch.
+  useEffect(() => {
+    if (!currentTrack) {
+      invoke('clear_discord_rpc').catch(() => {});
+      return;
+    }
+    let cancelled = false;
+    const tryUpdate = async (attempt = 0) => {
+      if (cancelled) return;
+      try {
+        await invoke('update_discord_rpc', { title: currentTrack.title, artist: currentTrack.artist });
+      } catch {
+        if (attempt < 3 && !cancelled) {
+          setTimeout(() => tryUpdate(attempt + 1), 2000 * (attempt + 1));
+        }
+      }
+    };
+    tryUpdate();
+    return () => { cancelled = true; };
+  }, [currentTrack?.url]);
   // Save position on page close/refresh
   useEffect(() => {
     const save = () => { saveLS('vg_lastPosition', progressSecondsRef.current); };
@@ -1395,7 +1364,6 @@ export default function VanguardPlayer() {
   useEffect(() => {
     invoke<DepsStatus>('check_dependencies').then(setDeps).catch(() => {});
     invoke<string>('get_yt_dlp_version').then(setYtDlpVersion).catch(() => {});
-    invoke<string>('get_spotdl_version').then(setSpotdlVersion).catch(() => {});
   }, []);
 
   // ── Sleep timer poll — actually pauses when expired ──────────────────────
@@ -1477,8 +1445,7 @@ export default function VanguardPlayer() {
       setYtDlpVersion(v);
       const d: DepsStatus = await invoke('check_dependencies');
       setDeps(d);
-      invoke<string>('get_spotdl_version').then(setSpotdlVersion).catch(() => {});
-    } catch (e) { showToast(`Update failed: ${e}`); }
+      } catch (e) { showToast(`Update failed: ${e}`); }
     finally { setIsUpdatingYtDlp(false); }
   }, [showToast]);
 
@@ -1572,7 +1539,6 @@ export default function VanguardPlayer() {
       await invoke('play_audio', { url: track.url });
       await invoke('set_volume', { volume });
       await invoke('set_playback_speed', { speed: playbackSpeed });
-      if (pitchSemitones !== 0) { invoke('set_pitch', { semitones: pitchSemitones }).catch(() => {}); }
       await invoke('set_equalizer', { bass: eq.bass, mid: eq.mid, treble: eq.treble });
 
       let waited = 0;
@@ -1591,11 +1557,9 @@ export default function VanguardPlayer() {
       });
 
       setIsPlayingSync(true);
-      // Discord RPC — fire and forget, never block playback
-      invoke('update_discord_rpc', { title: track.title, artist: track.artist }).catch(() => {});
     } catch { setIsPlayingSync(false); }
     finally { setIsLoadingTrack(false); }
-  }, [volume, playbackSpeed, eq, pitchSemitones, setIsPlayingSync]);
+  }, [volume, playbackSpeed, eq, setIsPlayingSync]);
 
   // ── PLAY LOCAL ────────────────────────────────────────────────────────────────
   const handlePlayLocalTrack = useCallback(async (local: LocalTrack, localList?: LocalTrack[], localIndex?: number) => {
@@ -1652,7 +1616,6 @@ export default function VanguardPlayer() {
         } catch {}
       }, 500);
       // Discord RPC for local track
-      invoke('update_discord_rpc', { title: synth.title, artist: synth.artist }).catch(() => {});
     } catch { setIsPlayingSync(false); }
     finally { setIsLoadingTrack(false); }
   }, [volume, playbackSpeed, setIsPlayingSync]);
@@ -2215,7 +2178,7 @@ export default function VanguardPlayer() {
                   <p className="font-bold text-white mb-2 flex items-center gap-2 text-sm"><AlertTriangle size={15} className="text-amber-400" /> Getting Started</p>
                   <p className="text-xs text-neutral-300 leading-relaxed">Before using Vanguard, install the required dependencies:</p>
                   <p className="mt-2.5 text-[#39FF14] font-bold text-sm">Settings → Dependencies → Install</p>
-                  <p className="mt-2 text-xs text-neutral-500">Requires: mpv · yt-dlp · ffprobe · spotdl</p>
+                  <p className="mt-2 text-xs text-neutral-500">Requires: mpv · yt-dlp · ffprobe</p>
                   <button onClick={() => { navigateTo('settings'); setShowInfoHint(false); }}
                     className="mt-3 w-full py-2 bg-amber-500/15 border border-amber-500/30 text-amber-400 rounded-lg text-xs font-semibold hover:bg-amber-500/25 transition-colors">
                     Go to Settings →
@@ -2320,9 +2283,9 @@ export default function VanguardPlayer() {
           </div>
 
           <div className="mt-4 shrink-0">
-            <button onClick={() => setShowSpotifyModal(true)} className="w-full relative group overflow-hidden rounded-lg bg-transparent border border-[#39FF14]/50 py-3 px-4 flex items-center justify-center gap-2 transition-all duration-300 hover:border-[#39FF14] hover:shadow-[0_0_20px_rgba(57,255,20,0.3)]">
-              <div className="absolute inset-0 bg-[#39FF14]/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
-              <DownloadCloud size={18} className="text-[#39FF14] relative z-10" />
+            <button onClick={() => setShowCsvImportModal(true)} className="w-full relative group overflow-hidden rounded-lg bg-transparent border border-[#39FF14]/50 py-3 px-4 flex items-center justify-center gap-2 transition-all duration-300 hover:border-[#39FF14] hover:shadow-[0_0_20px_rgba(57,255,20,0.3)]">
+              <div className="absolute inset-0 bg-[#39FF14]/0 group-hover:bg-[#39FF14]/5 transition-all duration-300 rounded-lg" />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#1DB954" className="relative z-10"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
               <span className="text-sm font-semibold text-[#39FF14] relative z-10">Import from Spotify</span>
             </button>
           </div>
@@ -2336,10 +2299,10 @@ export default function VanguardPlayer() {
           <div className="flex items-center gap-3 px-6 pt-4 pb-0 shrink-0 z-20 relative">
             <button
               onClick={navigateBack}
-              disabled={navHistory.length === 0}
-              title="Go back"
+              disabled={activeNav === 'home'}
+              title="Go back to Home"
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all duration-200
-                ${navHistory.length > 0
+                ${activeNav !== 'home'
                   ? 'text-white border-neutral-700 bg-neutral-900/80 hover:border-[#39FF14]/50 hover:text-[#39FF14] hover:bg-[#39FF14]/5 active:scale-95'
                   : 'text-neutral-700 border-neutral-800/40 bg-neutral-900/30 cursor-not-allowed opacity-40'}`}
             >
@@ -2690,50 +2653,10 @@ export default function VanguardPlayer() {
               sleepTimer={sleepTimer} setSleepTimerMinutes={setSleepTimerMinutes} cancelSleepTimer={cancelSleepTimer}
               deps={deps} setDeps={setDeps} ytDlpVersion={ytDlpVersion} setYtDlpVersion={setYtDlpVersion}
               onUpdateYtDlp={handleUpdateYtDlp} isUpdatingYtDlp={isUpdatingYtDlp}
-              spotdlVersion={spotdlVersion} setSpotdlVersion={setSpotdlVersion}
-              onInstallSpotdl={async () => {
-                setIsInstallingSpotdl(true);
-                setSpotdlLog('Installing spotdl via pip...\nThis may take 30–60 seconds.');
-                try {
-                  const result = await invoke<string>('install_spotdl');
-                  setSpotdlLog(result || 'Installation complete.');
-                  const v = await invoke<string>('get_spotdl_version').catch(() => '');
-                  setSpotdlVersion(v);
-                  const d = await invoke<DepsStatus>('check_dependencies');
-                  setDeps(d);
-                  showToast(v ? `spotdl ${v} installed` : 'spotdl installed');
-                } catch (e) {
-                  setSpotdlLog(`Failed: ${e}\n\nTry manually: pip install spotdl`);
-                  showToast('spotdl install failed — see Dependencies tab');
-                }
-                finally {
-                  setIsInstallingSpotdl(false);
-                  // Re-check deps so banner disappears immediately after install
-                  const fresh = await invoke<DepsStatus>('check_dependencies').catch(() => null);
-                  if (fresh) setDeps(fresh);
-                }
-              }}
-              onUpdateSpotdl={async () => {
-                setIsUpdatingSpotdl(true);
-                setSpotdlLog('Updating spotdl...');
-                try {
-                  const result = await invoke<string>('update_spotdl');
-                  setSpotdlLog(result || 'Update complete.');
-                  const v = await invoke<string>('get_spotdl_version').catch(() => '');
-                  setSpotdlVersion(v);
-                  showToast(v ? `spotdl updated to ${v}` : 'spotdl updated');
-                } catch (e) {
-                  setSpotdlLog(`Failed: ${e}`);
-                  showToast('spotdl update failed');
-                }
-                finally { setIsUpdatingSpotdl(false); }
-              }}
-              isInstallingSpotdl={isInstallingSpotdl} isUpdatingSpotdl={isUpdatingSpotdl} spotdlLog={spotdlLog}
               onBackup={handleBackup} onRestore={handleRestore}
               backupPath={backupPath} setBackupPath={setBackupPath}
               cachePath={cachePath} setCachePath={setCachePath}
               crossfadeSeconds={crossfadeSeconds} setCrossfadeSeconds={setCrossfadeSeconds}
-              pitchSemitones={pitchSemitones} setPitchSemitones={setPitchSemitones}
               showToast={showToast}
             />
           )}
@@ -2914,20 +2837,8 @@ export default function VanguardPlayer() {
           </div>
         </div>
 
-        {/* Right: pitch + crossfade + volume */}
+        {/* Right: crossfade + volume */}
         <div className="w-1/4 flex items-center justify-end gap-3 pr-4">
-          {/* Pitch shift */}
-          <div className="flex flex-col items-center gap-0.5 group relative">
-            <button
-              className={`text-[10px] font-bold tabular-nums w-8 text-center rounded px-1 py-0.5 transition-colors ${pitchSemitones !== 0 ? 'text-cyan-400 bg-cyan-400/10' : 'text-neutral-600 hover:text-neutral-400'}`}
-              title="Pitch shift (semitones)"
-              onClick={() => {
-                const v = parseFloat(window.prompt('Pitch shift in semitones (-12 to +12):', String(pitchSemitones)) || String(pitchSemitones));
-                if (!isNaN(v)) setPitchSemitones(Math.max(-12, Math.min(12, v)));
-              }}>
-              {pitchSemitones > 0 ? `+${pitchSemitones}` : pitchSemitones}♪
-            </button>
-          </div>
           {/* Crossfade indicator */}
           {crossfadeSeconds > 0 && (
             <span className="text-[10px] text-purple-400 font-bold tabular-nums" title={`Crossfade: ${crossfadeSeconds}s`}>
@@ -3077,6 +2988,18 @@ export default function VanguardPlayer() {
       )}
 
       {/* ── DUPLICATE FINDER MODAL ── */}
+      {showCsvImportModal && (
+        <CsvImportModal
+          onClose={() => setShowCsvImportModal(false)}
+          onSavePlaylist={(name, tracks) => {
+            const id = `csv_${Date.now()}`;
+            setPlaylists(prev => [...prev, { id, name, description: 'Imported from Spotify CSV', tracks }]);
+            setShowCsvImportModal(false);
+            showToast(`Playlist "${name}" saved — ${tracks.length} tracks`);
+          }}
+          showToast={showToast}
+        />
+      )}
       {showDuplicatesPlaylist && (() => {
         const seen = new Map<string, Track>();
         const dupes: Track[] = [];
@@ -3242,17 +3165,7 @@ export default function VanguardPlayer() {
       )}
 
       {/* ── SPOTIFY IMPORT MODAL ── */}
-      {showSpotifyModal && (
-        <SpotifyImportModal
-          onClose={() => setShowSpotifyModal(false)}
-          onSavePlaylist={(name, tracks) => {
-            const id = `spotify_${Date.now()}`;
-            setPlaylists(prev => [...prev, { id, name, description: `Imported from Spotify`, tracks }]);
-            showToast(`Playlist "${name}" saved with ${tracks.length} tracks`);
-          }}
-          showToast={showToast}
-        />
-      )}
+      
 
       {/* ── TOAST ── */}
       {toast && (

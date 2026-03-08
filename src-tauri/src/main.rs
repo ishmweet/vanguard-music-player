@@ -120,7 +120,6 @@ struct DepsStatus {
     mpv: bool,
     yt_dlp: bool,
     ffprobe: bool,
-    spotdl: bool,
 }
 
 #[tauri::command]
@@ -129,8 +128,7 @@ async fn check_dependencies() -> Result<DepsStatus, String> {
         let mpv = Command::new("mpv").arg("--version").output().is_ok();
         let yt_dlp = Command::new("yt-dlp").arg("--version").output().is_ok();
         let ffprobe = Command::new("ffprobe").arg("-version").output().is_ok();
-        let spotdl = Command::new("spotdl").arg("--version").output().is_ok();
-        Ok(DepsStatus { mpv, yt_dlp, ffprobe, spotdl })
+        Ok(DepsStatus { mpv, yt_dlp, ffprobe })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -166,145 +164,6 @@ async fn update_yt_dlp() -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
-// ── spotdl helpers ────────────────────────────────────────────────────────────
-
-fn try_install_spotdl_cmd(program: &str, args: &[&str]) -> Result<String, String> {
-    match Command::new(program).args(args).output() {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-            if out.status.success() {
-                Ok(if stdout.trim().is_empty() { stderr } else { stdout })
-            } else {
-                Err(stderr.trim().to_string())
-            }
-        }
-        Err(e) => Err(format!("{} not found: {}", program, e)),
-    }
-}
-
-fn pip_install_spotdl() -> Result<String, String> {
-    // Modern Debian/Ubuntu (PEP 668) blocks system-wide pip installs.
-    // Try methods in order of cleanliness:
-    //   1. pipx  — creates isolated venv, recommended by Debian
-    //   2. pip3/pip --break-system-packages  — explicit override (safe for app tools)
-    //   3. pip3/pip --user  — user-level install
-    //   4. python3 -m pip variants with same flags
-
-    // Method 1: pipx (Linux/macOS preferred on PEP 668 systems)
-    #[cfg(not(target_os = "windows"))]
-    {
-        // Make sure pipx is installed first (try apt, then pip)
-        let has_pipx = Command::new("pipx").arg("--version").output()
-            .map(|o| o.status.success()).unwrap_or(false);
-        if !has_pipx {
-            // Try installing pipx via apt (no sudo -n so it may still fail, but worth trying)
-            let _ = Command::new("sudo").args(["-n", "apt-get", "install", "-y", "pipx"])
-                .env("DEBIAN_FRONTEND", "noninteractive").output();
-            // Or via pip with break-system-packages
-            let _ = Command::new("pip3")
-                .args(["install", "--break-system-packages", "--upgrade", "pipx"]).output();
-        }
-        if Command::new("pipx").arg("--version").output().map(|o| o.status.success()).unwrap_or(false) {
-            match try_install_spotdl_cmd("pipx", &["install", "spotdl", "--force"]) {
-                Ok(s) => {
-                    // Ensure pipx bin dir is on PATH for future invocations
-                    let _ = Command::new("pipx").arg("ensurepath").output();
-                    return Ok(format!("Installed via pipx.
-{}", s));
-                }
-                Err(_) => {}
-            }
-        }
-    }
-
-    // Method 2: pip3/pip --break-system-packages (Debian/Ubuntu PEP 668 override)
-    #[cfg(not(target_os = "windows"))]
-    let pip_bins = ["pip3", "pip"];
-    #[cfg(target_os = "windows")]
-    let pip_bins = ["pip", "pip3"];
-
-    for pip in &pip_bins {
-        match try_install_spotdl_cmd(pip, &["install", "--upgrade", "--break-system-packages", "spotdl"]) {
-            Ok(s) => return Ok(s),
-            Err(_) => {}
-        }
-    }
-
-    // Method 3: --user install (no root, no system override needed)
-    for pip in &pip_bins {
-        match try_install_spotdl_cmd(pip, &["install", "--upgrade", "--user", "spotdl"]) {
-            Ok(s) => return Ok(s),
-            Err(_) => {}
-        }
-    }
-
-    // Method 4: python3 -m pip variants
-    #[cfg(not(target_os = "windows"))]
-    let py_bins = ["python3", "python"];
-    #[cfg(target_os = "windows")]
-    let py_bins = ["python", "python3"];
-
-    for py in &py_bins {
-        for flag in &["--break-system-packages", "--user"] {
-            match try_install_spotdl_cmd(py, &["-m", "pip", "install", "--upgrade", flag, "spotdl"]) {
-                Ok(s) => return Ok(s),
-                Err(_) => {}
-            }
-        }
-    }
-
-    // Method 5: Windows pip direct (no extra flags)
-    #[cfg(target_os = "windows")]
-    {
-        match try_install_spotdl_cmd("pip", &["install", "--upgrade", "spotdl"]) {
-            Ok(s) => return Ok(s),
-            Err(_) => {}
-        }
-        match try_install_spotdl_cmd("python", &["-m", "pip", "install", "--upgrade", "spotdl"]) {
-            Ok(s) => return Ok(s),
-            Err(_) => {}
-        }
-    }
-
-    Err(
-        "Could not install spotdl automatically.
-
-Try manually:
-          pipx install spotdl
-          pip3 install --break-system-packages spotdl
-          pip3 install --user spotdl
-
-        If pipx is not installed: sudo apt install pipx".to_string()
-    )
-}
-
-#[tauri::command]
-async fn get_spotdl_version() -> Result<String, String> {
-    tokio::task::spawn_blocking(|| {
-        let out = Command::new("spotdl")
-            .arg("--version")
-            .output()
-            .map_err(|_| "spotdl not installed".to_string())?;
-        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn update_spotdl() -> Result<String, String> {
-    tokio::task::spawn_blocking(pip_install_spotdl)
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn install_spotdl() -> Result<String, String> {
-    tokio::task::spawn_blocking(pip_install_spotdl)
-        .await
-        .map_err(|e| e.to_string())?
-}
 
 // ── YouTube search ────────────────────────────────────────────────────────────
 
@@ -337,329 +196,75 @@ async fn search_youtube(query: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
-// ── Spotify playlist extractor ───────────────────────────────────────────────
-// Three methods tried in order — guarantees complete playlists of any size:
-//
-//  Method A: Spotify Web API via anonymous token from open.spotify.com/get_access_token
-//            Uses full pagination (offset/limit 50), gets every track.
-//            The token endpoint returns HTTP 200 even without cookies when the
-//            right headers are sent — key is sp_dc is NOT required for public playlists.
-//
-//  Method B: Embed page scrape for first 100 + partner API for remaining pages
-//
-//  Method C: yt-dlp --flat-playlist (works if yt-dlp has working Spotify extractor)
-
-fn sp_curl(url: &str, headers: &[(&str, &str)]) -> Result<String, String> {
-    let mut args: Vec<String> = vec![
-        "-s".to_string(), "-L".to_string(),
-        "--max-time".to_string(), "20".to_string(),
-        "--compressed".to_string(),
-        "-A".to_string(),
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36".to_string(),
-        "-H".to_string(), "Accept: application/json, text/html, */*".to_string(),
-        "-H".to_string(), "Accept-Language: en-US,en;q=0.9".to_string(),
-        "-H".to_string(), "Origin: https://open.spotify.com".to_string(),
-        "-H".to_string(), "Referer: https://open.spotify.com/".to_string(),
-    ];
-    for (k, v) in headers {
-        args.push("-H".to_string());
-        args.push(format!("{}: {}", k, v));
-    }
-    args.push(url.to_string());
-    let out = Command::new("curl").args(&args).output()
-        .map_err(|e| format!("curl: {}", e))?;
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
-}
-
-// ── Method A: spotdl save --save-file (most reliable, no auth needed) ───────
-// spotdl uses its own embedded Spotify client credentials — works on any public
-// playlist of any size. Outputs a .spotdl JSON file we parse for track metadata.
-fn method_spotdl(playlist_id: &str) -> Result<(String, Vec<(String, String)>), String> {
-    // Check spotdl is installed
-    if Command::new("spotdl").arg("--version").output().is_err() {
-        return Err("spotdl not installed".to_string());
-    }
-
-    let url = format!("https://open.spotify.com/playlist/{}", playlist_id);
-
-    // Use user-private temp dir — /tmp is world-readable (vuln #16 fix)
-    #[cfg(target_os = "windows")]
-    let tmp_path = format!("{}\\vg_spotdl_{}.spotdl",
-        std::env::var("TEMP").unwrap_or_else(|_| std::env::var("TMP").unwrap_or_else(|_| "C:\\Temp".to_string())),
-        std::process::id()
-    );
-    #[cfg(not(target_os = "windows"))]
-    let tmp_path = {
-        let uid = unsafe { libc_getuid() };
-        let run = format!("/run/user/{}", uid);
-        if std::path::Path::new(&run).exists() {
-            format!("{}/vg_spotdl_{}.spotdl", run, std::process::id())
-        } else {
-            format!("/tmp/vg_spotdl_{}.spotdl", std::process::id())
-        }
-    };
-
-    // spotdl save <url> --save-file <path>
-    // This only fetches metadata, does NOT download any audio
-    let out = Command::new("spotdl")
-        .args(["save", &url, "--save-file", &tmp_path])
-        .output()
-        .map_err(|e| format!("spotdl failed to run: {}", e))?;
-
-    if !std::path::Path::new(&tmp_path).exists() {
-        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-        return Err(format!("spotdl produced no output file. stdout: {} stderr: {}", &stdout[..stdout.len().min(300)], &stderr[..stderr.len().min(300)]));
-    }
-
-    // Cap at 50MB to prevent DoS from crafted output (vuln #7 fix)
-    if let Ok(m) = std::fs::metadata(&tmp_path) {
-        if m.len() > 50 * 1024 * 1024 {
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err("spotdl output too large".to_string());
-        }
-    }
-    let file_content = std::fs::read_to_string(&tmp_path)
-        .map_err(|e| format!("Could not read spotdl output: {}", e))?;
-    let _ = std::fs::remove_file(&tmp_path);
-
-    let songs: Value = serde_json::from_str(&file_content)
-        .map_err(|e| format!("spotdl JSON parse failed: {}", e))?;
-
-    let songs_arr = songs.as_array()
-        .ok_or("spotdl output is not a JSON array")?;
-
-    if songs_arr.is_empty() {
-        return Err("spotdl returned empty playlist".to_string());
-    }
-
-    // Extract playlist name from first song's album_artist or artist
-    let playlist_name = songs_arr.first()
-        .and_then(|s| s["list_name"].as_str()
-            .or_else(|| s["album_name"].as_str())
-            .or_else(|| s["publisher"].as_str()))
-        .unwrap_or("Spotify Import")
-        .to_string();
-
-    let mut tracks: Vec<(String, String)> = Vec::new();
-    for song in songs_arr {
-        let name = song["name"].as_str().unwrap_or("").trim().to_string();
-        if name.is_empty() { continue; }
-
-        // Artist: prefer "artist" field, fall back to first of "artists" array
-        let artist = song["artist"].as_str()
-            .or_else(|| song["artists"].as_array()
-                .and_then(|a| a.first())
-                .and_then(|a| a.as_str()))
-            .unwrap_or("").trim().to_string();
-
-        tracks.push((name, artist));
-    }
-
-    if tracks.is_empty() {
-        return Err("spotdl returned songs with no names".to_string());
-    }
-
-    Ok((playlist_name, tracks))
-}
-
-
-// ── Method B: Embed page scrape + internal API pagination ───────────────────
-fn extract_next_data(html: &str) -> Option<Value> {
-    let marker = r#"<script id="__NEXT_DATA__" type="application/json">"#;
-    let start = html.find(marker)? + marker.len();
-    let end = html[start..].find("</script>")?;
-    if end > 4 * 1024 * 1024 { return None; } // cap at 4MB (vuln #17 fix)
-    serde_json::from_str(&html[start..start+end]).ok()
-}
-
-fn method_embed(playlist_id: &str) -> Result<(String, Vec<(String, String)>), String> {
-    let html = sp_curl(
-        &format!("https://open.spotify.com/embed/playlist/{}?utm_source=oembed", playlist_id),
-        &[],
-    )?;
-
-    let data = extract_next_data(&html)
-        .ok_or("Could not parse embed page")?;
-
-    let entity = &data["props"]["pageProps"]["state"]["data"]["entity"];
-    let playlist_name = entity["name"].as_str().unwrap_or("").to_string();
-
-    // Token for pagination
-    let token = data["props"]["pageProps"]["accessToken"]
-        .as_str().map(|s| s.to_string());
-
-    let mut all_tracks: Vec<(String, String)> = Vec::new();
-
-    if let Some(list) = entity["trackList"].as_array() {
-        for item in list {
-            let title = item["title"].as_str().or_else(|| item["name"].as_str()).unwrap_or("").trim().to_string();
-            if title.is_empty() { continue; }
-            let artist = item["subtitle"].as_str().unwrap_or("").trim().to_string();
-            all_tracks.push((title, artist));
-        }
-    }
-
-    // Paginate with bearer token against the partner API
-    if let Some(tok) = token {
-        let auth = format!("Bearer {}", tok);
-        let mut offset = all_tracks.len();
-
-        // Try known working persisted query hashes (Spotify rotates these)
-        let hashes = [
-            "149ed840700e8f9b19e48b59e5d24cc64d98f4e0b4f09d0c6ccc9f91c0b96e6c",
-            "3ce876571c53bbc72f94a9ff7b52e48f79edd2f8c6cfab73b75f0f70c4c1e29d",
-            "91d41f2a5a3f45f41c6c603f18ba7e02f52bfdb619c13b7b8b0a49a8b68e0ebb",
-        ];
-
-        'outer: for hash in &hashes {
-            let mut page_off = offset;
-            loop {
-                let vars = urlenc(&format!(
-                    r#"{{"uri":"spotify:playlist:{}","offset":{},"limit":100}}"#,
-                    playlist_id, page_off
-                ));
-                let exts = urlenc(&format!(
-                    r#"{{"persistedQuery":{{"version":1,"sha256Hash":"{}"}}}}"#, hash
-                ));
-                let api_url = format!(
-                    "https://api-partner.spotify.com/pathfinder/v1/query?operationName=fetchPlaylist&variables={}&extensions={}",
-                    vars, exts
-                );
-                let resp = sp_curl(&api_url, &[
-                    ("Authorization", auth.as_str()),
-                    ("spotify-app-version", "1.2.46.25.g3c8c9b63"),
-                    ("app-platform", "WebPlayer"),
-                ])?;
-                let json: Value = match serde_json::from_str(&resp) {
-                    Ok(v) => v, Err(_) => break,
-                };
-                if !json["errors"].is_null() || json["data"].is_null() { break; }
-
-                let items = match json["data"]["playlistV2"]["content"]["items"].as_array() {
-                    Some(i) if !i.is_empty() => i.clone(),
-                    _ => break 'outer,
-                };
-
-                let before = all_tracks.len();
-                for item in &items {
-                    let d = &item["itemV2"]["data"];
-                    let title = d["name"].as_str().unwrap_or("").trim().to_string();
-                    if title.is_empty() { continue; }
-                    let artist = d["artists"]["items"].as_array()
-                        .and_then(|a| a.first())
-                        .and_then(|a| a["profile"]["name"].as_str())
-                        .unwrap_or("").trim().to_string();
-                    all_tracks.push((title, artist));
-                }
-
-                if all_tracks.len() == before { break 'outer; }
-                page_off = all_tracks.len();
-
-                let total = json["data"]["playlistV2"]["content"]["totalCount"].as_i64().unwrap_or(0);
-                if total > 0 && page_off as i64 >= total { break 'outer; }
-                if page_off >= 10000 { break 'outer; } // up to 10k tracks
-            }
-        }
-    }
-
-    if all_tracks.is_empty() {
-        return Err("method_embed: no tracks".to_string());
-    }
-    Ok((playlist_name, all_tracks))
-}
-
-// ── Method C: yt-dlp --flat-playlist ────────────────────────────────────────
-fn method_ytdlp(playlist_id: &str) -> Result<(String, Vec<(String, String)>), String> {
-    let url = format!("https://open.spotify.com/playlist/{}", playlist_id);
-    let out = Command::new("yt-dlp")
-        .args(["--flat-playlist", "--no-warnings", "--no-check-certificates",
-               "--ignore-errors", "--print", "%()j", &url])
-        .output()
-        .map_err(|e| format!("yt-dlp: {}", e))?;
-
-    let raw = String::from_utf8_lossy(&out.stdout).to_string();
-    if raw.trim().is_empty() {
-        return Err("yt-dlp: empty output".to_string());
-    }
-
-    let mut playlist_name = String::new();
-    let mut tracks: Vec<(String, String)> = Vec::new();
-
-    for line in raw.lines() {
-        let Ok(v) = serde_json::from_str::<Value>(line.trim()) else { continue };
-        if playlist_name.is_empty() {
-            if let Some(n) = v["playlist_title"].as_str().or_else(|| v["playlist"].as_str()) {
-                if !n.is_empty() && n != "NA" { playlist_name = n.to_string(); }
-            }
-        }
-        let title = v["track"].as_str().or_else(|| v["title"].as_str()).unwrap_or("").trim().to_string();
-        if title.is_empty() || title == "NA" { continue; }
-        let artist = v["artist"].as_str().or_else(|| v["uploader"].as_str()).unwrap_or("").trim().to_string();
-        tracks.push((title, if artist == "NA" { String::new() } else { artist }));
-    }
-
-    if tracks.is_empty() {
-        // Fallback print format
-        let out2 = Command::new("yt-dlp")
-            .args(["--flat-playlist", "--no-warnings", "--no-check-certificates",
-                   "--ignore-errors", "--print", "%(track)s====%(artist)s", &url])
-            .output().map_err(|e| format!("yt-dlp: {}", e))?;
-        for line in String::from_utf8_lossy(&out2.stdout).lines() {
-            if let Some((t, a)) = line.split_once("====") {
-                let t = t.trim(); let a = a.trim();
-                if !t.is_empty() && t != "NA" {
-                    tracks.push((t.to_string(), if a == "NA" { String::new() } else { a.to_string() }));
-                }
-            }
-        }
-    }
-
-    if tracks.is_empty() { return Err("yt-dlp: no tracks".to_string()); }
-    Ok((playlist_name, tracks))
-}
-
-fn urlenc(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() * 3);
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
-            _ => { out.push('%'); out.push_str(&format!("{:02X}", b)); }
-        }
-    }
-    out
-}
-
+// ── CSV Playlist import (Exportify format) ──────────────────────────────────
+// Reads a CSV exported by exportify.net — columns: Spotify ID, Artist IDs,
+// Track Name, Album Name, Artist Name(s), Release Date, Duration, Popularity
+// Returns newline-separated "Title====Artist" pairs with a PLAYLIST: header.
 #[tauri::command]
-async fn search_spotify_playlist(url: String) -> Result<String, String> {
+async fn import_csv_playlist(csv_content: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let playlist_id = url
-            .split("/playlist/").nth(1).unwrap_or("")
-            .split(|c: char| c == '?' || c == '#').next().unwrap_or("")
-            .trim().to_string();
+        let mut lines = csv_content.lines();
 
-        if playlist_id.is_empty() {
-            return Err("Could not parse playlist ID from URL".to_string());
+        // Skip header row
+        let header = lines.next().unwrap_or("").to_lowercase();
+        // Detect column positions from header
+        let cols: Vec<&str> = header.split(',').collect();
+        let find_col = |names: &[&str]| -> Option<usize> {
+            cols.iter().position(|c| names.iter().any(|n| c.contains(n)))
+        };
+        let title_idx  = find_col(&["track name", "title", "name"]).unwrap_or(2);
+        let artist_idx = find_col(&["artist name", "artist(s)", "artists"]).unwrap_or(4);
+
+        let mut output = String::from("PLAYLIST:Spotify Import\n");
+        let mut count = 0usize;
+
+        for line in lines {
+            if line.trim().is_empty() { continue; }
+            // Parse CSV row — handle quoted fields with commas inside
+            let fields = parse_csv_row(line);
+            let title  = fields.get(title_idx).map(|s| s.trim().trim_matches('"').trim()).unwrap_or("").to_string();
+            let artist = fields.get(artist_idx).map(|s| s.trim().trim_matches('"').trim()).unwrap_or("").to_string();
+            if title.is_empty() { continue; }
+            output.push_str(&format!("{}===={}\n", title, artist));
+            count += 1;
         }
 
-        // Try all methods — first success wins
-        // A: spotdl (best — uses its own Spotify credentials, any playlist size)
-        // B: embed page scrape + partner API (works without spotdl, capped heuristically)
-        // C: yt-dlp flat-playlist (works if yt-dlp has a working Spotify extractor)
-        let result = method_spotdl(&playlist_id)
-            .or_else(|e1| method_embed(&playlist_id).map_err(|e2| format!("spotdl: {} | embed: {}", e1, e2)))
-            .or_else(|e12| method_ytdlp(&playlist_id).map_err(|e3| format!("{} | yt-dlp: {}", e12, e3)))?;
-
-        let (playlist_name, all_tracks) = result;
-        let mut output = format!("PLAYLIST:{}\n", playlist_name);
-        for (title, artist) in all_tracks {
-            output.push_str(&format!("{}===={}\n", title, artist));
+        if count == 0 {
+            return Err("No tracks found in CSV. Make sure this is an Exportify CSV file.".to_string());
         }
         Ok(output)
     })
     .await
     .map_err(|e| e.to_string())?
 }
+
+fn parse_csv_row(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => {
+                if in_quotes && chars.peek() == Some(&'"') {
+                    chars.next();
+                    current.push('"');
+                } else {
+                    in_quotes = !in_quotes;
+                }
+            }
+            ',' if !in_quotes => {
+                fields.push(current.clone());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    fields.push(current);
+    fields
+}
+
+
 // ── Prefetch ──────────────────────────────────────────────────────────────────
 // Fires-and-forgets in a background task. Stores the direct stream URL so
 // play_audio can skip the yt-dlp resolve step entirely.
@@ -997,32 +602,6 @@ async fn set_playback_speed(speed: f64) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let cmd = format!(r#"{{"command": ["set_property", "speed", {}]}}"#, speed);
         send_ipc_command_with_retry(&cmd, 2).map(|_| ())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-// Pitch shift in semitones — uses audio-pitch-correction + af scaletempo2
-// semitones: -12 to +12. 0 = no shift.
-#[tauri::command]
-async fn set_pitch(semitones: f64) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        let semitones = semitones.clamp(-12.0, 12.0);
-        if (semitones).abs() < 0.01 {
-            // Reset — just disable pitch correction override
-            let cmd = r#"{"command": ["set_property", "audio-pitch-correction", false]}"#;
-            let _ = send_ipc_command_with_retry(cmd, 2);
-            return Ok(());
-        }
-        // Convert semitones to frequency ratio: ratio = 2^(semitones/12)
-        let ratio = 2f64.powf(semitones / 12.0);
-        // Use scaletempo2 with pitch-scale to shift pitch without changing speed
-        // af=scaletempo2:scale=<ratio> works in mpv 0.35+
-        let af_cmd = format!(
-            r#"{{"command": ["set_property", "af", "scaletempo2:scale={}:speed=pitch,loudnorm=I=-16:TP=-1.5:LRA=11"]}}"#,
-            ratio
-        );
-        send_ipc_command_with_retry(&af_cmd, 2).map(|_| ())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1802,10 +1381,10 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
         {
             // Detect package manager and install
             let pkg_managers: &[(&str, &[&str], &[&str])] = &[
-                ("apt-get", &["apt-get", "install", "-y", "mpv", "ffmpeg", "python3-pip"], &["pip3", "install", "--upgrade", "yt-dlp", "spotdl"]),
-                ("pacman",  &["pacman", "--noconfirm", "-S", "mpv", "ffmpeg"],             &["pip3", "install", "--upgrade", "yt-dlp", "spotdl"]),
-                ("dnf",     &["dnf", "install", "-y", "mpv", "ffmpeg"],                    &["pip3", "install", "--upgrade", "yt-dlp", "spotdl"]),
-                ("zypper",  &["zypper", "install", "-y", "mpv", "ffmpeg"],                 &["pip3", "install", "--upgrade", "yt-dlp", "spotdl"]),
+                ("apt-get", &["apt-get", "install", "-y", "mpv", "ffmpeg", "python3-pip"], &["pip3", "install", "--upgrade", "yt-dlp"]),
+                ("pacman",  &["pacman", "--noconfirm", "-S", "mpv", "ffmpeg"],             &["pip3", "install", "--upgrade", "yt-dlp"]),
+                ("dnf",     &["dnf", "install", "-y", "mpv", "ffmpeg"],                    &["pip3", "install", "--upgrade", "yt-dlp"]),
+                ("zypper",  &["zypper", "install", "-y", "mpv", "ffmpeg"],                 &["pip3", "install", "--upgrade", "yt-dlp"]),
             ];
 
             let mut installed = false;
@@ -1844,17 +1423,17 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
                 log.push_str("No supported package manager found (apt, pacman, dnf, zypper).\n");
             }
 
-            // Install yt-dlp and spotdl via pip3 (no sudo needed — user install)
-            log.push_str("\nInstalling yt-dlp and spotdl via pip...\n");
+            // Install yt-dlp via pip3 (no sudo needed — user install)
+            log.push_str("\nInstalling yt-dlp via pip...\n");
             for pip in &["pip3", "pip"] {
-                if let Ok(out) = Command::new(pip).args(["install", "--upgrade", "--user", "yt-dlp", "spotdl"]).output() {
+                if let Ok(out) = Command::new(pip).args(["install", "--upgrade", "--user", "yt-dlp"]).output() {
                     log.push_str(&String::from_utf8_lossy(&out.stdout));
                     if out.status.success() { break; }
                 }
             }
             // Also try python3 -m pip
             if !Command::new("yt-dlp").arg("--version").output().is_ok() {
-                let _ = Command::new("python3").args(["-m", "pip", "install", "--upgrade", "--user", "yt-dlp", "spotdl"]).output();
+                let _ = Command::new("python3").args(["-m", "pip", "install", "--upgrade", "--user", "yt-dlp"]).output();
             }
 
             // Re-check what's available now
@@ -1862,14 +1441,12 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
             let yt_dlp = Command::new("yt-dlp").arg("--version").output().is_ok();
             let ffprobe = Command::new("ffprobe").arg("-version").output().is_ok();
 
-            let spotdl = Command::new("spotdl").arg("--version").output().is_ok();
-            let msg = format!(
-                "Installation complete.\nmpv: {}  yt-dlp: {}  ffprobe: {}  spotdl: {}\n{}",
+                let msg = format!(
+                "Installation complete.\nmpv: {}  yt-dlp: {}  ffprobe: {}\n{}",
                 if mpv { "✓" } else { "✗ (install manually)" },
                 if yt_dlp { "✓" } else { "✗ (run: pip3 install yt-dlp)" },
                 if ffprobe { "✓" } else { "✗ (part of ffmpeg)" },
-                if spotdl { "✓" } else { "✗ (run: pip3 install spotdl)" },
-                if !installed { "No supported package manager found. Install manually." } else { "" }
+                    if !installed { "No supported package manager found. Install manually." } else { "" }
             );
             Ok(InstallResult { success: mpv || yt_dlp, message: msg })
         }
@@ -1908,10 +1485,10 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
                 }
             }
 
-            // Install yt-dlp and spotdl via pip
-            let _ = Command::new("pip").args(["install", "--upgrade", "yt-dlp", "spotdl"]).output();
-            let _ = Command::new("pip3").args(["install", "--upgrade", "yt-dlp", "spotdl"]).output();
-            let _ = Command::new("python").args(["-m", "pip", "install", "--upgrade", "yt-dlp", "spotdl"]).output();
+            // Install yt-dlp via pip
+            let _ = Command::new("pip").args(["install", "--upgrade", "yt-dlp"]).output();
+            let _ = Command::new("pip3").args(["install", "--upgrade", "yt-dlp"]).output();
+            let _ = Command::new("python").args(["-m", "pip", "install", "--upgrade", "yt-dlp"]).output();
             // Or winget for yt-dlp
             let _ = Command::new("winget")
                 .args(["install", "--id", "yt-dlp.yt-dlp", "-e", "--accept-source-agreements", "--accept-package-agreements"])
@@ -1921,15 +1498,13 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
             let yt_dlp = Command::new("yt-dlp").arg("--version").output().is_ok();
             let ffprobe = Command::new("ffprobe").arg("-version").output().is_ok();
 
-            let spotdl = Command::new("spotdl").arg("--version").output().is_ok();
-            let msg = format!(
-                "{}\nmpv: {}  yt-dlp: {}  ffprobe: {}  spotdl: {}",
+                let msg = format!(
+                "{}\nmpv: {}  yt-dlp: {}  ffprobe: {}",
                 log,
                 if mpv { "✓" } else { "✗ (restart may be needed)" },
                 if yt_dlp { "✓" } else { "✗ (restart may be needed)" },
                 if ffprobe { "✓" } else { "✗" },
-                if spotdl { "✓" } else { "✗ (restart may be needed)" }
-            );
+                );
 
             Ok(InstallResult { success, message: msg })
         }
@@ -2128,12 +1703,8 @@ fn main() {
             update_yt_dlp,
             // Search & prefetch
             search_youtube,
-            search_spotify_playlist,
             prefetch_track,
-            // spotdl
-            get_spotdl_version,
-            update_spotdl,
-            install_spotdl,
+            import_csv_playlist,
             // Stream cache
             set_cache_dir,
             get_cache_dir,
@@ -2153,7 +1724,6 @@ fn main() {
             get_playback_state,
             set_playback_speed,
             get_playback_speed,
-            set_pitch,
             get_audio_info,
             set_equalizer,
             // Sleep timer
@@ -2182,11 +1752,19 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
-                kill_mpv();
-                discord_clear_activity();
-                #[cfg(unix)]
-                { let _ = std::fs::remove_file(SOCKET_PATH); }
+            match event {
+                tauri::RunEvent::Exit => {
+                    kill_mpv();
+                    discord_clear_activity();
+                    #[cfg(unix)]
+                    { let _ = std::fs::remove_file(SOCKET_PATH); }
+                }
+                tauri::RunEvent::ExitRequested { .. } => {
+                    // Fire Discord clear as early as possible — before process exits
+                    discord_clear_activity();
+                    kill_mpv();
+                }
+                _ => {}
             }
         });
 }
