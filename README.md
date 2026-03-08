@@ -1,16 +1,14 @@
 <div align="center">
 
-<img src="https://vanguardplayer.app/vanguardplayer-preview.png" alt="Vanguard Player" width="100%" style="border-radius:12px"/>
-
 # 🎵 Vanguard Player
 
 **A free, open-source, ad-free music player for Windows and Linux.**  
 High-fidelity audio playback · YouTube streaming · Library management · Zero tracking · Zero paywalls.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)](#)
-[![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri-orange)](https://tauri.app)
-[![GitHub](https://img.shields.io/badge/GitHub-ishmweet-black?logo=github)](https://github.com/ishmweet)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)
+![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri-orange)
+![GitHub](https://img.shields.io/badge/GitHub-ishmweet-black?logo=github)
 
 </div>
 
@@ -18,7 +16,7 @@ High-fidelity audio playback · YouTube streaming · Library management · Zero 
 
 ## 📖 Overview
 
-Vanguard Player is a desktop music application built with [Tauri](https://tauri.app) (Rust backend) and React (TypeScript frontend). It lets you stream music from YouTube, manage local audio libraries, create playlists, download tracks, and enjoy high-quality audio — all without ads, tracking, or paywalls.
+Vanguard Player is a desktop music application built with Tauri (Rust backend) and React (TypeScript frontend). It lets you stream music from YouTube, manage local audio libraries, create playlists, download tracks, and enjoy high-quality audio — all without ads, tracking, or paywalls.
 
 ---
 
@@ -53,7 +51,7 @@ Vanguard Player is a desktop music application built with [Tauri](https://tauri.
 
 ## 🚀 Installation
 
-Download the latest release for your platform from the [Releases](https://github.com/ishmweet/vanguard-player/releases) page.
+Download the latest release for your platform from the Releases page on GitHub.
 
 ### Linux
 Download the `.AppImage` or `.deb` package and run it directly. You will also need the [runtime dependencies](#runtime-dependencies) installed.
@@ -69,9 +67,9 @@ Vanguard Player relies on three external tools at runtime. The app checks for th
 
 | Dependency | Purpose |
 |------------|---------|
-| [`mpv`](https://mpv.io) | Audio playback engine (streams & local files via IPC socket) |
-| [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) | YouTube search, streaming URL resolution, and downloads |
-| [`ffmpeg` / `ffprobe`](https://ffmpeg.org) | Audio metadata, waveform generation, and normalization |
+| `mpv` | Audio playback engine (streams & local files via IPC socket) |
+| `yt-dlp` | YouTube search, streaming URL resolution, and downloads |
+| `ffmpeg` / `ffprobe` | Audio metadata, waveform generation, and normalization |
 
 > **Tip:** On Linux, you can install these manually or let the in-app auto-installer attempt it. On Windows, auto-install uses `winget` or `chocolatey`.
 
@@ -83,9 +81,9 @@ Vanguard Player relies on three external tools at runtime. The app checks for th
 
 Before building Vanguard Player, you need to install the following on your system:
 
-- [Node.js](https://nodejs.org) (v18 or later) + npm
-- [Rust](https://rustup.rs) (stable toolchain)
-- [Tauri CLI](https://tauri.app/v1/guides/getting-started/prerequisites)
+- Node.js (v18 or later) + npm
+- Rust (stable toolchain)
+- Tauri CLI
 - The [runtime dependencies](#runtime-dependencies): `mpv`, `yt-dlp`, `ffmpeg`
 
 ---
@@ -162,7 +160,7 @@ source "$HOME/.cargo/env"
 cargo install tauri-cli
 ```
 
-> **Note:** `ffmpeg` and `mpv` may require enabling [RPM Fusion](https://rpmfusion.org) repositories on Fedora:
+> **Note:** `ffmpeg` and `mpv` may require enabling RPM Fusion repositories on Fedora:
 > ```bash
 > sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
 > ```
@@ -192,7 +190,7 @@ cargo install tauri-cli
 
 #### 🪟 Windows 10 / 11
 
-> Requires PowerShell (run as Administrator) or [Windows Terminal](https://aka.ms/terminal).
+> Requires PowerShell (run as Administrator) or Windows Terminal.
 
 ```powershell
 # Install winget if not already available (it ships with Windows 10 1709+)
@@ -217,7 +215,7 @@ pip install --upgrade yt-dlp
 cargo install tauri-cli
 ```
 
-> Alternatively, you can use [Chocolatey](https://chocolatey.org):
+> Alternatively, you can use Chocolatey:
 > ```powershell
 > choco install nodejs rust mpv ffmpeg yt-dlp -y
 > cargo install tauri-cli
@@ -229,7 +227,7 @@ cargo install tauri-cli
 
 ```bash
 # Clone the repository
-git clone https://github.com/ishmweet/vanguard-player.git
+git clone https://github.com/your-username/vanguard-player.git
 cd vanguard-player
 
 # Install JavaScript dependencies
@@ -244,42 +242,18 @@ cargo tauri build
 
 The built binary and installers will be in `src-tauri/target/release/bundle/`.
 
----
-
-### Project Structure
-
-```
-vanguard-player/
-├── index.html          # Marketing / landing page
-├── src/
-│   └── App.tsx         # Main React frontend (Tauri webview UI)
-├── src-tauri/
-│   └── src/
-│       └── main.rs     # Rust backend (Tauri commands, mpv IPC, yt-dlp, ffmpeg)
-├── package.json
-├── tauri.conf.json
-└── ...
-```
-
----
-
-### Architecture Overview
-
-- **Frontend** — React + TypeScript running inside Tauri's webview. Communicates with the Rust backend via Tauri's `invoke()` IPC bridge. Styled with Tailwind CSS and `lucide-react` icons.
-- **Backend** — Rust using Tauri. Controls `mpv` via a Unix/Windows named socket for audio playback, and spawns `yt-dlp` / `ffprobe` / `ffmpeg` as subprocesses for search, downloads, metadata, and normalization.
-- **IPC Security** — URL allowlisting, path traversal prevention, and JSON string escaping are enforced in the Rust layer before any data is passed to external processes.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome. Feel free to open a PR or issue on [GitHub](https://github.com/ishmweet).
+Contributions, issues, and feature requests are welcome. Feel free to open a PR or issue on GitHub.
 
 ---
 
 ## ☕ Support
 
-If you enjoy Vanguard Player, consider [buying me a chai](https://buymeacoffee.com) to support continued development.
+If you enjoy Vanguard Player, consider buying me a chai to support continued development.
 
 ---
 
@@ -290,5 +264,5 @@ MIT — free and open source, always.
 ---
 
 <div align="center">
-  Made with ❤️ · <a href="https://vanguardplayer.app">vanguardplayer.app</a>
+  Made with ❤️ by ishmweet
 </div>
