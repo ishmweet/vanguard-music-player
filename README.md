@@ -1,272 +1,294 @@
-# Vanguard Music Player
+<div align="center">
 
-Vanguard Music Player is a lightweight open-source desktop music player that streams music directly from **YouTube / YouTube Music**.
+<img src="https://vanguardplayer.app/vanguardplayer-preview.png" alt="Vanguard Player" width="100%" style="border-radius:12px"/>
 
-The goal of this project is to create a **fast, clean, modern music player** without the heavy overhead of Electron apps.
+# 🎵 Vanguard Player
 
-## Tech Stack
+**A free, open-source, ad-free music player for Windows and Linux.**  
+High-fidelity audio playback · YouTube streaming · Library management · Zero tracking · Zero paywalls.
 
-- **Tauri** (Rust backend)
-- **React + TypeScript**
-- **Vite**
-- **TailwindCSS**
-- **yt-dlp** for audio extraction
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)](#)
+[![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri-orange)](https://tauri.app)
+[![GitHub](https://img.shields.io/badge/GitHub-ishmweet-black?logo=github)](https://github.com/ishmweet)
 
----
-
-# Features
-
-- Stream music directly from **YouTube**
-- Lightweight desktop application
-- Modern **neon green UI**
-- Search songs instantly
-- Playlist support
-- Spotify playlist import *(planned)*
+</div>
 
 ---
 
+## 📖 Overview
 
-# Requirements
-
-Before running the project, install the following tools:
-
-- Node.js
-- Rust
-- Cargo
-- Tauri dependencies
-- yt-dlp
+Vanguard Player is a desktop music application built with [Tauri](https://tauri.app) (Rust backend) and React (TypeScript frontend). It lets you stream music from YouTube, manage local audio libraries, create playlists, download tracks, and enjoy high-quality audio — all without ads, tracking, or paywalls.
 
 ---
 
-# Linux Setup (Debian / Ubuntu / Zorin / PopOS)
+## ✨ Features
 
-### 1. Install Node.js
-
-```bash
-sudo apt install nodejs npm
-```
-
-Check installation:
-
-```bash
-node -v
-npm -v
-```
-
----
-
-### 2. Install Rust
-
-```bash
-curl https://sh.rustup.rs -sSf | sh
-```
-
-Reload shell:
-
-```bash
-source $HOME/.cargo/env
-```
-
-Verify:
-
-```bash
-rustc --version
-cargo --version
-```
+- 🔍 **YouTube Search & Streaming** — Search and play YouTube audio directly via `yt-dlp` + `mpv`
+- 📁 **Local Library** — Scan and play local audio files (MP3, FLAC, OGG, WAV, and more)
+- 📋 **Playlist Management** — Create, edit, reorder, and delete playlists; import/export M3U
+- ⬇️ **Track Downloads** — Download individual tracks or batch download entire playlists
+- 🎛️ **Equalizer** — Built-in EQ with adjustable bands
+- ⏱️ **Sleep Timer** — Auto-stop playback after a set duration
+- 🔁 **Playback Modes** — Shuffle, repeat all, repeat one
+- 🏷️ **Bulk Tag Editor** — Edit track titles and artists in bulk within playlists
+- 📊 **Audio Info** — View codec, bitrate, sample rate, and channel details
+- 💾 **Stream Cache** — Configurable disk caching for streams to reduce bandwidth usage
+- 🎚️ **Playback Speed Control** — Adjust speed without pitch distortion
+- 📤 **M3U Import / Export** — Interoperable playlist files
+- 🔊 **Audio Normalization** — Normalize loudness of downloaded files via `ffmpeg`
+- 🌐 **Landing Page** — Polished marketing site (`index.html`) with SEO, OG tags, and animated UI
 
 ---
 
-### 3. Install Tauri Dependencies
+## 🖥️ Supported Platforms
 
-```bash
-sudo apt install \
-libwebkit2gtk-4.1-dev \
-build-essential \
-curl \
-wget \
-file \
-libxdo-dev \
-libssl-dev \
-libayatana-appindicator3-dev \
-librsvg2-dev
-```
+| Platform | Status |
+|----------|--------|
+| Linux (x86_64) | ✅ Fully supported |
+| Windows 10/11 | ✅ Fully supported |
+| macOS | ❌ Not supported |
 
 ---
 
-### 4. Install yt-dlp
+## 🚀 Installation
 
-```bash
-sudo apt install yt-dlp
-```
+Download the latest release for your platform from the [Releases](https://github.com/ishmweet/vanguard-player/releases) page.
 
-Verify:
+### Linux
+Download the `.AppImage` or `.deb` package and run it directly. You will also need the [runtime dependencies](#runtime-dependencies) installed.
 
-```bash
-yt-dlp --version
-```
+### Windows
+Download and run the `.msi` or `.exe` installer. Runtime dependencies can be installed automatically from within the app via **Settings → Dependencies → Auto-Install**.
 
 ---
 
-# Arch Linux
+## ⚙️ Runtime Dependencies
 
-```bash
-sudo pacman -S nodejs npm rust yt-dlp \
-webkit2gtk base-devel curl wget file openssl
-```
+Vanguard Player relies on three external tools at runtime. The app checks for these on startup and can attempt to install them automatically on supported platforms.
+
+| Dependency | Purpose |
+|------------|---------|
+| [`mpv`](https://mpv.io) | Audio playback engine (streams & local files via IPC socket) |
+| [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) | YouTube search, streaming URL resolution, and downloads |
+| [`ffmpeg` / `ffprobe`](https://ffmpeg.org) | Audio metadata, waveform generation, and normalization |
+
+> **Tip:** On Linux, you can install these manually or let the in-app auto-installer attempt it. On Windows, auto-install uses `winget` or `chocolatey`.
 
 ---
 
-# Fedora
+## 🛠️ For Development
+
+### Prerequisites
+
+Before building Vanguard Player, you need to install the following on your system:
+
+- [Node.js](https://nodejs.org) (v18 or later) + npm
+- [Rust](https://rustup.rs) (stable toolchain)
+- [Tauri CLI](https://tauri.app/v1/guides/getting-started/prerequisites)
+- The [runtime dependencies](#runtime-dependencies): `mpv`, `yt-dlp`, `ffmpeg`
+
+---
+
+### Installing Development Dependencies by OS
+
+---
+
+#### 🐧 Debian / Ubuntu / Linux Mint / Pop!_OS
 
 ```bash
-sudo dnf install nodejs npm rust cargo yt-dlp \
-webkit2gtk4.1-devel \
-openssl-devel \
-libappindicator-gtk3-devel
+# System packages
+sudo apt update
+sudo apt install -y curl build-essential libssl-dev libgtk-3-dev \
+  libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+  mpv ffmpeg python3-pip
+
+# yt-dlp (via pip, latest version)
+pip3 install --upgrade --user yt-dlp
+
+# Node.js (via NodeSource)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Tauri CLI
+cargo install tauri-cli
 ```
 
 ---
 
-# Windows Setup
-
-### 1. Install Node.js
-
-Download the **LTS version**:
-
-https://nodejs.org
-
-Verify installation:
+#### 🎩 Arch Linux / Manjaro / EndeavourOS
 
 ```bash
-node -v
-npm -v
+# System packages
+sudo pacman -Syu --noconfirm
+sudo pacman -S --noconfirm base-devel curl openssl gtk3 webkit2gtk \
+  libappindicator-gtk3 librsvg mpv ffmpeg python-pip nodejs npm
+
+# yt-dlp (via pip)
+pip install --upgrade --user yt-dlp
+# Or via pacman (may be slightly older)
+# sudo pacman -S yt-dlp
+
+# Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Tauri CLI
+cargo install tauri-cli
 ```
 
 ---
 
-### 2. Install Rust
-
-Download and install:
-
-https://rustup.rs
-
-Verify installation:
+#### 🎩 Fedora / RHEL / AlmaLinux / Rocky Linux
 
 ```bash
-rustc --version
-cargo --version
+# System packages
+sudo dnf groupinstall -y "Development Tools"
+sudo dnf install -y curl openssl-devel gtk3-devel webkit2gtk4.1-devel \
+  libappindicator-gtk3-devel librsvg2-devel mpv ffmpeg python3-pip nodejs npm
+
+# yt-dlp (via pip)
+pip3 install --upgrade --user yt-dlp
+
+# Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Tauri CLI
+cargo install tauri-cli
+```
+
+> **Note:** `ffmpeg` and `mpv` may require enabling [RPM Fusion](https://rpmfusion.org) repositories on Fedora:
+> ```bash
+> sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
+> ```
+
+---
+
+#### 🦎 openSUSE Leap / Tumbleweed
+
+```bash
+# System packages
+sudo zypper refresh
+sudo zypper install -y curl gcc openssl-devel gtk3-devel webkit2gtk3-devel \
+  libappindicator3-1 librsvg-devel mpv ffmpeg python3-pip nodejs npm
+
+# yt-dlp (via pip)
+pip3 install --upgrade --user yt-dlp
+
+# Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Tauri CLI
+cargo install tauri-cli
 ```
 
 ---
 
-### 3. Install Visual Studio Build Tools
+#### 🪟 Windows 10 / 11
 
-Install:
+> Requires PowerShell (run as Administrator) or [Windows Terminal](https://aka.ms/terminal).
 
-Visual Studio Build Tools
+```powershell
+# Install winget if not already available (it ships with Windows 10 1709+)
+# Then install Node.js
+winget install --id OpenJS.NodeJS -e --accept-source-agreements
 
-Required component:
+# Install Rust
+winget install --id Rustlang.Rustup -e --accept-source-agreements
+# Then restart your terminal and run:
+rustup toolchain install stable
 
+# Install mpv and ffmpeg
+winget install --id mpv.net -e --accept-source-agreements
+winget install --id Gyan.FFmpeg -e --accept-source-agreements
+
+# Install yt-dlp
+winget install --id yt-dlp.yt-dlp -e --accept-source-agreements
+# Or via pip:
+pip install --upgrade yt-dlp
+
+# Install Tauri CLI
+cargo install tauri-cli
 ```
-Desktop development with C++
-```
+
+> Alternatively, you can use [Chocolatey](https://chocolatey.org):
+> ```powershell
+> choco install nodejs rust mpv ffmpeg yt-dlp -y
+> cargo install tauri-cli
+> ```
 
 ---
 
-### 4. Install yt-dlp
-
-Download from:
-
-https://github.com/yt-dlp/yt-dlp/releases
-
-Place `yt-dlp.exe` in your **PATH**.
-
----
-
-# macOS Setup
-
-### 1. Install Homebrew
+### Cloning & Running the Project
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
+# Clone the repository
+git clone https://github.com/ishmweet/vanguard-player.git
+cd vanguard-player
 
----
-
-### 2. Install dependencies
-
-```bash
-brew install node rust yt-dlp
-```
-
----
-
-# Running the Project
-
-Clone the repository:
-
-```bash
-git clone https://github.com/ishmweet/vanguard-music-player.git
-```
-
-Enter the project directory:
-
-```bash
-cd vanguard-music-player
-```
-
-Install frontend dependencies:
-
-```bash
+# Install JavaScript dependencies
 npm install
+
+# Run in development mode (hot-reload)
+cargo tauri dev
+
+# Build a production release
+cargo tauri build
 ```
 
-Run the application:
+The built binary and installers will be in `src-tauri/target/release/bundle/`.
 
-```bash
-npm run tauri dev
+---
+
+### Project Structure
+
+```
+vanguard-player/
+├── index.html          # Marketing / landing page
+├── src/
+│   └── App.tsx         # Main React frontend (Tauri webview UI)
+├── src-tauri/
+│   └── src/
+│       └── main.rs     # Rust backend (Tauri commands, mpv IPC, yt-dlp, ffmpeg)
+├── package.json
+├── tauri.conf.json
+└── ...
 ```
 
 ---
 
-# Building the Application
+### Architecture Overview
 
-To build the desktop application:
-
-```bash
-npm run tauri build
-```
-
-The compiled application will appear in:
-
-```
-src-tauri/target/release
-```
+- **Frontend** — React + TypeScript running inside Tauri's webview. Communicates with the Rust backend via Tauri's `invoke()` IPC bridge. Styled with Tailwind CSS and `lucide-react` icons.
+- **Backend** — Rust using Tauri. Controls `mpv` via a Unix/Windows named socket for audio playback, and spawns `yt-dlp` / `ffprobe` / `ffmpeg` as subprocesses for search, downloads, metadata, and normalization.
+- **IPC Security** — URL allowlisting, path traversal prevention, and JSON string escaping are enforced in the Rust layer before any data is passed to external processes.
 
 ---
 
-# Contributing
+## 🤝 Contributing
 
-Contributions are welcome.
-
-You can help by:
-
-- Improving UI
-- Adding features
-- Fixing bugs
-- Optimizing performance
+Contributions, issues, and feature requests are welcome. Feel free to open a PR or issue on [GitHub](https://github.com/ishmweet).
 
 ---
 
-# License
+## ☕ Support
 
-MIT License
+If you enjoy Vanguard Player, consider [buying me a chai](https://buymeacoffee.com) to support continued development.
 
 ---
 
-# Author
+## 📄 License
 
-**Ishmeet Singh**
+MIT — free and open source, always.
 
-GitHub:  
-https://github.com/ishmweet
+---
+
+<div align="center">
+  Made with ❤️ · <a href="https://vanguardplayer.app">vanguardplayer.app</a>
+</div>
