@@ -249,11 +249,6 @@ The built binary and installers will be in `src-tauri/target/release/bundle/`.
 
 Contributions, issues, and feature requests are welcome. Feel free to open a PR or issue on GitHub.
 
----
-
-## ☕ Support
-
-If you enjoy Vanguard Player, consider buying me a chai to support continued development.
 
 ---
 
@@ -262,7 +257,3 @@ If you enjoy Vanguard Player, consider buying me a chai to support continued dev
 MIT — free and open source, always.
 
 ---
-
-<div align="center">
-  Made with ❤️ by ishmweet
-</div>
