@@ -33,6 +33,9 @@ lazy_static::lazy_static! {
     // Stream cache directory — set by the frontend, used by mpv for disk caching
     static ref STREAM_CACHE_DIR: Arc<Mutex<String>> =
         Arc::new(Mutex::new(default_cache_dir()));
+
+    // Loudnorm toggle — disabling removes ~100ms mpv startup latency per track
+    static ref LOUDNORM_ENABLED: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
 }
 
 fn default_cache_dir() -> String {
@@ -169,25 +172,41 @@ async fn update_yt_dlp() -> Result<String, String> {
 #[tauri::command]
 async fn search_youtube(query: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new("yt-dlp")
+        let mut child = Command::new("yt-dlp")
             .args([
                 &format!("ytsearch10:{}", query),
                 "--flat-playlist",
-                "--print",
-                "%(title)s====%(uploader)s====%(duration_string)s====%(id)s",
+                "--print", "%(title)s====%(uploader)s====%(duration_string)s====%(id)s",
                 "--no-warnings",
+                "--no-check-certificates",
+                "--socket-timeout", "8",   // per-connection timeout
             ])
-            .output()
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
             .map_err(|e| format!("yt-dlp not found: {}", e))?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        // Hard kill at 18s — prevents infinite hang on network issues
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(18);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {
+                    if std::time::Instant::now() > deadline {
+                        let _ = child.kill();
+                        return Err("Search timed out — check your connection".to_string());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
         if stdout.trim().is_empty() {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            return Err(if stderr.trim().is_empty() {
-                "No results found".to_string()
-            } else {
-                stderr
-            });
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            return Err(if stderr.trim().is_empty() { "No results found".to_string() } else { stderr });
         }
         Ok(stdout)
     })
@@ -331,12 +350,16 @@ async fn prefetch_track(url: String) -> Result<(), String> {
     tokio::spawn(async move {
         let url_clone = url.clone();
         let result = tokio::task::spawn_blocking(move || {
+            // --print urls is faster than --get-url (skips redundant metadata phase)
+            // Format matches play_audio exactly so cache hits always work
             Command::new("yt-dlp")
                 .args([
-                    "--get-url",
-                    "--format", "bestaudio/best",
+                    "--print", "urls",
+                    "--format", "bestaudio[ext=webm]/bestaudio/best",
                     "--no-check-certificates",
                     "--no-warnings",
+                    "--no-playlist",
+                    "--socket-timeout", "8",
                     &url_clone,
                 ])
                 .output()
@@ -360,6 +383,17 @@ async fn prefetch_track(url: String) -> Result<(), String> {
 }
 
 // ── Playback ──────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn set_loudnorm_enabled(enabled: bool) -> Result<(), String> {
+    *LOUDNORM_ENABLED.lock().unwrap() = enabled;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_loudnorm_enabled() -> bool {
+    *LOUDNORM_ENABLED.lock().unwrap()
+}
 
 #[tauri::command]
 fn set_cache_dir(path: String) -> Result<(), String> {
@@ -437,6 +471,12 @@ async fn play_audio(url: String) -> Result<(), String> {
 
         // --cache-dir REMOVED: not a valid option on all mpv builds.
         // Caused "Error parsing option cache-dir" on Linux. mpv manages its own temp cache.
+        let af_arg = if *LOUDNORM_ENABLED.lock().unwrap() {
+            "--af=loudnorm=I=-16:TP=-1.5:LRA=11".to_string()
+        } else {
+            "--af=".to_string()  // empty filter chain — no loudnorm, instant audio start
+        };
+
         Command::new("mpv")
             .args([
                 "--no-video",
@@ -446,13 +486,13 @@ async fn play_audio(url: String) -> Result<(), String> {
                 "--demuxer-max-back-bytes=8MiB",
                 "--demuxer-readahead-secs=10",
                 "--cache-pause=no",
-                "--network-timeout=20",
+                "--network-timeout=10",
                 "--audio-buffer=0.5",
                 "--audio-pitch-correction=yes",
-                "--af=loudnorm=I=-16:TP=-1.5:LRA=11",
+                &af_arg,
                 "--script-opts=ytdl_hook-ytdl_path=yt-dlp",
                 "--ytdl-format=bestaudio[ext=webm]/bestaudio/best",
-                "--ytdl-raw-options=ignore-config=,no-check-certificates=,retries=5,fragment-retries=5,concurrent-fragments=4",
+                "--ytdl-raw-options=ignore-config=,no-check-certificates=,retries=2,fragment-retries=2,concurrent-fragments=4",
                 &format!("--input-ipc-server={}", SOCKET_PATH),
                 "--force-window=no",
                 "--keep-open=yes",
@@ -463,7 +503,7 @@ async fn play_audio(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("mpv not found or failed to start: {}", e))?;
 
-        wait_for_socket(5000);
+        wait_for_socket(2500);
         Ok(())
     })
     .await
@@ -479,14 +519,21 @@ async fn play_local_file(path: String) -> Result<(), String> {
         kill_mpv();
         cleanup_socket();
 
+        let af_arg_local = if *LOUDNORM_ENABLED.lock().unwrap() {
+            "--af=loudnorm=I=-16:TP=-1.5:LRA=11".to_string()
+        } else {
+            "--af=".to_string()
+        };
+
         Command::new("mpv")
             .args([
                 "--no-video",
-                "--cache=yes",
-                "--demuxer-max-bytes=32MiB",
-                "--audio-buffer=0.5",
+                // Local file — no network buffering, no cache, instant start
+                "--cache=no",
+                "--demuxer-max-bytes=1MiB",
+                "--audio-buffer=0.1",
                 "--audio-pitch-correction=yes",
-                "--af=loudnorm=I=-16:TP=-1.5:LRA=11",
+                &af_arg_local,
                 &format!("--input-ipc-server={}", SOCKET_PATH),
                 "--force-window=no",
                 "--keep-open=yes",
@@ -497,7 +544,7 @@ async fn play_local_file(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("mpv not found or failed to start: {}", e))?;
 
-        wait_for_socket(3000);
+        wait_for_socket(2000);
         Ok(())
     })
     .await
@@ -598,27 +645,32 @@ struct PlaybackState {
 
 #[tauri::command]
 async fn get_playback_state() -> Result<PlaybackState, String> {
-    // Reduced to 3 IPC calls (was 4). Shorter timeouts. safe_f64 guards NaN (vuln #12, #19)
+    // All 3 IPC properties fetched over a single socket connection (was 3 separate connects).
     tokio::task::spawn_blocking(|| {
-        let pause_resp = send_ipc_command_with_retry(
-            r#"{"command": ["get_property", "pause"]}"#, 1
-        ).map_err(|_| "mpv not running".to_string())?;
+        let responses = send_ipc_batch(&[
+            r#"{"command": ["get_property", "pause"]}"#,
+            r#"{"command": ["get_property", "time-pos"]}"#,
+            r#"{"command": ["get_property", "duration"]}"#,
+        ]);
 
-        let paused = {
-            let j: Value = serde_json::from_str(&pause_resp).unwrap_or(Value::Null);
-            j["data"].as_bool().unwrap_or(false)
-        };
+        // If pause query failed entirely, mpv isn't running
+        let pause_resp = responses.get(0)
+            .and_then(|r| r.as_ref().ok())
+            .cloned()
+            .ok_or_else(|| "mpv not running".to_string())?;
 
-        let position = send_ipc_command_with_retry(
-            r#"{"command": ["get_property", "time-pos"]}"#, 0
-        ).ok().and_then(|r| parse_f64_from_response(&r).ok()).map(safe_f64).unwrap_or(0.0);
+        let paused = serde_json::from_str::<Value>(&pause_resp)
+            .ok().and_then(|j| j["data"].as_bool()).unwrap_or(false);
 
-        let duration = send_ipc_command_with_retry(
-            r#"{"command": ["get_property", "duration"]}"#, 0
-        ).ok().and_then(|r| parse_f64_from_response(&r).ok()).map(safe_f64).unwrap_or(0.0);
+        let get_f64 = |i: usize| responses.get(i)
+            .and_then(|r| r.as_ref().ok())
+            .and_then(|r| parse_f64_from_response(r).ok())
+            .map(safe_f64).unwrap_or(0.0);
 
-        // Use near-end heuristic instead of eof-reached IPC call (saves 1 round-trip)
-        // With --keep-open, mpv pauses at EOF — detect by: near end AND paused
+        let position = get_f64(1);
+        let duration  = get_f64(2);
+
+        // With --keep-open mpv pauses at EOF — detect via near-end heuristic (no extra IPC call)
         let near_end = duration > 0.0 && position > 5.0 && (duration - position) < 1.5 && paused;
 
         Ok(PlaybackState { playing: !paused, paused, position, duration, eof_reached: near_end })
@@ -683,63 +735,81 @@ struct AudioInfo {
 #[tauri::command]
 async fn get_audio_info() -> Result<AudioInfo, String> {
     tokio::task::spawn_blocking(|| {
-        let codec = send_ipc_command_with_retry(
-            r#"{"command": ["get_property", "audio-codec-name"]}"#, 1
-        )
-        .ok()
-        .and_then(|r| {
-            let j: Value = serde_json::from_str(&r).unwrap_or(Value::Null);
-            j["data"].as_str().map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "unknown".to_string());
+        // Batch all 5 queries over a single IPC connection to avoid 4 extra
+        // connect/disconnect round-trips. Each command is sent then read back
+        // on the same open socket before closing.
+        fn get_audio_info_batched() -> Result<AudioInfo, String> {
+            #[cfg(unix)]
+            {
+                let stream = UnixStream::connect(SOCKET_PATH)
+                    .map_err(|e| format!("IPC connect failed: {}", e))?;
+                stream.set_read_timeout(Some(std::time::Duration::from_millis(800))).ok();
+                stream.set_write_timeout(Some(std::time::Duration::from_millis(400))).ok();
 
-        let bitrate = send_ipc_command_with_retry(
-            r#"{"command": ["get_property", "audio-bitrate"]}"#, 1
-        )
-        .ok()
-        .and_then(|r| parse_f64_from_response(&r).ok())
-        .unwrap_or(0.0);
+                let queries = [
+                    r#"{"command": ["get_property", "audio-codec-name"]}"#,
+                    r#"{"command": ["get_property", "audio-bitrate"]}"#,
+                    r#"{"command": ["get_property", "audio-samplerate"]}"#,
+                    r#"{"command": ["get_property", "audio-channels"]}"#,
+                    r#"{"command": ["get_property", "file-format"]}"#,
+                    r#"{"command": ["get_property", "path"]}"#,
+                ];
 
-        let samplerate = send_ipc_command_with_retry(
-            r#"{"command": ["get_property", "audio-samplerate"]}"#, 1
-        )
-        .ok()
-        .and_then(|r| parse_f64_from_response(&r).ok())
-        .unwrap_or(0.0);
+                // Write all queries at once
+                let mut writer = stream.try_clone().map_err(|e| e.to_string())?;
+                for q in &queries {
+                    use std::io::Write;
+                    writer.write_all(q.as_bytes()).ok();
+                    writer.write_all(b"
+").ok();
+                }
+                drop(writer);
 
-        let channels = send_ipc_command_with_retry(
-            r#"{"command": ["get_property", "audio-channels"]}"#, 1
-        )
-        .ok()
-        .and_then(|r| {
-            let j: Value = serde_json::from_str(&r).unwrap_or(Value::Null);
-            // mpv can return a string like "stereo" or an int
-            if let Some(s) = j["data"].as_str() { return Some(s.to_string()); }
-            j["data"].as_i64().map(|n| n.to_string())
-        })
-        .unwrap_or_else(|| "stereo".to_string());
+                // Read responses — collect up to 6 command responses, skip events
+                let mut reader = BufReader::new(stream);
+                let mut responses: Vec<Value> = Vec::with_capacity(6);
+                let mut lines_read = 0usize;
+                while responses.len() < 6 && lines_read < 60 {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).is_err() || line.is_empty() { break; }
+                    lines_read += 1;
+                    if let Ok(v) = serde_json::from_str::<Value>(line.trim()) {
+                        if !v["error"].is_null() { responses.push(v); }
+                    }
+                }
 
-        let format = send_ipc_command_with_retry(
-            r#"{"command": ["get_property", "file-format"]}"#, 1
-        )
-        .ok()
-        .and_then(|r| {
-            let j: Value = serde_json::from_str(&r).unwrap_or(Value::Null);
-            j["data"].as_str().map(|s| s.split(',').next().unwrap_or(s).trim().to_uppercase())
-        })
-        .unwrap_or_default();
+                let get_str = |v: &Value| v["data"].as_str().map(|s| s.to_string());
+                let get_f64 = |v: &Value| v["data"].as_f64().unwrap_or(0.0);
 
-        let url = send_ipc_command_with_retry(
-            r#"{"command": ["get_property", "path"]}"#, 1
-        )
-        .ok()
-        .and_then(|r| {
-            let j: Value = serde_json::from_str(&r).unwrap_or(Value::Null);
-            j["data"].as_str().map(|s| s.to_string())
-        })
-        .unwrap_or_default();
+                let codec = responses.get(0).and_then(get_str).unwrap_or_else(|| "unknown".into());
+                let bitrate = responses.get(1).map(get_f64).unwrap_or(0.0);
+                let samplerate = responses.get(2).map(get_f64).unwrap_or(0.0);
+                let channels = responses.get(3).and_then(|v| {
+                    if let Some(s) = v["data"].as_str() { return Some(s.to_string()); }
+                    v["data"].as_i64().map(|n| n.to_string())
+                }).unwrap_or_else(|| "stereo".into());
+                let format = responses.get(4).and_then(get_str)
+                    .map(|s| s.split(',').next().unwrap_or(&s).trim().to_uppercase())
+                    .unwrap_or_default();
+                let url = responses.get(5).and_then(get_str).unwrap_or_default();
 
-        Ok(AudioInfo { codec, bitrate, samplerate, channels, format, url })
+                Ok(AudioInfo { codec, bitrate, samplerate, channels, format, url })
+            }
+            #[cfg(not(unix))]
+            {
+                // Windows fallback: sequential (named pipes don't support the same trick)
+                let codec = send_ipc_command_with_retry(
+                    r#"{"command": ["get_property", "audio-codec-name"]}"#, 1
+                ).ok().and_then(|r| { let j: Value = serde_json::from_str(&r).unwrap_or(Value::Null); j["data"].as_str().map(|s| s.to_string()) }).unwrap_or_else(|| "unknown".into());
+                let bitrate = send_ipc_command_with_retry(r#"{"command": ["get_property", "audio-bitrate"]}"#, 1).ok().and_then(|r| parse_f64_from_response(&r).ok()).unwrap_or(0.0);
+                let samplerate = send_ipc_command_with_retry(r#"{"command": ["get_property", "audio-samplerate"]}"#, 1).ok().and_then(|r| parse_f64_from_response(&r).ok()).unwrap_or(0.0);
+                let channels = send_ipc_command_with_retry(r#"{"command": ["get_property", "audio-channels"]}"#, 1).ok().and_then(|r| { let j: Value = serde_json::from_str(&r).unwrap_or(Value::Null); if let Some(s) = j["data"].as_str() { return Some(s.to_string()); } j["data"].as_i64().map(|n| n.to_string()) }).unwrap_or_else(|| "stereo".into());
+                let format = send_ipc_command_with_retry(r#"{"command": ["get_property", "file-format"]}"#, 1).ok().and_then(|r| { let j: Value = serde_json::from_str(&r).unwrap_or(Value::Null); j["data"].as_str().map(|s| s.split(',').next().unwrap_or(s).trim().to_uppercase()) }).unwrap_or_default();
+                let url = send_ipc_command_with_retry(r#"{"command": ["get_property", "path"]}"#, 1).ok().and_then(|r| { let j: Value = serde_json::from_str(&r).unwrap_or(Value::Null); j["data"].as_str().map(|s| s.to_string()) }).unwrap_or_default();
+                Ok(AudioInfo { codec, bitrate, samplerate, channels, format, url })
+            }
+        }
+        get_audio_info_batched()
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1309,17 +1379,16 @@ fn wait_for_socket(timeout_ms: u64) {
     {
         while std::time::Instant::now() < deadline {
             if std::path::Path::new(SOCKET_PATH).exists() {
-                // Try a real connect to confirm it's listening
                 if UnixStream::connect(SOCKET_PATH).is_ok() { return; }
             }
-            std::thread::sleep(std::time::Duration::from_millis(30));
+            std::thread::sleep(std::time::Duration::from_millis(15));
         }
     }
     #[cfg(windows)]
     {
         while std::time::Instant::now() < deadline {
             if OpenOptions::new().read(true).write(true).open(SOCKET_PATH).is_ok() { return; }
-            std::thread::sleep(std::time::Duration::from_millis(30));
+            std::thread::sleep(std::time::Duration::from_millis(15));
         }
     }
 }
@@ -1342,31 +1411,81 @@ fn kill_mpv() {
 fn cleanup_socket() {
     #[cfg(unix)]
     {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while std::path::Path::new(SOCKET_PATH).exists()
-            && std::time::Instant::now() < deadline
-        {
-            std::thread::sleep(std::time::Duration::from_millis(40));
-        }
+        // Try immediate delete first — works most of the time since pkill is synchronous
         let _ = std::fs::remove_file(SOCKET_PATH);
+        // If mpv was slow to die and the socket is still present, poll up to 300ms
+        if std::path::Path::new(SOCKET_PATH).exists() {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
+            while std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                if !std::path::Path::new(SOCKET_PATH).exists() { break; }
+            }
+            let _ = std::fs::remove_file(SOCKET_PATH);
+        }
     }
     #[cfg(windows)]
     {
-        // Poll until the named pipe is gone (open-attempt fails = pipe released)
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        // Poll until named pipe is released — max 400ms at 15ms intervals
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(400);
         while std::time::Instant::now() < deadline {
-            let gone = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(SOCKET_PATH)
-                .is_err();
-            if gone { break; }
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            if OpenOptions::new().read(true).write(true).open(SOCKET_PATH).is_err() { break; }
+            std::thread::sleep(std::time::Duration::from_millis(15));
         }
     }
 }
 
 // ── IPC helpers ───────────────────────────────────────────────────────────────
+
+// Send multiple IPC commands over a single socket connection.
+// Returns one Result<String> per command in input order.
+// On Unix, all queries are written before reading any responses so mpv
+// can pipeline them — far faster than N separate connect/write/read cycles.
+fn send_ipc_batch(cmds: &[&str]) -> Vec<Result<String, String>> {
+    let n = cmds.len();
+    #[cfg(unix)]
+    {
+        let stream = match UnixStream::connect(SOCKET_PATH) {
+            Ok(s) => s,
+            Err(e) => return vec![Err(format!("IPC connect failed: {}", e)); n],
+        };
+        stream.set_read_timeout(Some(std::time::Duration::from_millis(800))).ok();
+        stream.set_write_timeout(Some(std::time::Duration::from_millis(400))).ok();
+
+        // Write all commands at once before reading any responses
+        {
+            use std::io::Write;
+            if let Ok(mut w) = stream.try_clone() {
+                for cmd in cmds {
+                    let _ = w.write_all(cmd.as_bytes());
+                    let _ = w.write_all(b"\n");
+                }
+            }
+        }
+
+        // Read responses — skip mpv event lines (no "error" key), collect command responses
+        let mut reader = BufReader::new(stream);
+        let mut results: Vec<String> = Vec::with_capacity(n);
+        let mut lines_read = 0usize;
+        while results.len() < n && lines_read < n * 12 {
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_err() || line.is_empty() { break; }
+            lines_read += 1;
+            let trimmed = line.trim();
+            if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+                if !v["error"].is_null() { results.push(trimmed.to_string()); }
+            }
+        }
+
+        let mut out: Vec<Result<String, String>> = results.into_iter().map(Ok).collect();
+        while out.len() < n { out.push(Err("No response from mpv".to_string())); }
+        out
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows named pipes: sequential fallback
+        cmds.iter().map(|cmd| send_ipc_command_with_retry(cmd, 1)).collect()
+    }
+}
 
 fn send_ipc_command_with_retry(cmd: &str, retries: u8) -> Result<String, String> {
     let mut last_err = String::new();
@@ -1398,9 +1517,9 @@ fn send_ipc_command(cmd: &str) -> Result<String, String> {
     {
         let stream = UnixStream::connect(SOCKET_PATH)
             .map_err(|e| format!("IPC connect failed: {}", e))?;
-        stream.set_read_timeout(Some(std::time::Duration::from_millis(800)))
+        stream.set_read_timeout(Some(std::time::Duration::from_millis(500)))
             .map_err(|e| e.to_string())?;
-        stream.set_write_timeout(Some(std::time::Duration::from_millis(400)))
+        stream.set_write_timeout(Some(std::time::Duration::from_millis(200)))
             .map_err(|e| e.to_string())?;
         let mut writer = stream.try_clone().map_err(|e| e.to_string())?;
         writer.write_all(cmd.as_bytes()).map_err(|e| e.to_string())?;
@@ -1618,6 +1737,9 @@ fn main() {
             import_csv_playlist,
             import_youtube_playlist,
             open_url_in_browser,
+            // Loudnorm
+            set_loudnorm_enabled,
+            get_loudnorm_enabled,
             // Stream cache
             set_cache_dir,
             get_cache_dir,

@@ -88,7 +88,7 @@ function loadLS<T>(key: string, fb: T): T {
 function saveLS(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
 }
-function clampMenu(x: number, y: number, w = 260, h = 420) {
+function clampMenu(x: number, y: number, w = 260, h = 320) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   // Flip to left if not enough room on right
@@ -247,7 +247,7 @@ const TrackRow = React.memo(({
         ? <button onClick={e => { e.stopPropagation(); onRemove(); }} className="p-1.5 rounded-md hover:bg-red-500/20 transition-colors"><X size={14} className="text-neutral-400 hover:text-red-400" /></button>
         : <button onClick={e => { e.stopPropagation(); onCtx(e); }} className="p-1.5 rounded-md hover:bg-white/10 transition-colors"><MoreVertical size={14} className="text-neutral-400" /></button>}
     </div>
-    <span className="text-[13px] text-neutral-500 tabular-nums w-12 text-right shrink-0">{track.duration}</span>
+    <span className="text-[13px] text-neutral-500 tabular-nums w-12 text-right shrink-0">{track.duration && track.duration !== '0:00' ? track.duration : '—'}</span>
   </div>
 ));
 
@@ -781,6 +781,7 @@ function SettingsPanel({
   backupPath, setBackupPath,
   cachePath, setCachePath,
   crossfadeSeconds, setCrossfadeSeconds,
+  loudnormEnabled, setLoudnormEnabled,
   showToast,
 }: {
   downloadQuality: string; setDownloadQuality: (q: string) => void;
@@ -795,6 +796,7 @@ function SettingsPanel({
   backupPath: string; setBackupPath: (p: string) => void;
   cachePath: string; setCachePath: (p: string) => void;
   crossfadeSeconds: number; setCrossfadeSeconds: (s: number) => void;
+  loudnormEnabled: boolean; setLoudnormEnabled: (e: boolean) => void;
   showToast: (m: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('dependencies');
@@ -989,6 +991,25 @@ function SettingsPanel({
                 </div>
                 <button className="p-2 ml-4 text-neutral-600 group-hover:text-[#39FF14] transition-colors shrink-0 rounded-lg">
                   <FolderOpen size={17} />
+                </button>
+              </div>
+            </div>
+
+            {/* Loudnorm */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Zap size={14} className="text-[#39FF14]" /> Audio Normalization</h3>
+                <p className="text-xs text-neutral-600 mt-0.5">Equalizes loudness across tracks. Disable for ~100ms faster playback start.</p>
+              </div>
+              <div className="flex items-center justify-between px-5 py-4">
+                <div>
+                  <p className="text-sm font-medium text-white">Loudnorm (EBU R128)</p>
+                  <p className="text-xs text-neutral-600 mt-1">{loudnormEnabled ? 'Active — consistent volume across tracks' : 'Disabled — faster start, raw volume'}</p>
+                </div>
+                <button
+                  onClick={() => setLoudnormEnabled(!loudnormEnabled)}
+                  className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${loudnormEnabled ? 'bg-[#39FF14]/80 shadow-[0_0_10px_rgba(57,255,20,0.3)]' : 'bg-neutral-700'}`}>
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${loudnormEnabled ? 'left-5' : 'left-0.5'}`} />
                 </button>
               </div>
             </div>
@@ -1439,6 +1460,7 @@ export default function VanguardPlayer() {
   }, []);
   const [playbackSpeed, setPlaybackSpeedState] = useState<number>(() => loadLS('vg_speed', 1));
   const [crossfadeSeconds, setCrossfadeSecondsState] = useState<number>(() => loadLS('vg_crossfade', 0));
+  const [loudnormEnabled, setLoudnormEnabledState] = useState<boolean>(() => loadLS('vg_loudnorm', true));
   const [bookmarks, setBookmarks] = useState<Record<string, number>>(() => loadLS('vg_bookmarks', {}));
   useEffect(() => { saveLS('vg_bookmarks', bookmarks); }, [bookmarks]);
   const setCrossfadeSeconds = useCallback((s: number) => {
@@ -1512,6 +1534,7 @@ export default function VanguardPlayer() {
   useEffect(() => { saveLS('vg_dlPath', downloadPath); }, [downloadPath]);
   useEffect(() => { saveLS('vg_quickPicks', quickPicks); }, [quickPicks]);
   useEffect(() => { saveLS('vg_speed', playbackSpeed); }, [playbackSpeed]);
+  useEffect(() => { saveLS('vg_loudnorm', loudnormEnabled); invoke('set_loudnorm_enabled', { enabled: loudnormEnabled }).catch(() => {}); }, [loudnormEnabled]);
   useEffect(() => { saveLS('vg_eq', eq); }, [eq]);
 
   // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -1771,7 +1794,8 @@ export default function VanguardPlayer() {
       if (idx >= 0) localTrackIndexRef.current = idx;
     }
 
-    setIsLoadingTrack(true); setIsPlayingSync(false);
+    // Local file — no loading state, instant play
+    setIsLoadingTrack(false); setIsPlayingSync(false);
     setProgressSeconds(0); progressSecondsRef.current = 0;
     setTrackDurationSeconds(0); trackDurationRef.current = 0;
     setAudioInfo(null);
@@ -1798,7 +1822,7 @@ export default function VanguardPlayer() {
       await invoke('play_local_file', { path: local.path });
       await invoke('set_volume', { volume });
       await invoke('set_playback_speed', { speed: playbackSpeed });
-      // Local files are already on disk — play instantly, no buffering
+      // Local file — mark playing immediately, mpv starts with no network wait
       setIsPlayingSync(true);
       // Confirm duration from mpv after a short moment
       setTimeout(async () => {
@@ -1806,9 +1830,8 @@ export default function VanguardPlayer() {
           const s: { position: number; duration: number } = await invoke('get_playback_state');
           if (s.duration > 0) { setTrackDurationSeconds(s.duration); trackDurationRef.current = s.duration; }
         } catch {}
-      }, 500);
+      }, 200);
     } catch { setIsPlayingSync(false); }
-    finally { setIsLoadingTrack(false); }
   }, [volume, playbackSpeed, setIsPlayingSync]);
 
   const handleDeleteLocalTrack = useCallback(async (t: LocalTrack) => {
@@ -2532,7 +2555,7 @@ export default function VanguardPlayer() {
             </button>
             {/* Breadcrumb */}
             <span className="text-xs text-neutral-600 font-medium uppercase tracking-widest">
-              {activeNav === 'home' ? 'Home' : activeNav === 'downloads' ? 'Offline' : activeNav === 'settings' ? 'Settings' : activeNav === 'library' ? (openPlaylistId ? playlists.find(p => p.id === openPlaylistId)?.name || 'Playlist' : 'Playlists') : activeNav}
+              {activeNav === 'home' ? 'Home' : activeNav === 'downloads' ? 'Offline' : activeNav === 'settings' ? 'Settings' : activeNav === 'stats' ? 'Stats' : activeNav === 'library' ? (openPlaylistId ? 'Playlist' : 'Playlists') : activeNav}
             </span>
           </div>
 
@@ -2587,16 +2610,18 @@ export default function VanguardPlayer() {
               <div className="flex-1 overflow-y-auto px-6 pb-4 z-10 custom-scrollbar" onClick={() => setShowHistory(false)}>
                 {/* Empty state */}
                 {!isSearching && tracks.length === 0 && quickPicks.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-5 text-neutral-700 select-none">
+                  <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-6">
                     <div className="relative">
-                      <Music size={56} strokeWidth={0.8} className="text-neutral-800" />
-                      <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#39FF14]/10 rounded-full flex items-center justify-center border border-[#39FF14]/20">
-                        <Search size={10} className="text-[#39FF14]/40" />
+                      <div className="w-20 h-20 rounded-2xl bg-neutral-900 border border-neutral-800/60 flex items-center justify-center shadow-[0_0_40px_rgba(57,255,20,0.05)]">
+                        <Music size={36} strokeWidth={1} className="text-neutral-700" />
+                      </div>
+                      <div className="absolute -bottom-2 -right-2 w-7 h-7 bg-[#39FF14]/10 rounded-full flex items-center justify-center border border-[#39FF14]/20 shadow-[0_0_12px_rgba(57,255,20,0.15)]">
+                        <Search size={12} className="text-[#39FF14]/60" />
                       </div>
                     </div>
-                    <div className="text-center">
-                      <p className="text-sm font-medium text-neutral-600">Nothing playing yet</p>
-                      <p className="text-xs text-neutral-700 mt-1">Search for something above to get started.</p>
+                    <div className="text-center flex flex-col gap-1.5">
+                      <p className="text-sm font-semibold text-neutral-500">Search YouTube to start</p>
+                      <p className="text-xs text-neutral-700">Type above and press Enter, or use <kbd className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-neutral-900 border border-neutral-800 text-neutral-500">Ctrl+F</kbd></p>
                     </div>
                   </div>
                 )}
@@ -2709,18 +2734,24 @@ export default function VanguardPlayer() {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-1">Playlist</p>
                     <h2 className="text-3xl font-black text-white truncate">{openPlaylist.name}</h2>
-                    {openPlaylist.description && <p className="text-sm text-neutral-500 mt-1 italic">{openPlaylist.description}</p>}
-                    <p className="text-sm text-neutral-600 mt-1">{openPlaylist.tracks.length} tracks</p>
-                    <div className="flex items-center gap-3 mt-4">
+                    {openPlaylist.description && openPlaylist.description.trim() && (
+                      <p className="text-sm text-neutral-500 mt-1">{openPlaylist.description}</p>
+                    )}
+                    <p className="text-sm text-neutral-600 mt-1">{openPlaylist.tracks.length} {openPlaylist.tracks.length === 1 ? 'track' : 'tracks'}</p>
+                    <div className="flex items-center gap-2 mt-4">
                       <button onClick={() => playAll(openPlaylist.tracks)} disabled={!openPlaylist.tracks.length}
                         className="flex items-center gap-2 px-5 py-2 bg-[#39FF14] text-black font-bold rounded-lg hover:shadow-[0_0_20px_#39FF14] transition-all disabled:opacity-40 text-sm">
                         <Play size={16} fill="currentColor" /> Play All
                       </button>
                       <button onClick={() => { setRenamingPlaylist(openPlaylist); setRenameVal(openPlaylist.name); setRenameDescVal(openPlaylist.description); }}
-                        className="p-2 text-neutral-500 hover:text-white transition-colors rounded-lg hover:bg-white/5"><Pencil size={16} /></button>
+                        className="flex items-center gap-1.5 px-3 py-2 text-neutral-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 text-sm font-medium border border-neutral-800 hover:border-neutral-700">
+                        <Pencil size={14} /> Edit
+                      </button>
                       {openPlaylist.id !== 'p1' && (
                         <button onClick={() => { deletePlaylist(openPlaylist.id); setOpenPlaylistId(null); }}
-                          className="p-2 text-neutral-500 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/10"><Trash2 size={16} /></button>
+                          className="flex items-center gap-1.5 px-3 py-2 text-neutral-400 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/10 text-sm font-medium border border-neutral-800 hover:border-red-500/30">
+                          <Trash2 size={14} /> Delete
+                        </button>
                       )}
                     </div>
                   </div>
@@ -2921,6 +2952,7 @@ export default function VanguardPlayer() {
               backupPath={backupPath} setBackupPath={setBackupPath}
               cachePath={cachePath} setCachePath={setCachePath}
               crossfadeSeconds={crossfadeSeconds} setCrossfadeSeconds={setCrossfadeSeconds}
+              loudnormEnabled={loudnormEnabled} setLoudnormEnabled={setLoudnormEnabledState}
               showToast={showToast}
             />
           )}
@@ -3156,12 +3188,15 @@ export default function VanguardPlayer() {
           <button onClick={toggleMute} className="focus:outline-none shrink-0">
             {volume === 0 ? <VolumeX size={18} className="text-red-500" /> : <Volume2 size={18} className="text-neutral-400 hover:text-white transition-colors" />}
           </button>
-          <div ref={volumeRef}
-            className="slider-track relative w-24 h-1 bg-neutral-800 rounded-full cursor-pointer hover:h-1.5 transition-[height] duration-150 ease-out"
+          <div ref={volumeRef} title={`Volume: ${Math.round(volume)}%`}
+            className="slider-track relative w-24 h-1 bg-neutral-800 rounded-full cursor-pointer hover:h-1.5 transition-[height] duration-150 ease-out group/vol"
             onMouseDown={e => { setIsDraggingVolume(true); updateVolumeFromEvent(e.clientX); }}>
             <div className="absolute top-0 left-0 h-full rounded-full pointer-events-none"
               style={{ width: `${volume}%`, background: volume > 0 ? '#39FF14' : '#404040', boxShadow: volume > 0 ? '0 0 5px rgba(57,255,20,0.45)' : 'none', transition: isDraggingVolume ? 'none' : 'width 0.15s ease-out' }}>
               <div className="slider-thumb absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 pointer-events-none" />
+            </div>
+            <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-neutral-900 border border-neutral-800 rounded text-[10px] font-bold text-neutral-300 opacity-0 group-hover/vol:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+              {Math.round(volume)}%
             </div>
           </div>
         </div>
@@ -3228,25 +3263,35 @@ export default function VanguardPlayer() {
 
       {/* ── ADD TO PLAYLIST MODAL ── */}
       {addToPlaylistTrack && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setAddToPlaylistTrack(null)}>
-          <div className="bg-[#111] border border-neutral-800 rounded-xl w-80 overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800">
-              <h3 className="font-bold text-white">Add to Playlist</h3>
-              <button onClick={() => setAddToPlaylistTrack(null)} className="text-neutral-500 hover:text-white transition-colors"><X size={18} /></button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md" onClick={() => setAddToPlaylistTrack(null)}>
+          <div className="bg-[#0d0d0d] border border-neutral-800/60 rounded-2xl w-80 overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.95)]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800/60">
+              <div>
+                <h3 className="font-bold text-white text-sm">Add to Playlist</h3>
+                <p className="text-[11px] text-neutral-600 mt-0.5 truncate max-w-[180px]">{addToPlaylistTrack.title}</p>
+              </div>
+              <button onClick={() => setAddToPlaylistTrack(null)} className="w-7 h-7 flex items-center justify-center rounded-lg text-neutral-500 hover:text-white hover:bg-white/[0.06] transition-all"><X size={14} /></button>
             </div>
-            <div className="py-2 max-h-64 overflow-y-auto custom-scrollbar">
-              {playlists.map(p => (
-                <button key={p.id} onClick={() => addTrackToPlaylist(p.id, addToPlaylistTrack)}
-                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left">
-                  {p.id === 'p1' ? <Heart size={16} className="text-red-400 shrink-0" /> : <ListMusic size={16} className="text-neutral-500 shrink-0" />}
-                  <span className="text-sm text-white truncate">{p.name}</span>
-                  <span className="ml-auto text-xs text-neutral-600">{p.tracks.length}</span>
-                </button>
-              ))}
+            <div className="py-1 max-h-64 overflow-y-auto custom-scrollbar">
+              {playlists.map(p => {
+                const alreadyIn = p.tracks.some(t => t.url === addToPlaylistTrack.url);
+                return (
+                  <button key={p.id} onClick={() => !alreadyIn && addTrackToPlaylist(p.id, addToPlaylistTrack)}
+                    disabled={alreadyIn}
+                    className={`w-full flex items-center gap-3 px-5 py-3 transition-colors text-left ${alreadyIn ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white/[0.04]'}`}>
+                    <div className="w-7 h-7 rounded-md overflow-hidden shrink-0 bg-neutral-800 flex items-center justify-center border border-neutral-700/60">
+                      {p.id === 'p1' ? <Heart size={13} className="text-red-400" /> : <ListMusic size={13} className="text-neutral-500" />}
+                    </div>
+                    <span className="text-sm text-white truncate flex-1">{p.name}</span>
+                    {alreadyIn ? <span className="text-[10px] text-[#39FF14] font-bold shrink-0">Added</span>
+                      : <span className="text-xs text-neutral-700 shrink-0">{p.tracks.length}</span>}
+                  </button>
+                );
+              })}
             </div>
-            <div className="px-5 py-3 border-t border-neutral-800">
+            <div className="px-5 py-3 border-t border-neutral-800/60">
               <button onClick={() => { setAddToPlaylistTrack(null); setNewPlaylistName(''); setNewPlaylistDesc(''); setIsPlaylistModalOpen(true); }}
-                className="flex items-center gap-2 text-[#39FF14] text-sm font-medium hover:underline">
+                className="flex items-center gap-2 text-[#39FF14] text-sm font-semibold hover:text-[#39FF14]/80 transition-colors">
                 <PlusCircle size={14} /> New Playlist
               </button>
             </div>
@@ -3535,12 +3580,19 @@ export default function VanguardPlayer() {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="bg-[#111] border border-neutral-800 p-6 rounded-xl w-96 shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-5">Edit Playlist</h3>
-            <div className="flex flex-col gap-3 mb-6">
-              <input autoFocus type="text" value={renameVal} onChange={e => setRenameVal(e.target.value)}
-                className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] transition-all"
-                onKeyDown={e => { if (e.key === 'Enter') confirmRenamePlaylist(); if (e.key === 'Escape') setRenamingPlaylist(null); }} />
-              <textarea value={renameDescVal} onChange={e => setRenameDescVal(e.target.value)} rows={2}
-                className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] resize-none text-sm" />
+            <div className="flex flex-col gap-4 mb-6">
+              <div>
+                <label className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-1.5 block">Name</label>
+                <input autoFocus type="text" value={renameVal} onChange={e => setRenameVal(e.target.value)}
+                  className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] transition-all text-sm"
+                  onKeyDown={e => { if (e.key === 'Enter') confirmRenamePlaylist(); if (e.key === 'Escape') setRenamingPlaylist(null); }} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-1.5 block">Description <span className="text-neutral-700 normal-case font-normal">(optional)</span></label>
+                <textarea value={renameDescVal} onChange={e => setRenameDescVal(e.target.value)} rows={2}
+                  placeholder="e.g. Chill vibes, road trip..."
+                  className="w-full bg-[#050505] border border-neutral-800 text-white rounded-lg py-2.5 px-3 focus:outline-none focus:border-[#39FF14] resize-none text-sm placeholder-neutral-700" />
+              </div>
             </div>
             <div className="flex justify-end gap-3">
               <button onClick={() => setRenamingPlaylist(null)} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">Cancel</button>
