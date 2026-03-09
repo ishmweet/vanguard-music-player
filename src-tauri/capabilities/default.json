@@ -7,7 +7,14 @@
   ],
   "permissions": [
     "core:default",
+    "core:app:default",
+    "core:window:default",
+    "core:webview:default",
+    "core:event:default",
+    "core:path:default",
     "dialog:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "opener:default",
+    "opener:allow-open-url"
   ]
 }

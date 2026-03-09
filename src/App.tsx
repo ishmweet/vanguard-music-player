@@ -5,17 +5,17 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Home, Search, Play, Pause, SkipBack, SkipForward,
-  ListMusic, Heart, DownloadCloud, Music, Volume2, VolumeX,
+  ListMusic, Heart, Music, Volume2, VolumeX,
   MoreVertical, ListPlus, Share2, Download, ExternalLink, Copy,
-  Info, X, Clock, Youtube, Disc, Hash, FileCode2, PlaySquare,
+  Info, X, Clock, Youtube, Hash, FileCode2, PlaySquare,
   PlusCircle, FileBadge2, Settings, RefreshCw, FolderDown,
   Shuffle, Repeat, Repeat1, ListOrdered, Trash2, Pencil,
   ChevronRight, ChevronLeft, ImagePlus, AlignLeft, HardDrive,
-  FileMusic, AlertCircle, Gauge, Sliders, Moon, FolderOpen,
-  PackageCheck, RotateCcw, Timer, Zap, BarChart2, FileOutput,
+  FileMusic, AlertCircle, Gauge, Moon, FolderOpen,
+  PackageCheck, RotateCcw, Zap, BarChart2, FileOutput,
   CheckCircle, WifiOff, Database, Upload, ArchiveRestore,
-  AlertTriangle, Terminal, ChevronDown, Sparkles, ArrowLeft,
-  Loader2, Link2, CheckCircle2, XCircle
+  AlertTriangle, Terminal, ChevronDown,
+  Loader2, CheckCircle2, XCircle
 } from 'lucide-react';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -64,7 +64,6 @@ type DiskInfo = { used_bytes: number; track_count: number };
 type BatchProgress = { index: number; total: number; title: string; success: boolean; error?: string };
 type InstallResult = { success: boolean; message: string };
 type SettingsTab = 'dependencies' | 'downloads' | 'storage';
-type NavPage = 'home' | 'downloads' | 'settings' | 'library' | 'stats';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function parseDurationToSeconds(d: string): number {
@@ -97,27 +96,6 @@ function clampMenu(x: number, y: number, w = 260, h = 320) {
   const cy = y + h > vh - 8 ? Math.max(8, y - h) : y;
   return { x: cx, y: cy };
 }
-
-// ─── SLEEP TIMER BUTTON (top-right, animated) ─────────────────────────────────
-const SleepTimerButton = React.memo(({
-  sleepTimer, onOpen,
-}: { sleepTimer: number; onOpen: () => void }) => {
-  const active = sleepTimer > 0;
-  const mins = active ? Math.ceil(sleepTimer / 60) : 0;
-  return (
-    <button
-      onClick={onOpen}
-      title={active ? `Sleep in ${mins}m, click to change` : 'Set sleep timer'}
-      className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300
-        ${active
-          ? 'bg-amber-500/15 border border-amber-500/40 text-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.2)]'
-          : 'text-neutral-600 hover:text-neutral-400 border border-transparent hover:border-neutral-800'}`}
-    >
-      <Moon size={13} className={active ? 'animate-pulse' : ''} />
-      {active && <span className="tabular-nums">{mins}m</span>}
-    </button>
-  );
-});
 
 // ─── INFO HINT BUTTON ────────────────────────────────────────────────────────
 const InfoHintButton = React.memo(({ onClick }: { onClick: () => void }) => (
@@ -477,8 +455,6 @@ function CsvImportModal({
     const CONCURRENCY = 12; // 12 simultaneous yt-dlp searches
     const total = initial.length;
     let completed = 0;
-
-    const semaphore = new Array(CONCURRENCY).fill(null);
     const matched: Track[] = [];
     let failed = 0;
 
@@ -773,29 +749,26 @@ function YtImportModal({
 
 function SettingsPanel({
   downloadQuality, setDownloadQuality, downloadPath, handleSelectDirectory,
-  playbackSpeed, setPlaybackSpeed, eq, setEq,
-  sleepTimer, setSleepTimerMinutes, cancelSleepTimer,
+
   deps, setDeps, ytDlpVersion, setYtDlpVersion,
   onUpdateYtDlp, isUpdatingYtDlp,
   onBackup, onRestore,
   backupPath, setBackupPath,
   cachePath, setCachePath,
-  crossfadeSeconds, setCrossfadeSeconds,
+
   loudnormEnabled, setLoudnormEnabled,
   showToast,
 }: {
   downloadQuality: string; setDownloadQuality: (q: string) => void;
   downloadPath: string; handleSelectDirectory: () => void;
-  playbackSpeed: number; setPlaybackSpeed: (s: number) => void;
-  eq: { bass: number; mid: number; treble: number }; setEq: (eq: { bass: number; mid: number; treble: number }) => void;
-  sleepTimer: number; setSleepTimerMinutes: (m: number) => void; cancelSleepTimer: () => void;
+
   deps: DepsStatus | null; setDeps: (d: DepsStatus) => void;
   ytDlpVersion: string; setYtDlpVersion: (v: string) => void;
   onUpdateYtDlp: () => void; isUpdatingYtDlp: boolean;
   onBackup: () => void; onRestore: () => void;
   backupPath: string; setBackupPath: (p: string) => void;
   cachePath: string; setCachePath: (p: string) => void;
-  crossfadeSeconds: number; setCrossfadeSeconds: (s: number) => void;
+
   loudnormEnabled: boolean; setLoudnormEnabled: (e: boolean) => void;
   showToast: (m: string) => void;
 }) {
@@ -824,7 +797,7 @@ function SettingsPanel({
       // Re-check
       const d: DepsStatus = await invoke('check_dependencies');
       setDeps(d);
-        const v: string = await invoke('get_yt_dlp_version').catch(() => '');
+        const v = await invoke<string>('get_yt_dlp_version').catch(() => '');
       setYtDlpVersion(v);
     } catch (e) {
       setInstallLog(`Error: ${e}`);
@@ -1162,7 +1135,7 @@ function DownloadsPanel({
         } catch { return t; }
       }));
       setTracks(enriched.map(r => r.status === 'fulfilled' ? r.value : (r as PromiseRejectedResult).reason));
-      const di: DiskInfo = await invoke('get_disk_usage', { path: downloadPath }).catch(() => null);
+      const di = await invoke<DiskInfo>('get_disk_usage', { path: downloadPath }).catch(() => null);
       if (di) setDiskInfo(di);
     } catch (e) { setError(String(e)); }
     finally { setScanning(false); }
@@ -1340,12 +1313,18 @@ const SpeedSelector = React.memo(({ speed, onChange }: { speed: number; onChange
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function VanguardPlayer() {
 
-  // ── Core state ───────────────────────────────────────────────────────────────
+  // ── Hydration gate — prevents stale quickPicks/playlist data flashing on mount ──
+  const [isHydrated, setIsHydrated] = useState(false);
+  useEffect(() => {
+    // Defer one frame so all localStorage state is consistent before rendering track lists
+    const id = requestAnimationFrame(() => setIsHydrated(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchHistory, setSearchHistory] = useState<string[]>(() => loadLS('vg_searchHistory', []));
   const [showHistory, setShowHistory] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [, setHasSearched] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(() => loadLS('vg_currentTrack', null));
   const [currentLocalPath, setCurrentLocalPath] = useState<string | null>(null);
   const currentLocalPathRef = useRef<string | null>(null);
@@ -1356,7 +1335,7 @@ export default function VanguardPlayer() {
 
   const [isLoadingTrack, setIsLoadingTrack] = useState(false);
   const [activeNav, setActiveNav] = useState('home');
-  const [navHistory, setNavHistory] = useState<string[]>([]);
+  const [, setNavHistory] = useState<string[]>([]);
 
   // Wrap setActiveNav to push to history
   const navigateTo = useCallback((nav: string) => {
@@ -1459,14 +1438,11 @@ export default function VanguardPlayer() {
     invoke('set_cache_dir', { path: p }).catch(() => {});
   }, []);
   const [playbackSpeed, setPlaybackSpeedState] = useState<number>(() => loadLS('vg_speed', 1));
-  const [crossfadeSeconds, setCrossfadeSecondsState] = useState<number>(() => loadLS('vg_crossfade', 0));
+  const [crossfadeSeconds] = useState<number>(() => loadLS('vg_crossfade', 0));
   const [loudnormEnabled, setLoudnormEnabledState] = useState<boolean>(() => loadLS('vg_loudnorm', true));
   const [bookmarks, setBookmarks] = useState<Record<string, number>>(() => loadLS('vg_bookmarks', {}));
   useEffect(() => { saveLS('vg_bookmarks', bookmarks); }, [bookmarks]);
-  const setCrossfadeSeconds = useCallback((s: number) => {
-    setCrossfadeSecondsState(s);
-    saveLS('vg_crossfade', s);
-  }, []);
+
   const [abLoop, setAbLoop] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   const abLoopRef = useRef<{ a: number | null; b: number | null }>({ a: null, b: null });
   const [eq, setEqState] = useState<{ bass: number; mid: number; treble: number }>(() => loadLS('vg_eq', { bass: 0, mid: 0, treble: 0 }));
@@ -1480,7 +1456,6 @@ export default function VanguardPlayer() {
   const [showInfoHint, setShowInfoHint] = useState(false);
   const infoHintBtnRef = useRef<HTMLDivElement>(null);
   const [infoHintPos, setInfoHintPos] = useState<{ top: number; left: number } | null>(null);
-  const sleepPopoverRef = useRef<HTMLDivElement>(null);
 
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1626,10 +1601,7 @@ export default function VanguardPlayer() {
     showToast(`Speed: ${s}x`);
   }, [showToast]);
 
-  const setEq = useCallback((newEq: typeof eq) => {
-    setEqState(newEq);
-    invoke('set_equalizer', { bass: newEq.bass, mid: newEq.mid, treble: newEq.treble }).catch(() => {});
-  }, []);
+
 
   const setSleepTimerMinutes = useCallback((m: number) => {
     invoke('set_sleep_timer', { seconds: m * 60 })
@@ -1646,7 +1618,7 @@ export default function VanguardPlayer() {
     try {
       const r: string = await invoke('update_yt_dlp');
       showToast(r.includes('up-to-date') ? 'yt-dlp is up to date' : 'yt-dlp updated');
-      const v: string = await invoke('get_yt_dlp_version').catch(() => '');
+      const v = await invoke<string>('get_yt_dlp_version').catch(() => '');
       setYtDlpVersion(v);
       const d: DepsStatus = await invoke('check_dependencies');
       setDeps(d);
@@ -2627,7 +2599,7 @@ export default function VanguardPlayer() {
                 )}
 
               {/* Quick picks */}
-                {!isSearching && tracks.length === 0 && quickPicks.length > 0 && (
+                {!isSearching && tracks.length === 0 && quickPicks.length > 0 && isHydrated && (
                   <div className="mb-6 pt-1">
                     <div className="flex items-center gap-3 mb-3">
                       <span className="w-1.5 h-5 bg-[#39FF14] rounded-full shadow-[0_0_8px_#39FF14] shrink-0" />
@@ -2943,15 +2915,11 @@ export default function VanguardPlayer() {
             <SettingsPanel
               downloadQuality={downloadQuality} setDownloadQuality={setDownloadQuality}
               downloadPath={downloadPath} handleSelectDirectory={handleSelectDirectory}
-              playbackSpeed={playbackSpeed} setPlaybackSpeed={setPlaybackSpeed}
-              eq={eq} setEq={setEq}
-              sleepTimer={sleepTimer} setSleepTimerMinutes={setSleepTimerMinutes} cancelSleepTimer={cancelSleepTimer}
               deps={deps} setDeps={setDeps} ytDlpVersion={ytDlpVersion} setYtDlpVersion={setYtDlpVersion}
               onUpdateYtDlp={handleUpdateYtDlp} isUpdatingYtDlp={isUpdatingYtDlp}
               onBackup={handleBackup} onRestore={handleRestore}
               backupPath={backupPath} setBackupPath={setBackupPath}
               cachePath={cachePath} setCachePath={setCachePath}
-              crossfadeSeconds={crossfadeSeconds} setCrossfadeSeconds={setCrossfadeSeconds}
               loudnormEnabled={loudnormEnabled} setLoudnormEnabled={setLoudnormEnabledState}
               showToast={showToast}
             />

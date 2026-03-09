@@ -18,6 +18,81 @@ const SOCKET_PATH: &str = "/tmp/mpvsocket";
 #[cfg(windows)]
 const SOCKET_PATH: &str = r"\\.\pipe\mpvsocket";
 
+// ── Binary path resolution ────────────────────────────────────────────────────
+// Resolves full path for a binary by scanning the filesystem directly.
+// Does NOT call Command::new() to avoid chicken-and-egg PATH issues.
+fn resolve_bin(name: &str, search_paths: &[String]) -> String {
+    for dir in search_paths {
+        let full = format!("{}/{}", dir, name);
+        if std::path::Path::new(&full).is_file() {
+            return full;
+        }
+    }
+    // Last resort: bare name
+    name.to_string()
+}
+
+// Global resolved binary paths — set once at startup before Tauri launches
+static BIN_MPV:     std::sync::OnceLock<String> = std::sync::OnceLock::new();
+static BIN_YTDLP:   std::sync::OnceLock<String> = std::sync::OnceLock::new();
+static BIN_FFPROBE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+static BIN_FFMPEG:  std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+fn init_bin_paths() {
+    let home = std::env::var("HOME").unwrap_or_default();
+
+    // Build search path list — order matters, first match wins
+    let mut paths: Vec<String> = vec![
+        format!("{}/.local/bin", home),
+        format!("{}/.cargo/bin", home),
+        "/usr/local/bin".into(),
+        "/usr/bin".into(),
+        "/bin".into(),
+        "/snap/bin".into(),
+        "/var/lib/flatpak/exports/bin".into(),
+        "/usr/games".into(),
+        "/opt/homebrew/bin".into(),
+        "/home/linuxbrew/.linuxbrew/bin".into(),
+        format!("{}/bin", home),
+    ];
+
+    // Also append whatever PATH currently contains
+    if let Ok(env_path) = std::env::var("PATH") {
+        for p in env_path.split(':') {
+            let s = p.to_string();
+            if !paths.contains(&s) {
+                paths.push(s);
+            }
+        }
+    }
+
+    // Set augmented PATH so child processes (e.g. mpv calling ffmpeg) also find binaries
+    let new_path = paths.join(":");
+    std::env::set_var("PATH", &new_path);
+
+    // Resolve each binary eagerly
+    let mpv     = resolve_bin("mpv",     &paths);
+    let ytdlp   = resolve_bin("yt-dlp",  &paths);
+    let ffprobe = resolve_bin("ffprobe", &paths);
+    let ffmpeg  = resolve_bin("ffmpeg",  &paths);
+
+    eprintln!("[vanguard] mpv     -> {}", mpv);
+    eprintln!("[vanguard] yt-dlp  -> {}", ytdlp);
+    eprintln!("[vanguard] ffprobe -> {}", ffprobe);
+    eprintln!("[vanguard] ffmpeg  -> {}", ffmpeg);
+
+    let _ = BIN_MPV.set(mpv);
+    let _ = BIN_YTDLP.set(ytdlp);
+    let _ = BIN_FFPROBE.set(ffprobe);
+    let _ = BIN_FFMPEG.set(ffmpeg);
+}
+
+// Helpers to get resolved paths
+fn bin_mpv()     -> &'static str { BIN_MPV.get().map(|s| s.as_str()).unwrap_or("mpv") }
+fn bin_ytdlp()   -> &'static str { BIN_YTDLP.get().map(|s| s.as_str()).unwrap_or("yt-dlp") }
+fn bin_ffprobe() -> &'static str { BIN_FFPROBE.get().map(|s| s.as_str()).unwrap_or("ffprobe") }
+fn bin_ffmpeg()  -> &'static str { BIN_FFMPEG.get().map(|s| s.as_str()).unwrap_or("ffmpeg") }
+
 // ── Global state ──────────────────────────────────────────────────────────────
 
 struct CacheEntry { url: String, ts: std::time::Instant }
@@ -124,9 +199,9 @@ struct DepsStatus { mpv: bool, yt_dlp: bool, ffprobe: bool }
 #[tauri::command]
 async fn check_dependencies() -> Result<DepsStatus, String> {
     tokio::task::spawn_blocking(|| {
-        let mpv     = Command::new("mpv").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        let yt_dlp  = Command::new("yt-dlp").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        let ffprobe = Command::new("ffprobe").arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
+        let mpv     = Command::new(bin_mpv()).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        let yt_dlp  = Command::new(bin_ytdlp()).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        let ffprobe = Command::new(bin_ffprobe()).arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
         Ok(DepsStatus { mpv, yt_dlp, ffprobe })
     })
     .await
@@ -138,7 +213,7 @@ async fn check_dependencies() -> Result<DepsStatus, String> {
 #[tauri::command]
 async fn get_yt_dlp_version() -> Result<String, String> {
     tokio::task::spawn_blocking(|| {
-        let out = Command::new("yt-dlp").arg("--version")
+        let out = Command::new(bin_ytdlp()).arg("--version")
             .output().map_err(|_| "yt-dlp not found".to_string())?;
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     })
@@ -149,7 +224,7 @@ async fn get_yt_dlp_version() -> Result<String, String> {
 #[tauri::command]
 async fn update_yt_dlp() -> Result<String, String> {
     tokio::task::spawn_blocking(|| {
-        let out = Command::new("yt-dlp").arg("-U")
+        let out = Command::new(bin_ytdlp()).arg("-U")
             .output().map_err(|_| "yt-dlp not found".to_string())?;
         let stdout = String::from_utf8_lossy(&out.stdout).to_string();
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
@@ -164,7 +239,7 @@ async fn update_yt_dlp() -> Result<String, String> {
 #[tauri::command]
 async fn search_youtube(query: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let mut child = Command::new("yt-dlp")
+        let mut child = Command::new(bin_ytdlp())
             .args([
                 &format!("ytsearch10:{}", query),
                 "--flat-playlist",
@@ -234,7 +309,7 @@ async fn open_url_in_browser(url: String) -> Result<(), String> {
 #[tauri::command]
 async fn import_youtube_playlist(url: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let mut child = Command::new("yt-dlp")
+        let mut child = Command::new(bin_ytdlp())
             .args([
                 "--flat-playlist",
                 "--no-warnings",
@@ -343,7 +418,7 @@ async fn prefetch_track(url: String) -> Result<(), String> {
     tokio::spawn(async move {
         let url_clone = url.clone();
         let result = tokio::task::spawn_blocking(move || {
-            Command::new("yt-dlp")
+            Command::new(bin_ytdlp())
                 .args([
                     "--print", "urls",
                     "--format", "bestaudio[ext=webm]/bestaudio/best",
@@ -491,7 +566,7 @@ async fn play_audio(url: String) -> Result<(), String> {
             actual_url,
         ]);
 
-        Command::new("mpv").args(&args)
+        Command::new(bin_mpv()).args(&args)
             .spawn()
             .map_err(|e| format!("mpv not found or failed to start: {}", e))?;
 
@@ -531,7 +606,7 @@ async fn play_local_file(path: String) -> Result<(), String> {
             safe_path,
         ]);
 
-        Command::new("mpv").args(&args)
+        Command::new(bin_mpv()).args(&args)
             .spawn()
             .map_err(|e| format!("mpv not found or failed to start: {}", e))?;
 
@@ -815,7 +890,7 @@ async fn download_song(url: String, quality: String, path: String) -> Result<Str
         } else {
             format!("{}{}%(title)s.%(ext)s", resolved_path, sep)
         };
-        let output = Command::new("yt-dlp")
+        let output = Command::new(bin_ytdlp())
             .args(["-f", format, "--extract-audio", "--audio-format", "mp3",
                    "--audio-quality", audio_quality, "--embed-thumbnail", "--add-metadata",
                    "--no-check-certificates", "--no-warnings", "-o", &output_template, &url])
@@ -870,7 +945,7 @@ async fn batch_download(
             };
             let sep = std::path::MAIN_SEPARATOR;
             let tpl = format!("{}{}%(title)s.%(ext)s", path_clone, sep);
-            let out = Command::new("yt-dlp")
+            let out = Command::new(bin_ytdlp())
                 .args(["-f", format, "--extract-audio", "--audio-format", "mp3",
                        "--audio-quality", audio_quality, "--embed-thumbnail", "--add-metadata",
                        "--no-check-certificates", "--no-warnings", "-o", &tpl, &url_clone])
@@ -984,7 +1059,7 @@ struct AudioMetadata { title: String, artist: String, album: String, duration: S
 #[tauri::command]
 async fn get_audio_metadata(path: String) -> Result<AudioMetadata, String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new("ffprobe")
+        let output = Command::new(bin_ffprobe())
             .args(["-v", "quiet", "-print_format", "json", "-show_format", &path])
             .output()
             .map_err(|_| "ffprobe not found — install ffmpeg".to_string())?;
@@ -1013,7 +1088,7 @@ async fn get_audio_metadata(path: String) -> Result<AudioMetadata, String> {
 #[tauri::command]
 async fn get_waveform_thumbnail(path: String) -> Result<Vec<f32>, String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new("ffmpeg")
+        let output = Command::new(bin_ffmpeg())
             .args(["-i", &path, "-ac", "1", "-ar", "500", "-f", "f32le", "-"])
             .output()
             .map_err(|_| "ffmpeg not found".to_string())?;
@@ -1108,7 +1183,7 @@ async fn normalize_file(path: String, output_path: String) -> Result<(), String>
     tokio::task::spawn_blocking(move || {
         let resolved_in  = expand_tilde(&path);
         let resolved_out = expand_tilde(&output_path);
-        let out = Command::new("ffmpeg")
+        let out = Command::new(bin_ffmpeg())
             .args(["-i", &resolved_in, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
                    "-ar", "44100", "-y", &resolved_out])
             .output()
@@ -1472,13 +1547,13 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
                     if out.status.success() { break; }
                 }
             }
-            if Command::new("yt-dlp").arg("--version").output().is_err() {
+            if Command::new(bin_ytdlp()).arg("--version").output().is_err() {
                 let _ = Command::new("python3").args(["-m", "pip", "install", "--upgrade", "--user", "yt-dlp"]).output();
             }
 
-            let mpv     = Command::new("mpv").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-            let yt_dlp  = Command::new("yt-dlp").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-            let ffprobe = Command::new("ffprobe").arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
+            let mpv     = Command::new(bin_mpv()).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+            let yt_dlp  = Command::new(bin_ytdlp()).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+            let ffprobe = Command::new(bin_ffprobe()).arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
             let msg = format!(
                 "Installation complete.\nmpv: {}  yt-dlp: {}  ffprobe: {}\n{}",
                 if mpv     { "✓" } else { "✗ (install manually)" },
@@ -1534,9 +1609,9 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
             }
             let _ = Command::new("python").args(["-m", "pip", "install", "--upgrade", "yt-dlp"]).output();
 
-            let mpv     = Command::new("mpv").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-            let yt_dlp  = Command::new("yt-dlp").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-            let ffprobe = Command::new("ffprobe").arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
+            let mpv     = Command::new(bin_mpv()).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+            let yt_dlp  = Command::new(bin_ytdlp()).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+            let ffprobe = Command::new(bin_ffprobe()).arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
             let msg = format!(
                 "{}\nmpv: {}  yt-dlp: {}  ffprobe: {}",
                 log,
@@ -1560,6 +1635,11 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
 fn ping() -> String { "pong".to_string() }
 
 fn main() {
+    // Resolve binary paths eagerly before anything else runs.
+    // This must be first — AppImages and desktop launchers often have a
+    // stripped PATH that doesn't include /usr/local/bin, ~/.local/bin, etc.
+    init_bin_paths();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
