@@ -12,13 +12,12 @@ import {
   Shuffle, Repeat, Repeat1, ListOrdered, Trash2, Pencil,
   ChevronRight, ChevronLeft, ImagePlus, AlignLeft, HardDrive,
   FileMusic, AlertCircle, Gauge, Moon, FolderOpen,
-  PackageCheck, RotateCcw, Zap, BarChart2, FileOutput,
-  CheckCircle, WifiOff, Database, Upload, ArchiveRestore,
-  AlertTriangle, Terminal, ChevronDown,
+  Zap, BarChart2, FileOutput,
+  CheckCircle, Database, Upload, ArchiveRestore,
+  ChevronDown,
   Loader2, CheckCircle2, XCircle
 } from 'lucide-react';
 
-// ─── TYPES ───────────────────────────────────────────────────────────────────
 type Track = {
   id: number;
   title: string;
@@ -27,10 +26,6 @@ type Track = {
   url: string;
   cover: string;
 };
-
-
-// ─── SPOTIFY IMPORT ──────────────────────────────────────────────────────────
-
 
 type LocalTrack = {
   title: string;
@@ -58,14 +53,11 @@ type CtxMenu = {
   playlist?: Playlist;
 };
 
-type DepsStatus = { mpv: boolean; yt_dlp: boolean; ffprobe: boolean };
 type AudioInfo = { codec: string; bitrate: number; samplerate: number; channels: string; format: string; url: string };
 type DiskInfo = { used_bytes: number; track_count: number };
 type BatchProgress = { index: number; total: number; title: string; success: boolean; error?: string };
-type InstallResult = { success: boolean; message: string };
-type SettingsTab = 'dependencies' | 'downloads' | 'storage';
+type SettingsTab = 'downloads' | 'storage';
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
 function parseDurationToSeconds(d: string): number {
   const p = d.split(':').map(Number);
   if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
@@ -90,25 +82,13 @@ function saveLS(key: string, v: unknown) {
 function clampMenu(x: number, y: number, w = 260, h = 320) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  // Flip to left if not enough room on right
+  
   const cx = x + w > vw - 8 ? Math.max(8, x - w) : x;
-  // Flip upward if not enough room below
+  
   const cy = y + h > vh - 8 ? Math.max(8, y - h) : y;
   return { x: cx, y: cy };
 }
 
-// ─── INFO HINT BUTTON ────────────────────────────────────────────────────────
-const InfoHintButton = React.memo(({ onClick }: { onClick: () => void }) => (
-  <button
-    onClick={onClick}
-    title="Before using, install dependencies from Settings → Dependencies"
-    className="w-7 h-7 rounded-full border-2 border-amber-500/60 text-amber-400 hover:border-amber-400 hover:text-amber-300 hover:shadow-[0_0_10px_rgba(251,191,36,0.4)] transition-all duration-200 flex items-center justify-center text-xs font-black bg-amber-500/10"
-  >
-    !
-  </button>
-));
-
-// ─── SLEEP TIMER POPOVER ─────────────────────────────────────────────────────
 const SleepTimerPopover = React.memo(({
   sleepTimer, onSet, onCancel, onClose,
 }: { sleepTimer: number; onSet: (m: number) => void; onCancel: () => void; onClose: () => void }) => {
@@ -159,26 +139,6 @@ const SleepTimerPopover = React.memo(({
   );
 });
 
-// ─── DEPS BANNER ─────────────────────────────────────────────────────────────
-const DepsBanner = React.memo(({ deps, onGoToSettings }: { deps: DepsStatus | null; onGoToSettings: () => void }) => {
-  if (!deps) return null;
-  const playbackMissing = [!deps.mpv && 'mpv', !deps.yt_dlp && 'yt-dlp'].filter(Boolean) as string[];
-  if (playbackMissing.length === 0) return null;
-  return (
-    <div className="flex flex-col shrink-0 z-30">
-      {playbackMissing.length > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-red-400 text-xs font-medium">
-          <WifiOff size={13} className="shrink-0" />
-          <span className="flex-1"><strong>{playbackMissing.join(', ')}</strong> not found, playback won't work.</span>
-          <button onClick={onGoToSettings} className="shrink-0 px-2.5 py-1 bg-red-500/20 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors">Install →</button>
-        </div>
-      )}
-      
-    </div>
-  );
-});
-
-// ─── TRACK ROW ───────────────────────────────────────────────────────────────
 type TrackRowProps = {
   track: Track; index: number; showRemove?: boolean; onRemove?: () => void;
   isActive: boolean; isHovered: boolean; isLoadingTrack: boolean; isPlaying: boolean;
@@ -241,7 +201,6 @@ const TrackRowSkeleton = ({ index }: { index: number }) => (
   </div>
 );
 
-// ─── WAVEFORM ─────────────────────────────────────────────────────────────────
 const WaveformBar = React.memo(({ waveform, progressPercent, isDragging }: { waveform: number[]; progressPercent: number; isDragging: boolean }) => {
   if (!waveform.length) return null;
   const max = Math.max(...waveform, 0.01);
@@ -259,7 +218,6 @@ const WaveformBar = React.memo(({ waveform, progressPercent, isDragging }: { wav
   );
 });
 
-// ─── CUSTOM SELECT (themed dropdown) ─────────────────────────────────────────
 const ThemedSelect = ({ value, options, onChange }: {
   value: string;
   options: { label: string; value: string; desc?: string }[];
@@ -281,7 +239,7 @@ const ThemedSelect = ({ value, options, onChange }: {
     if (btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
       const dropW = Math.max(r.width, 220);
-      // Right-align dropdown to button's right edge, clamp to viewport
+      
       const left = Math.min(r.right - dropW, window.innerWidth - dropW - 12);
       setDropPos({ top: r.bottom + 6, left: Math.max(8, left), width: dropW });
     }
@@ -331,9 +289,6 @@ const ThemedSelect = ({ value, options, onChange }: {
   );
 };
 
-// ─── SPOTIFY IMPORT MODAL ────────────────────────────────────────────────────
-// ── CSV Playlist Import Modal ─────────────────────────────────────────────────
-// Uses exportify.net — no API keys or spotdl needed
 function ImportResultModal({
   matchedCount, failedCount,
   onSave, onClose,
@@ -382,8 +337,6 @@ function ImportResultModal({
   );
 }
 
-
-// ── Inline copy button with "Copied ✓" flash ──────────────────────────────────
 function CopyButton({ text, label, icon: Icon, disabled = false, className = '' }: {
   text: string; label: string; icon: React.ElementType; disabled?: boolean; className?: string;
 }) {
@@ -451,8 +404,8 @@ function CsvImportModal({
     setPhase('matching');
     abortRef.current = false;
 
-    // ── FULLY PARALLEL — all tracks at once, max concurrency via Promise.all ──
-    const CONCURRENCY = 12; // 12 simultaneous yt-dlp searches
+    
+    const CONCURRENCY = 12; 
     const total = initial.length;
     let completed = 0;
     const matched: Track[] = [];
@@ -485,7 +438,7 @@ function CsvImportModal({
       if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
     };
 
-    // Chunk into groups of CONCURRENCY and process each group fully in parallel
+    
     for (let start = 0; start < initial.length; start += CONCURRENCY) {
       if (abortRef.current) break;
       const chunk = initial.slice(start, start + CONCURRENCY);
@@ -509,7 +462,7 @@ function CsvImportModal({
         style={{ background: '#0e0e0e', border: '1px solid rgba(57,255,20,0.15)' }}
         onClick={e => e.stopPropagation()}>
 
-        {/* Header */}
+        {}
         <div className="flex items-center justify-between px-7 py-5 border-b border-neutral-800/60 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#1DB954' }}>
@@ -522,7 +475,7 @@ function CsvImportModal({
           </button>
         </div>
 
-        {/* Instructions phase */}
+        {}
         {phase === 'instructions' && (
           <div className="flex-1 flex flex-col px-7 py-6 gap-5 overflow-y-auto custom-scrollbar">
             <p className="text-sm text-neutral-400 leading-relaxed">
@@ -554,7 +507,7 @@ function CsvImportModal({
           </div>
         )}
 
-        {/* Matching / done phase */}
+        {}
         {(phase === 'matching' || phase === 'saving' || phase === 'done') && (
           <>
             <div className="px-7 py-3 border-b border-neutral-800/40 shrink-0">
@@ -593,7 +546,7 @@ function CsvImportModal({
         )}
       </div>
     </div>
-    {/* Name prompt shown after matching completes */}
+    {}
     {phase === 'saving' && (
       <ImportResultModal
         matchedCount={matchedTracks.length}
@@ -610,7 +563,6 @@ function CsvImportModal({
   );
 }
 
-// ── YouTube Playlist Import Modal ─────────────────────────────────────────────
 function YtImportModal({
   onClose,
   onSavePlaylist,
@@ -670,7 +622,7 @@ function YtImportModal({
         style={{ background: '#0e0e0e', border: '1px solid rgba(255,0,0,0.15)' }}
         onClick={e => e.stopPropagation()}>
 
-        {/* Header */}
+        {}
         <div className="flex items-center justify-between px-7 py-5 border-b border-neutral-800/60 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-red-600">
@@ -683,7 +635,7 @@ function YtImportModal({
           </button>
         </div>
 
-        {/* Input phase */}
+        {}
         {(phase === 'input' || phase === 'loading') && (
           <div className="flex-1 flex flex-col px-7 py-6 gap-5">
             <p className="text-sm text-neutral-400">Paste a public YouTube playlist URL below. All videos will be imported instantly, no matching needed.</p>
@@ -705,7 +657,7 @@ function YtImportModal({
           </div>
         )}
 
-        {/* Preview loaded */}
+        {}
         {phase === 'saving' && (
           <div className="flex-1 overflow-y-auto custom-scrollbar px-7 py-4">
             <p className="text-xs text-neutral-500 mb-3">{results.length} videos found. Enter a name and save.</p>
@@ -745,36 +697,23 @@ function YtImportModal({
   );
 }
 
-
-
 function SettingsPanel({
   downloadQuality, setDownloadQuality, downloadPath, handleSelectDirectory,
-
-  deps, setDeps, ytDlpVersion, setYtDlpVersion,
-  onUpdateYtDlp, isUpdatingYtDlp,
   onBackup, onRestore,
   backupPath, setBackupPath,
   cachePath, setCachePath,
-
   loudnormEnabled, setLoudnormEnabled,
   showToast,
 }: {
   downloadQuality: string; setDownloadQuality: (q: string) => void;
   downloadPath: string; handleSelectDirectory: () => void;
-
-  deps: DepsStatus | null; setDeps: (d: DepsStatus) => void;
-  ytDlpVersion: string; setYtDlpVersion: (v: string) => void;
-  onUpdateYtDlp: () => void; isUpdatingYtDlp: boolean;
   onBackup: () => void; onRestore: () => void;
   backupPath: string; setBackupPath: (p: string) => void;
   cachePath: string; setCachePath: (p: string) => void;
-
   loudnormEnabled: boolean; setLoudnormEnabled: (e: boolean) => void;
   showToast: (m: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('dependencies');
-  const [isInstalling, setIsInstalling] = useState(false);
-  const [installLog, setInstallLog] = useState('');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('downloads');
   const [diskInfo, setDiskInfo] = useState<DiskInfo | null>(null);
   const [cacheSize, setCacheSize] = useState<number>(0);
 
@@ -787,36 +726,14 @@ function SettingsPanel({
 
   const fmtBytes = (b: number) => b < 1024 * 1024 ? `${(b/1024).toFixed(1)} KB` : b < 1024**3 ? `${(b/1024**2).toFixed(1)} MB` : `${(b/1024**3).toFixed(2)} GB`;
 
-  const handleInstall = async () => {
-    setIsInstalling(true);
-    setInstallLog('Installing dependencies...\n');
-    try {
-      const result: InstallResult = await invoke('install_dependencies');
-      setInstallLog(result.message);
-      if (result.success) showToast('Dependencies installed!');
-      // Re-check
-      const d: DepsStatus = await invoke('check_dependencies');
-      setDeps(d);
-        const v = await invoke<string>('get_yt_dlp_version').catch(() => '');
-      setYtDlpVersion(v);
-    } catch (e) {
-      setInstallLog(`Error: ${e}`);
-    } finally {
-      setIsInstalling(false);
-    }
-  };
-
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'dependencies', label: 'Dependencies', icon: <PackageCheck size={15} /> },
     { id: 'downloads', label: 'Downloads', icon: <FolderDown size={15} /> },
     { id: 'storage', label: 'Storage', icon: <Database size={15} /> },
   ];
 
-  const allInstalled = deps?.mpv && deps?.yt_dlp && deps?.ffprobe;
-
   return (
     <div className="flex-1 flex overflow-hidden">
-      {/* Sidebar tabs */}
+      {}
       <div className="w-48 shrink-0 border-r border-neutral-800/50 flex flex-col p-4 gap-1">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-600 px-3 mb-2">Settings</p>
         {tabs.map(tab => (
@@ -827,99 +744,14 @@ function SettingsPanel({
                 : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.03] border border-transparent'}`}>
             <span className={activeTab === tab.id ? 'text-[#39FF14]' : 'text-neutral-600'}>{tab.icon}</span>
             {tab.label}
-            {tab.id === 'dependencies' && deps && (!deps.mpv || !deps.yt_dlp) && (
-              <span className="ml-auto w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
-            )}
           </button>
         ))}
       </div>
 
-      {/* Tab content — fills remaining space, no empty right gap */}
+      {}
       <div className="flex-1 overflow-y-auto px-8 py-8 custom-scrollbar">
 
-        {/* ── DEPENDENCIES ── */}
-        {activeTab === 'dependencies' && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-xl font-bold text-white mb-1">Dependencies</h2>
-              <p className="text-sm text-neutral-500">Vanguard requires mpv, yt-dlp, and ffprobe to work. Install or update them here.</p>
-            </div>
-
-            {/* Status list */}
-            <div className="border border-neutral-800/60 rounded-xl overflow-hidden divide-y divide-neutral-800/60">
-              {([
-                { key: 'mpv', label: 'mpv', desc: 'Audio playback', ok: deps?.mpv },
-                { key: 'yt_dlp', label: 'yt-dlp', desc: 'YouTube streaming', ok: deps?.yt_dlp },
-                { key: 'ffprobe', label: 'ffprobe', desc: 'Metadata & waveforms', ok: deps?.ffprobe },
-              ] as { key: string; label: string; desc: string; ok: boolean | undefined }[]).map(d => (
-                <div key={d.key} className="flex items-center justify-between px-5 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full shrink-0 ${d.ok === undefined ? 'bg-neutral-700 animate-pulse' : d.ok ? 'bg-[#39FF14]' : 'bg-red-500'}`} />
-                    <div>
-                      <span className="text-sm font-bold font-mono text-white">{d.label}</span>
-                      <span className="text-xs text-neutral-600 ml-2">{d.desc}</span>
-                    </div>
-                  </div>
-                  <span className={`text-xs font-semibold ${d.ok === undefined ? 'text-neutral-600' : d.ok ? 'text-[#39FF14]' : 'text-red-400'}`}>
-                    {d.ok === undefined ? 'Checking...' : d.ok ? 'Installed' : 'Not found'}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* yt-dlp version row */}
-            <div className="border border-neutral-800/60 rounded-xl overflow-hidden divide-y divide-neutral-800/60">
-              <div className="px-5 py-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white">yt-dlp</p>
-                  <p className="text-xs text-neutral-600 font-mono mt-0.5">{ytDlpVersion || (deps?.yt_dlp ? 'checking...' : 'Not installed')}</p>
-                </div>
-                <button onClick={onUpdateYtDlp} disabled={isUpdatingYtDlp || !deps?.yt_dlp}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] rounded-lg text-sm font-semibold hover:bg-[#39FF14]/20 disabled:opacity-40 transition-colors">
-                  {isUpdatingYtDlp ? <div className="w-3.5 h-3.5 border-2 border-[#39FF14]/70 border-t-transparent rounded-full animate-spin" /> : <RotateCcw size={14} />}
-                  Update
-                </button>
-              </div>
-            </div>
-
-            {/* Install button */}
-            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
-                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <Terminal size={15} className="text-[#39FF14]" /> Install All Dependencies
-                </h3>
-                <p className="text-xs text-neutral-600 mt-1">
-                  Installs mpv, ffmpeg, and yt-dlp using your system's package manager (apt, pacman, dnf, winget, brew).
-                </p>
-              </div>
-              <div className="px-5 py-4 flex flex-col gap-3">
-                <button onClick={handleInstall} disabled={isInstalling || !!allInstalled}
-                  className={`flex items-center justify-center gap-2.5 py-3 px-5 rounded-xl font-bold text-sm transition-all duration-200
-                    ${allInstalled
-                      ? 'bg-[#39FF14]/10 border border-[#39FF14]/20 text-[#39FF14]/50 cursor-not-allowed'
-                      : isInstalling
-                        ? 'bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14] cursor-wait'
-                        : 'bg-[#39FF14] text-black hover:shadow-[0_0_25px_#39FF14] hover:scale-[1.02] active:scale-[0.98]'}`}>
-                  {isInstalling
-                    ? <><div className="w-4 h-4 border-2 border-current/60 border-t-transparent rounded-full animate-spin" /> Installing...</>
-                    : allInstalled
-                      ? <><CheckCircle size={16} /> All Installed</>
-                      : <><Zap size={16} /> Install Dependencies</>}
-                </button>
-                {installLog && (
-                  <div className="bg-[#050505] border border-neutral-800 rounded-lg p-3 font-mono text-[11px] text-neutral-400 whitespace-pre-wrap max-h-40 overflow-y-auto custom-scrollbar">
-                    {installLog}
-                  </div>
-                )}
-                {allInstalled && (
-                  <p className="text-xs text-[#39FF14]/60 flex items-center gap-1.5"><CheckCircle size={11} /> All dependencies are installed and ready.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── DOWNLOADS ── */}
+        {}
         {activeTab === 'downloads' && (
           <div className="space-y-5">
             <div>
@@ -927,7 +759,7 @@ function SettingsPanel({
               <p className="text-sm text-neutral-500">Configure download quality and destination folder.</p>
             </div>
 
-            {/* Quality */}
+            {}
             <div className="border border-neutral-800/60 rounded-xl overflow-visible">
               <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
                 <h3 className="text-sm font-semibold text-white">Audio Quality</h3>
@@ -952,7 +784,7 @@ function SettingsPanel({
               </div>
             </div>
 
-            {/* Folder */}
+            {}
             <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
               <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
                 <h3 className="text-sm font-semibold text-white">Download Folder</h3>
@@ -968,7 +800,7 @@ function SettingsPanel({
               </div>
             </div>
 
-            {/* Loudnorm */}
+            {}
             <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
               <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
                 <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Zap size={14} className="text-[#39FF14]" /> Audio Normalization</h3>
@@ -989,7 +821,7 @@ function SettingsPanel({
           </div>
         )}
 
-        {/* ── STORAGE ── */}
+        {}
         {activeTab === 'storage' && (
           <div className="space-y-5">
             <div>
@@ -997,7 +829,7 @@ function SettingsPanel({
               <p className="text-sm text-neutral-500">Backup and restore your playlists, queue, settings, and history.</p>
             </div>
 
-            {/* Stream Cache Location */}
+            {}
             <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
               <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
                 <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Zap size={14} className="text-[#39FF14]" /> Stream Cache</h3>
@@ -1032,7 +864,7 @@ function SettingsPanel({
               </div>
             </div>
 
-            {/* Backup Location — explicit picker */}
+            {}
             <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
               <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
                 <h3 className="text-sm font-semibold text-white">Backup Location</h3>
@@ -1055,7 +887,7 @@ function SettingsPanel({
             </div>
 
             <div className="border border-neutral-800/60 rounded-xl divide-y divide-neutral-800/60 overflow-hidden">
-              {/* Create backup */}
+              {}
               <div className="px-5 py-4 flex items-center justify-between group hover:bg-white/[0.02] transition-colors cursor-pointer" onClick={onBackup}>
                 <div>
                   <h3 className="text-sm font-semibold text-white">Create Backup</h3>
@@ -1066,7 +898,7 @@ function SettingsPanel({
                 </button>
               </div>
 
-              {/* Restore */}
+              {}
               <div className="px-5 py-4 flex items-center justify-between group hover:bg-white/[0.02] transition-colors cursor-pointer" onClick={onRestore}>
                 <div>
                   <h3 className="text-sm font-semibold text-white">Restore Backup</h3>
@@ -1077,7 +909,7 @@ function SettingsPanel({
                 </button>
               </div>
 
-              {/* Reset */}
+              {}
               <div className="px-5 py-4 flex items-center justify-between group hover:bg-red-500/[0.04] transition-colors cursor-pointer"
                 onClick={() => {
                   if (window.confirm('Reset all Vanguard data? This cannot be undone.')) {
@@ -1097,13 +929,11 @@ function SettingsPanel({
           </div>
         )}
 
-
       </div>
     </div>
   );
 }
 
-// ─── DOWNLOADS PANEL ─────────────────────────────────────────────────────────
 function DownloadsPanel({
   downloadPath, onPlayLocalTrack, onDeleteLocalTrack,
   currentTrackPath, isPlaying, isLoadingTrack,
@@ -1127,7 +957,7 @@ function DownloadsPanel({
     setScanning(true); setError(null);
     try {
       const raw: LocalTrack[] = await invoke('scan_downloads', { path: downloadPath });
-      // Enrich with metadata (title/artist/duration only — no useless fields)
+      
       const enriched = await Promise.allSettled(raw.map(async t => {
         try {
           const m: { title: string; artist: string; duration: string } = await invoke('get_audio_metadata', { path: t.path });
@@ -1154,14 +984,14 @@ function DownloadsPanel({
 
   return (
     <div className="flex-1 overflow-y-auto p-8 z-10 custom-scrollbar">
-      {/* Header */}
+      {}
       <div className="flex items-center gap-4 mb-6">
         <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-[#39FF14]/10 border border-[#39FF14]/30 shrink-0">
           <HardDrive size={22} className="text-[#39FF14] drop-shadow-[0_0_6px_#39FF14]" />
         </div>
         <div className="flex-1 min-w-0">
           <h2 className="text-2xl font-bold text-white">Offline</h2>
-          {/* Folder path — click to change */}
+          {}
           <button onClick={onChangeFolder}
             className="flex items-center gap-1.5 mt-0.5 text-sm text-neutral-500 hover:text-[#39FF14] transition-colors font-mono truncate max-w-full group" title="Change folder">
             <span className="truncate">{downloadPath}</span>
@@ -1254,7 +1084,7 @@ function DownloadsPanel({
         </>
       )}
 
-      {/* Rename modal */}
+      {}
       {renaming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="bg-[#111] border border-neutral-800 p-6 rounded-xl w-80 shadow-2xl">
@@ -1273,7 +1103,6 @@ function DownloadsPanel({
   );
 }
 
-// ─── SPEED SELECTOR (in player bar) ──────────────────────────────────────────
 const SpeedSelector = React.memo(({ speed, onChange }: { speed: number; onChange: (s: number) => void }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1310,13 +1139,12 @@ const SpeedSelector = React.memo(({ speed, onChange }: { speed: number; onChange
   );
 });
 
-// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function VanguardPlayer() {
 
-  // ── Hydration gate — prevents stale quickPicks/playlist data flashing on mount ──
+  
   const [isHydrated, setIsHydrated] = useState(false);
   useEffect(() => {
-    // Defer one frame so all localStorage state is consistent before rendering track lists
+    
     const id = requestAnimationFrame(() => setIsHydrated(true));
     return () => cancelAnimationFrame(id);
   }, []);
@@ -1337,14 +1165,14 @@ export default function VanguardPlayer() {
   const [activeNav, setActiveNav] = useState('home');
   const [, setNavHistory] = useState<string[]>([]);
 
-  // Wrap setActiveNav to push to history
+  
   const navigateTo = useCallback((nav: string) => {
     setNavHistory(prev => [...prev.slice(-20), activeNav]);
     setActiveNav(nav);
   }, [activeNav]);
 
-  // navigateBack always goes to home and resets search state
-  // (search state refs are set below — JS closures capture them at call time, not definition time)
+  
+  
   const navigateBack = useCallback(() => {
     setActiveNav('home');
     setNavHistory([]);
@@ -1357,7 +1185,7 @@ export default function VanguardPlayer() {
 
   const [isSearching, setIsSearching] = useState(false);
 
-  // When navigating to home (via back button or sidebar), clear search results
+  
   useEffect(() => {
     if (activeNav === 'home') {
       setSearchQuery('');
@@ -1370,7 +1198,7 @@ export default function VanguardPlayer() {
 
   const [queue, setQueue] = useState<Track[]>(() => loadLS('vg_queue', []));
   const [playHistory, setPlayHistory] = useState<Track[]>(() => loadLS('vg_playHistory', []));
-  // ── Real stats ─────────────────────────────────────────────────────────────
+  
   const [playCounts, setPlayCounts] = useState<Record<string, number>>(() => loadLS('vg_playCounts', {}));
   const [listenSecs, setListenSecs] = useState<Record<string, number>>(() => loadLS('vg_listenSecs', {}));
   const [firstSeen, setFirstSeen] = useState<Record<string, string>>(() => loadLS('vg_firstSeen', {}));
@@ -1400,7 +1228,7 @@ export default function VanguardPlayer() {
   const progressRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
 
-  // ── Playlists ─────────────────────────────────────────────────────────────────
+  
   const [playlists, setPlaylists] = useState<Playlist[]>(() =>
     loadLS('vg_playlists', [{ id: 'p1', name: 'Liked Songs', description: '', tracks: [] }])
   );
@@ -1418,7 +1246,7 @@ export default function VanguardPlayer() {
   const [addToPlaylistTrack, setAddToPlaylistTrack] = useState<Track | null>(null);
   const [sidebarPlaylistsExpanded, setSidebarPlaylistsExpanded] = useState(true);
 
-  // ── UI ────────────────────────────────────────────────────────────────────────
+  
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [infoModalTrack, setInfoModalTrack] = useState<Track | null>(null);
   const [downloadingTracks, setDownloadingTracks] = useState<Record<string, boolean>>({});
@@ -1426,7 +1254,7 @@ export default function VanguardPlayer() {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Settings ──────────────────────────────────────────────────────────────────
+  
   const [downloadQuality, setDownloadQuality] = useState<string>(() => loadLS('vg_dlQuality', 'High'));
   const [downloadPath, setDownloadPath] = useState<string>(() => loadLS('vg_dlPath', '~/Downloads'));
   const [backupPath, setBackupPathState] = useState<string>(() => loadLS('vg_backupPath', ''));
@@ -1446,18 +1274,13 @@ export default function VanguardPlayer() {
   const [abLoop, setAbLoop] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   const abLoopRef = useRef<{ a: number | null; b: number | null }>({ a: null, b: null });
   const [eq, setEqState] = useState<{ bass: number; mid: number; treble: number }>(() => loadLS('vg_eq', { bass: 0, mid: 0, treble: 0 }));
-  const [deps, setDeps] = useState<DepsStatus | null>(null);
-  const [ytDlpVersion, setYtDlpVersion] = useState('');
-  const [isUpdatingYtDlp, setIsUpdatingYtDlp] = useState(false);
+
   const [sleepTimer, setSleepTimerState] = useState(-1);
   const [audioInfo, setAudioInfo] = useState<AudioInfo | null>(null);
   const [waveformData, setWaveformData] = useState<number[]>([]);
   const [showSleepPopover, setShowSleepPopover] = useState(false);
-  const [showInfoHint, setShowInfoHint] = useState(false);
-  const infoHintBtnRef = useRef<HTMLDivElement>(null);
-  const [infoHintPos, setInfoHintPos] = useState<{ top: number; left: number } | null>(null);
 
-  // ── Refs ──────────────────────────────────────────────────────────────────────
+  
   const searchRef = useRef<HTMLInputElement>(null);
   const endDetectedRef = useRef(false);
   const currentTrackRef = useRef(currentTrack);
@@ -1466,14 +1289,14 @@ export default function VanguardPlayer() {
   useEffect(() => { bookmarksRef.current = bookmarks; }, [bookmarks]);
   const localTracksListRef = useRef<LocalTrack[]>([]);
   const localTrackIndexRef = useRef(0);
-  // Context for playlist/search track navigation (enables skip fwd/back in any Track[] source)
+  
   const playlistContextRef = useRef<{ tracks: Track[]; index: number } | null>(null);
 
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
 
-  // ── Persist ───────────────────────────────────────────────────────────────────
+  
   useEffect(() => { saveLS('vg_playlists', playlists); }, [playlists]);
   useEffect(() => { saveLS('vg_queue', queue); }, [queue]);
   useEffect(() => { saveLS('vg_playHistory', playHistory); }, [playHistory]);
@@ -1484,7 +1307,7 @@ export default function VanguardPlayer() {
   useEffect(() => { saveLS('vg_shuffle', shuffle); }, [shuffle]);
   useEffect(() => { saveLS('vg_repeatMode', repeatMode); }, [repeatMode]);
   useEffect(() => { saveLS('vg_volume', volume); }, [volume]);
-  // Init cache dir — load from localStorage or get default from Rust
+  
   useEffect(() => {
     const saved = loadLS('vg_cachePath', '');
     if (saved) {
@@ -1495,8 +1318,24 @@ export default function VanguardPlayer() {
   }, []);
   useEffect(() => { saveLS('vg_currentTrack', currentTrack); }, [currentTrack]);
 
+  useEffect(() => {
+    if (!currentTrack) return;
+    const parseDuration = (d: string): number => {
+      const parts = d.split(':').map(Number);
+      if (parts.length === 2) return (parts[0] ?? 0) * 60 + (parts[1] ?? 0);
+      if (parts.length === 3) return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
+      return 0;
+    };
+    invoke('set_mpris_metadata', {
+      title:        currentTrack.title  ?? '',
+      artist:       currentTrack.artist ?? '',
+      coverUrl:     currentTrack.cover  ?? '',
+      durationSecs: parseDuration(currentTrack.duration ?? '0:00'),
+      playing:      isPlaying,
+    }).catch(() => {});
+  }, [currentTrack, isPlaying]);
 
-  // Save position on page close/refresh
+  
   useEffect(() => {
     const save = () => { saveLS('vg_lastPosition', progressSecondsRef.current); };
       window.addEventListener('beforeunload', save);
@@ -1512,34 +1351,28 @@ export default function VanguardPlayer() {
   useEffect(() => { saveLS('vg_loudnorm', loudnormEnabled); invoke('set_loudnorm_enabled', { enabled: loudnormEnabled }).catch(() => {}); }, [loudnormEnabled]);
   useEffect(() => { saveLS('vg_eq', eq); }, [eq]);
 
-  // ── Toast ─────────────────────────────────────────────────────────────────────
+  
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   }, []);
 
-  // ── Global click ──────────────────────────────────────────────────────────────
+  
   useEffect(() => {
-    const h = () => { setCtxMenu(null); setShowHistory(false); setShowSleepPopover(false); setShowInfoHint(false); };
+    const h = () => { setCtxMenu(null); setShowHistory(false); setShowSleepPopover(false); };
     window.addEventListener('click', h);
     return () => window.removeEventListener('click', h);
   }, []);
 
-  // ── Init ──────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    invoke<DepsStatus>('check_dependencies').then(setDeps).catch(() => {});
-    invoke<string>('get_yt_dlp_version').then(setYtDlpVersion).catch(() => {});
-  }, []);
-
-  // ── Sleep timer poll — actually pauses when expired ──────────────────────
+  
   useEffect(() => {
     const id = setInterval(async () => {
       try {
         const r: number = await invoke('get_sleep_timer_remaining');
         if (r >= 0) {
           setSleepTimerState(r);
-          // If timer just hit 0 (within this poll window), pause playback
+          
           if (r === 0 && isPlayingRef.current) {
             try { await invoke('pause_audio'); setIsPlayingSync(false); } catch {}
             setSleepTimerState(-1);
@@ -1552,7 +1385,7 @@ export default function VanguardPlayer() {
     return () => clearInterval(id);
   }, [sleepTimer, setIsPlayingSync]);
 
-  // ── Batch download listener ───────────────────────────────────────────────────
+  
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen<BatchProgress>('batch_download_progress', e => {
@@ -1561,7 +1394,19 @@ export default function VanguardPlayer() {
     return () => { unlisten?.(); };
   }, [showToast]);
 
-  // ── Listen-time accumulator — increments every 5s while playing ──────────
+  const mprisToggleRef    = useRef<() => void>(() => {});
+  const mprisNextRef      = useRef<() => void>(() => {});
+  const mprisPrevRef      = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const unlisteners: (() => void)[] = [];
+    listen('mpris_play_pause', () => mprisToggleRef.current()).then(fn => unlisteners.push(fn));
+    listen('mpris_next',       () => mprisNextRef.current()).then(fn => unlisteners.push(fn));
+    listen('mpris_prev',       () => mprisPrevRef.current()).then(fn => unlisteners.push(fn));
+    return () => unlisteners.forEach(fn => fn());
+  }, []);
+
+  
   useEffect(() => {
     if (!isPlaying || !currentTrack || isLoadingTrack) return;
     const url = currentTrack.url;
@@ -1575,18 +1420,18 @@ export default function VanguardPlayer() {
     return () => clearInterval(id);
   }, [isPlaying, currentTrack?.url, isLoadingTrack]);
 
-    // ── Prefetch next in queue — only when queue head URL changes ───────────────
+    
   const lastPrefetchUrl = useRef<string | null>(null);
   useEffect(() => {
     const nextUrl = queue[0]?.url;
-    // Never prefetch local files — they're already on disk, no network needed
+    
     if (nextUrl && !nextUrl.startsWith('local://') && nextUrl !== lastPrefetchUrl.current) {
       lastPrefetchUrl.current = nextUrl;
       invoke('prefetch_track', { url: nextUrl }).catch(() => {});
     }
   }, [queue]);
 
-  // ── Audio info ────────────────────────────────────────────────────────────────
+  
   useEffect(() => {
     if (!isPlaying) return;
     const id = setInterval(() => { invoke<AudioInfo>('get_audio_info').then(setAudioInfo).catch(() => {}); }, 6000);
@@ -1594,14 +1439,12 @@ export default function VanguardPlayer() {
     return () => clearInterval(id);
   }, [isPlaying]);
 
-  // ── Settings actions ──────────────────────────────────────────────────────────
+  
   const setPlaybackSpeed = useCallback((s: number) => {
     setPlaybackSpeedState(s);
     invoke('set_playback_speed', { speed: s }).catch(() => {});
     showToast(`Speed: ${s}x`);
   }, [showToast]);
-
-
 
   const setSleepTimerMinutes = useCallback((m: number) => {
     invoke('set_sleep_timer', { seconds: m * 60 })
@@ -1613,20 +1456,7 @@ export default function VanguardPlayer() {
     invoke('cancel_sleep_timer').then(() => { setSleepTimerState(-1); showToast('Sleep timer cancelled'); }).catch(() => {});
   }, [showToast]);
 
-  const handleUpdateYtDlp = useCallback(async () => {
-    setIsUpdatingYtDlp(true);
-    try {
-      const r: string = await invoke('update_yt_dlp');
-      showToast(r.includes('up-to-date') ? 'yt-dlp is up to date' : 'yt-dlp updated');
-      const v = await invoke<string>('get_yt_dlp_version').catch(() => '');
-      setYtDlpVersion(v);
-      const d: DepsStatus = await invoke('check_dependencies');
-      setDeps(d);
-      } catch (e) { showToast(`Update failed: ${e}`); }
-    finally { setIsUpdatingYtDlp(false); }
-  }, [showToast]);
-
-  // ── Backup / Restore ──────────────────────────────────────────────────────────
+  
   const handleBackup = useCallback(async () => {
     try {
       const data = {
@@ -1648,7 +1478,7 @@ export default function VanguardPlayer() {
         exportedAt: new Date().toISOString(),
       };
       const json = JSON.stringify(data, null, 2);
-      // Trigger browser download
+      
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1690,7 +1520,7 @@ export default function VanguardPlayer() {
     } catch (e) { showToast(`Restore failed: ${e}`); }
   }, [showToast]);
 
-  // ── PLAY YOUTUBE ──────────────────────────────────────────────────────────────
+  
   const handlePlayTrack = useCallback(async (track: Track, fromQueue = false) => {
     endDetectedRef.current = false;
     setAbLoop({ a: null, b: null }); abLoopRef.current = { a: null, b: null };
@@ -1703,16 +1533,16 @@ export default function VanguardPlayer() {
 
     if (!fromQueue) {
       setPlayHistory(prev => [track, ...prev].slice(0, 50));
-      // Real stats — increment on every play
+      
       setPlayCounts(prev => ({ ...prev, [track.url]: (prev[track.url] || 0) + 1 }));
       const today = new Date().toISOString().slice(0, 10);
       setDailyPlays(prev => ({ ...prev, [today]: (prev[today] || 0) + 1 }));
       setFirstSeen(prev => prev[track.url] ? prev : { ...prev, [track.url]: new Date().toISOString() });
-      // If this track is in the current playlist context, update the index
+      
       if (playlistContextRef.current) {
         const idx = playlistContextRef.current.tracks.findIndex(t => t.url === track.url);
         if (idx >= 0) playlistContextRef.current = { ...playlistContextRef.current, index: idx };
-        else playlistContextRef.current = null; // track not in current context — clear it
+        else playlistContextRef.current = null; 
       }
     }
     setQuickPicks(prev => [track, ...prev.filter(t => t.url !== track.url)].slice(0, 20));
@@ -1739,7 +1569,7 @@ export default function VanguardPlayer() {
       });
 
       setIsPlayingSync(true);
-      // Resume from bookmark if one exists for this track
+      
       const bm = bookmarksRef.current[track.url];
       if (bm && bm > 2) {
         setTimeout(() => invoke('seek_audio', { position: bm }).catch(() => {}), 600);
@@ -1748,25 +1578,25 @@ export default function VanguardPlayer() {
     finally { setIsLoadingTrack(false); }
   }, [volume, playbackSpeed, eq, setIsPlayingSync]);
 
-  // ── PLAY LOCAL ────────────────────────────────────────────────────────────────
+  
   const handlePlayLocalTrack = useCallback(async (local: LocalTrack, localList?: LocalTrack[], localIndex?: number) => {
     endDetectedRef.current = false;
     setCurrentLocalPath(local.path); currentLocalPathRef.current = local.path;
-    // Track list for next/prev navigation within local tracks
+    
     if (localList !== undefined) {
       localTracksListRef.current = localList;
       localTrackIndexRef.current = localIndex ?? 0;
     } else if (localTracksListRef.current.length === 0) {
-      // Single track play — put it in list so auto-advance still works
+      
       localTracksListRef.current = [local];
       localTrackIndexRef.current = 0;
     } else {
-      // Find it in existing list
+      
       const idx = localTracksListRef.current.findIndex(t => t.path === local.path);
       if (idx >= 0) localTrackIndexRef.current = idx;
     }
 
-    // Local file — no loading state, instant play
+    
     setIsLoadingTrack(false); setIsPlayingSync(false);
     setProgressSeconds(0); progressSecondsRef.current = 0;
     setTrackDurationSeconds(0); trackDurationRef.current = 0;
@@ -1780,13 +1610,13 @@ export default function VanguardPlayer() {
     };
     setCurrentTrack(synth); currentTrackRef.current = synth;
 
-    // Pre-set duration from metadata so bar is ready immediately
+    
     if (local.duration && local.duration !== '0:00') {
       const d = parseDurationToSeconds(local.duration);
       if (d > 0) { setTrackDurationSeconds(d); trackDurationRef.current = d; }
     }
 
-    // Waveform in background — don't block playback
+    
     invoke<number[]>('get_waveform_thumbnail', { path: local.path })
       .then(setWaveformData).catch(() => setWaveformData([]));
 
@@ -1794,9 +1624,9 @@ export default function VanguardPlayer() {
       await invoke('play_local_file', { path: local.path });
       await invoke('set_volume', { volume });
       await invoke('set_playback_speed', { speed: playbackSpeed });
-      // Local file — mark playing immediately, mpv starts with no network wait
+      
       setIsPlayingSync(true);
-      // Confirm duration from mpv after a short moment
+      
       setTimeout(async () => {
         try {
           const s: { position: number; duration: number } = await invoke('get_playback_state');
@@ -1821,36 +1651,36 @@ export default function VanguardPlayer() {
     } catch (e) { showToast(`Export failed: ${e}`); }
   }, [downloadPath, showToast]);
 
-  // ── Play track in playlist context (sets nav so skip fwd/back work) ─────────
+  
   const handlePlayInContext = useCallback((track: Track, contextList: Track[]) => {
     const idx = contextList.findIndex(t => t.url === track.url);
     playlistContextRef.current = { tracks: contextList, index: Math.max(0, idx) };
-    setQueue([]); // Clear queue — context takes over navigation
+    setQueue([]); 
     handlePlayTrack(track, true);
-    // Don't add to history when playing from a list (handled by context)
+    
   }, [handlePlayTrack]);
 
-  // ── Controls ──────────────────────────────────────────────────────────────────
+  
   const togglePlayPause = useCallback(async () => {
     if (!currentTrackRef.current) return;
-    // Cold start: mpv not running — need to fully re-play the track from saved position
+    
     if (!isPlayingRef.current) {
       try {
         const state: { playing: boolean; paused: boolean; position: number; duration: number; eof_reached: boolean } =
           await invoke('get_playback_state');
-        // If position is 0 and not paused, mpv is dead — resume from saved position
+        
         if (state.position === 0 && !state.paused) {
           const savedPos: number = loadLS('vg_lastPosition', 0);
           await handlePlayTrack(currentTrackRef.current, true);
           if (savedPos > 3) {
-            // Wait for track to start then seek
+            
             await new Promise(r => setTimeout(r, 1500));
             await invoke('seek_audio', { time: savedPos }).catch(() => {});
           }
           return;
         }
       } catch {
-        // mpv not running at all — full resume
+        
         const savedPos: number = loadLS('vg_lastPosition', 0);
         await handlePlayTrack(currentTrackRef.current, true);
         if (savedPos > 3) {
@@ -1874,7 +1704,7 @@ export default function VanguardPlayer() {
     const track = currentTrackRef.current;
     const isLocal = track?.url?.startsWith('local://');
 
-    // ── Local file navigation ──────────────────────────────────────────────
+    
     if (isLocal) {
       const list = localTracksListRef.current;
       const idx = localTrackIndexRef.current;
@@ -1894,7 +1724,7 @@ export default function VanguardPlayer() {
       return;
     }
 
-    // ── Playlist context navigation (takes priority over queue) ───────────
+    
     const ctx = playlistContextRef.current;
     if (ctx && ctx.tracks.length > 1) {
       let nextIdx: number;
@@ -1914,7 +1744,7 @@ export default function VanguardPlayer() {
       return;
     }
 
-    // ── Queue fallback ─────────────────────────────────────────────────────
+    
     const q = queueRef.current;
     if (q.length > 0) { const [next, ...rest] = q; setQueue(rest); await handlePlayTrack(next, true); }
   }, [handlePlayTrack, handlePlayLocalTrack, shuffle]);
@@ -1923,7 +1753,7 @@ export default function VanguardPlayer() {
     const track = currentTrackRef.current;
     const isLocal = track?.url?.startsWith('local://');
 
-    // ── Local file navigation ──────────────────────────────────────────────
+    
     if (isLocal) {
       if (progressSecondsRef.current > 3) {
         await invoke('seek_audio', { time: 0 }).catch(() => {});
@@ -1943,14 +1773,14 @@ export default function VanguardPlayer() {
       return;
     }
 
-    // Restart if past 3s
+    
     if (progressSecondsRef.current > 3) {
       await invoke('seek_audio', { time: 0 }).catch(() => {});
       progressSecondsRef.current = 0; setProgressSeconds(0);
       return;
     }
 
-    // ── Playlist context navigation ────────────────────────────────────────
+    
     const ctx = playlistContextRef.current;
     if (ctx && ctx.index > 0) {
       const prevIdx = ctx.index - 1;
@@ -1959,7 +1789,7 @@ export default function VanguardPlayer() {
       return;
     }
 
-    // ── History fallback ───────────────────────────────────────────────────
+    
     if (playHistory.length > 0) {
       const [prev, ...rest] = playHistory; setPlayHistory(rest); await handlePlayTrack(prev, true);
     } else {
@@ -1967,6 +1797,10 @@ export default function VanguardPlayer() {
       progressSecondsRef.current = 0; setProgressSeconds(0);
     }
   }, [playHistory, handlePlayTrack, handlePlayLocalTrack]);
+
+  mprisToggleRef.current = togglePlayPause;
+  mprisNextRef.current   = handleSkipForward;
+  mprisPrevRef.current   = handleSkipBack;
 
   const toggleShuffle = useCallback(() => setShuffle(p => { showToast(!p ? 'Shuffle on' : 'Shuffle off'); return !p; }), [showToast]);
   const cycleRepeat = useCallback(() => setRepeatMode(p => {
@@ -1976,7 +1810,7 @@ export default function VanguardPlayer() {
     return n;
   }), [showToast]);
 
-  // ── Keyboard ──────────────────────────────────────────────────────────────────
+  
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
@@ -1991,7 +1825,7 @@ export default function VanguardPlayer() {
     return () => window.removeEventListener('keydown', h);
   }, [togglePlayPause, toggleMute]);
 
-  // ── Track end ─────────────────────────────────────────────────────────────────
+  
   const handleTrackEnd = useCallback(() => {
     if (endDetectedRef.current) return;
     endDetectedRef.current = true;
@@ -2010,14 +1844,14 @@ export default function VanguardPlayer() {
       return;
     }
 
-    // ── Local track auto-advance ──────────────────────────────────────────
+    
     if (isLocal) {
       const list = localTracksListRef.current;
       const idx = localTrackIndexRef.current;
       if (list.length > 1) {
         let nextIdx: number;
         if (shuffle) {
-          // Random next, but not same
+          
           do { nextIdx = Math.floor(Math.random() * list.length); } while (nextIdx === idx && list.length > 1);
         } else {
           nextIdx = idx + 1;
@@ -2032,7 +1866,7 @@ export default function VanguardPlayer() {
           return;
         }
       } else if (repeat === 'all' && list.length === 1) {
-        // Single track repeat all = just replay
+        
         invoke('seek_to_start').catch(() => {});
         progressSecondsRef.current = 0; setProgressSeconds(0);
         setIsPlayingSync(true);
@@ -2043,7 +1877,7 @@ export default function VanguardPlayer() {
       return;
     }
 
-    // ── Queue auto-advance ────────────────────────────────────────────────
+    
     const q = queueRef.current;
     if (q.length > 0) {
       const [next, ...rest] = q;
@@ -2053,7 +1887,7 @@ export default function VanguardPlayer() {
       return;
     }
 
-    // ── Playlist context auto-advance ─────────────────────────────────────
+    
     const ctx = playlistContextRef.current;
     if (ctx && ctx.tracks.length > 1) {
       let nextIdx: number;
@@ -2079,11 +1913,11 @@ export default function VanguardPlayer() {
       return;
     }
 
-    // Nothing to play — stop
+    
     setIsPlayingSync(false);
   }, [handlePlayTrack, handlePlayLocalTrack, setIsPlayingSync, shuffle]);
 
-  // ── Progress poll ─────────────────────────────────────────────────────────────
+  
   useEffect(() => {
     const poll = async () => {
       if (isDraggingProgressRef.current) return;
@@ -2093,11 +1927,11 @@ export default function VanguardPlayer() {
 
         progressSecondsRef.current = s.position;
         setProgressSeconds(s.position);
-        // Persist position every ~5 seconds for resume-on-reopen
+        
         if (Math.floor(s.position) % 5 === 0 && s.position > 3) {
           saveLS('vg_lastPosition', s.position);
         }
-        // A-B loop: if B point set and we've passed it, jump back to A
+        
         const ab = abLoopRef.current;
         if (ab.a !== null && ab.b !== null && s.position >= ab.b) {
           invoke('seek_audio', { time: ab.a }).catch(() => {});
@@ -2107,17 +1941,17 @@ export default function VanguardPlayer() {
           trackDurationRef.current = s.duration; setTrackDurationSeconds(s.duration);
         }
 
-        // Only sync play/pause state when not loading and not in EOF handling
+        
         if (!isLoadingTrack && !endDetectedRef.current) {
           const playing = !s.paused;
           if (playing !== isPlayingRef.current) setIsPlayingSync(playing);
         }
 
-        // Crossfade: when within crossfadeSeconds of end, trigger next track early
+        
         if (!s.eof_reached && !endDetectedRef.current && s.position > 3 && s.duration > 0
             && crossfadeSeconds > 0 && s.position >= s.duration - crossfadeSeconds - 0.5
             && s.position < s.duration - 0.2) {
-          // Start fade out via volume ramp, then trigger track end
+          
           const fadeSteps = Math.max(1, Math.round(crossfadeSeconds * 5));
           const volStep = (volume / fadeSteps);
           let step = 0;
@@ -2127,19 +1961,19 @@ export default function VanguardPlayer() {
             invoke('set_volume', { volume: newVol }).catch(() => {});
             if (step >= fadeSteps) {
               clearInterval(fadeInterval);
-              invoke('set_volume', { volume }).catch(() => {}); // restore after next track loads
+              invoke('set_volume', { volume }).catch(() => {}); 
               if (!endDetectedRef.current) handleTrackEnd();
             }
           }, (crossfadeSeconds * 1000) / fadeSteps);
-          // endDetected already set above to prevent double-fire
+          
           return;
         }
-        // EOF detection — only fire if position is meaningful (> 3s to avoid false positives on load)
+        
         if (s.eof_reached && !endDetectedRef.current && s.position > 3) {
           handleTrackEnd();
           return;
         }
-        // Secondary check: very close to end (within 1s) — covers cases where eof-reached isn't set yet
+        
         if (!s.eof_reached && !endDetectedRef.current && s.position > 3 && s.duration > 0 && s.position >= s.duration - 1.0) {
           handleTrackEnd();
         }
@@ -2150,7 +1984,7 @@ export default function VanguardPlayer() {
     return () => clearInterval(id);
   }, [isPlaying, isLoadingTrack, handleTrackEnd, setIsPlayingSync]);
 
-  // ── Folder picker ─────────────────────────────────────────────────────────────
+  
   const handleSelectDirectory = useCallback(async () => {
     try {
       const sel = await open({ directory: true, multiple: false, defaultPath: downloadPath });
@@ -2158,7 +1992,7 @@ export default function VanguardPlayer() {
     } catch {}
   }, [downloadPath]);
 
-  // ── Progress drag ─────────────────────────────────────────────────────────────
+  
   const updateProgressFromEvent = useCallback((clientX: number) => {
     if (!progressRef.current || !currentTrackRef.current) return undefined;
     const rect = progressRef.current.getBoundingClientRect();
@@ -2196,7 +2030,7 @@ export default function VanguardPlayer() {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [isDraggingProgress, isDraggingVolume, updateProgressFromEvent, updateVolumeFromEvent]);
 
-  // ── Search ────────────────────────────────────────────────────────────────────
+  
   const searchMusic = useCallback(async (override?: string) => {
     const q = (override ?? searchQuery).trim();
     if (!q || isSearching) return;
@@ -2214,14 +2048,14 @@ export default function VanguardPlayer() {
     finally { setIsSearching(false); }
   }, [searchQuery, isSearching]);
 
-  // ── Context menu ──────────────────────────────────────────────────────────────
+  
   const openCtx = useCallback((e: React.MouseEvent, menu: Omit<CtxMenu, 'x' | 'y'>) => {
     e.preventDefault(); e.stopPropagation();
     const { x, y } = clampMenu(e.clientX, e.clientY);
     setCtxMenu({ x, y, ...menu });
   }, []);
 
-  // ── Download ──────────────────────────────────────────────────────────────────
+  
   const handleDownload = useCallback(async (track: Track) => {
     setDownloadingTracks(p => ({ ...p, [track.url]: true }));
     try {
@@ -2233,11 +2067,11 @@ export default function VanguardPlayer() {
 
   const copyToClipboard = useCallback(async (text: string) => {
     try {
-      // Tauri: use writeText from clipboard plugin if available, else navigator
+      
       if (typeof navigator?.clipboard?.writeText === 'function') {
         await navigator.clipboard.writeText(text);
       } else {
-        // Fallback: create temp textarea
+        
         const el = document.createElement('textarea');
         el.value = text; el.style.position = 'fixed'; el.style.opacity = '0';
         document.body.appendChild(el); el.select();
@@ -2255,7 +2089,7 @@ export default function VanguardPlayer() {
     }
   }, []);
 
-  // ── Playlist helpers ──────────────────────────────────────────────────────────
+  
   const confirmCreatePlaylist = useCallback(() => {
     if (!newPlaylistName.trim()) return;
     setPlaylists(p => [...p, { id: `p${Date.now()}`, name: newPlaylistName.trim(), description: newPlaylistDesc.trim(), tracks: [] }]);
@@ -2315,7 +2149,7 @@ export default function VanguardPlayer() {
   const playAll = useCallback((list: Track[]) => {
     if (!list.length) return;
     const sorted = shuffle ? [...list].sort(() => Math.random() - 0.5) : [...list];
-    // Set playlist context so skip fwd/back works without a queue
+    
     playlistContextRef.current = { tracks: sorted, index: 0 };
     handlePlayTrack(sorted[0], true); setQueue(sorted.slice(1));
     showToast(shuffle ? 'Shuffle playing all' : 'Playing all');
@@ -2330,7 +2164,7 @@ export default function VanguardPlayer() {
 
   const openPlaylist = playlists.find(p => p.id === openPlaylistId);
 
-  // ── RENDER ────────────────────────────────────────────────────────────────────
+  
   return (
     <div className="flex flex-col h-screen w-full bg-[#050505] text-white font-sans overflow-hidden selection:bg-[#39FF14] selection:text-black">
       <style>{`
@@ -2345,13 +2179,11 @@ export default function VanguardPlayer() {
         input,textarea{-webkit-user-select:text!important;user-select:text!important;}
       `}</style>
 
-      <DepsBanner deps={deps} onGoToSettings={() => navigateTo('settings')} />
-
       <div className="flex flex-1 overflow-hidden">
 
-        {/* ── SIDEBAR ── */}
+        {}
         <div className="w-64 bg-[#0a0a0a] border-r border-neutral-800/50 flex flex-col p-6 z-10 shrink-0 overflow-visible relative">
-          {/* Logo + info hint */}
+          {}
           <div className="flex items-center gap-2 mb-6 shrink-0">
             <div className="flex items-center gap-3 flex-1 cursor-pointer group" onClick={() => navigateTo('home')}>
               <div className="w-8 h-8 rounded bg-[#39FF14] flex items-center justify-center shadow-[0_0_15px_rgba(57,255,20,0.5)] group-hover:shadow-[0_0_25px_rgba(57,255,20,0.8)] transition-all duration-300 shrink-0">
@@ -2359,47 +2191,9 @@ export default function VanguardPlayer() {
               </div>
               <h1 className="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#39FF14] to-emerald-200 drop-shadow-[0_0_8px_rgba(57,255,20,0.6)]">VANGUARD</h1>
             </div>
-            {/* Info hint — only when deps missing */}
-            {deps && (!deps.mpv || !deps.yt_dlp || !deps.ffprobe) && (
-            <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
-              <div ref={infoHintBtnRef as React.RefObject<HTMLDivElement>} style={{ display: 'inline-block' }}>
-                <InfoHintButton onClick={() => {
-                  if (infoHintBtnRef.current) {
-                    const r = infoHintBtnRef.current.getBoundingClientRect();
-                    const boxW = 288; // w-72
-                    // Right-align to button right edge, but keep on screen
-                    const left = Math.min(r.right - boxW, window.innerWidth - boxW - 12);
-                    setInfoHintPos({ top: r.bottom + 8, left: Math.max(8, left) });
-                  }
-                  setShowInfoHint(o => !o);
-                }} />
-              </div>
-              {showInfoHint && infoHintPos && (
-                <div className="fixed w-72 rounded-xl p-5 z-[99999]"
-                  style={{
-                    top: infoHintPos.top,
-                    left: infoHintPos.left,
-                    animation: 'dropIn 0.15s ease-out',
-                    background: '#111111',
-                    border: '1px solid rgba(245,158,11,0.35)',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.95), 0 0 24px rgba(251,191,36,0.12)',
-                    opacity: 1,
-                  }}>
-                  <p className="font-bold text-white mb-2 flex items-center gap-2 text-sm"><AlertTriangle size={15} className="text-amber-400" /> Getting Started</p>
-                  <p className="text-xs text-neutral-300 leading-relaxed">Before using Vanguard, install the required dependencies:</p>
-                  <p className="mt-2.5 text-[#39FF14] font-bold text-sm">Settings → Dependencies → Install</p>
-                  <p className="mt-2 text-xs text-neutral-500">Requires: mpv · yt-dlp · ffprobe</p>
-                  <button onClick={() => { navigateTo('settings'); setShowInfoHint(false); }}
-                    className="mt-3 w-full py-2 bg-amber-500/15 border border-amber-500/30 text-amber-400 rounded-lg text-xs font-semibold hover:bg-amber-500/25 transition-colors">
-                    Go to Settings →
-                  </button>
-                </div>
-              )}
-            </div>
-            )}
           </div>
 
-          {/* Sleep timer pill — always visible */}
+          {}
           <div className="relative mb-4 shrink-0 overflow-visible" onClick={e => e.stopPropagation()}>
             <div
               onClick={() => setShowSleepPopover(o => !o)}
@@ -2437,9 +2231,6 @@ export default function VanguardPlayer() {
                   ${activeNav === id ? 'bg-neutral-800/50 text-[#39FF14] shadow-[inset_2px_0_0_#39FF14]' : 'text-neutral-400 hover:text-[#39FF14] hover:bg-neutral-900/50'}`}>
                 <Icon size={20} className={activeNav === id ? 'drop-shadow-[0_0_5px_#39FF14]' : ''} />
                 <span className="font-medium">{label}</span>
-                {id === 'settings' && deps && (!deps.mpv || !deps.yt_dlp) && (
-                  <span className="ml-auto w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
-                )}
               </button>
             ))}
             <button onClick={() => setIsQueueOpen(o => !o)}
@@ -2451,7 +2242,7 @@ export default function VanguardPlayer() {
             </button>
           </nav>
 
-          {/* Playlists */}
+          {}
           <div className="mt-5 flex flex-col flex-1 min-h-0">
             <div className="flex items-center justify-between px-1 mb-2 shrink-0">
               <button onClick={() => { setSidebarPlaylistsExpanded(o => !o); navigateTo('library'); setOpenPlaylistId(null); }}
@@ -2507,11 +2298,11 @@ export default function VanguardPlayer() {
           </div>
         </div>
 
-        {/* ── CENTER ── */}
+        {}
         <div className="flex-1 flex flex-col bg-gradient-to-b from-[#0f1115] to-[#050505] overflow-hidden relative">
           <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#39FF14]/10 via-transparent to-transparent" />
 
-          {/* ── BACK BUTTON — always visible ── */}
+          {}
           <div className="flex items-center gap-3 px-6 pt-4 pb-0 shrink-0 z-20 relative">
             <button
               onClick={navigateBack}
@@ -2525,13 +2316,13 @@ export default function VanguardPlayer() {
               <ChevronLeft size={16} />
               <span>Back</span>
             </button>
-            {/* Breadcrumb */}
+            {}
             <span className="text-xs text-neutral-600 font-medium uppercase tracking-widest">
               {activeNav === 'home' ? 'Home' : activeNav === 'downloads' ? 'Offline' : activeNav === 'settings' ? 'Settings' : activeNav === 'stats' ? 'Stats' : activeNav === 'library' ? (openPlaylistId ? 'Playlist' : 'Playlists') : activeNav}
             </span>
           </div>
 
-          {/* ── HOME ── */}
+          {}
           {activeNav === 'home' && (
             <>
               <div className="p-6 pb-3 relative z-30 shrink-0">
@@ -2580,7 +2371,7 @@ export default function VanguardPlayer() {
               </div>
 
               <div className="flex-1 overflow-y-auto px-6 pb-4 z-10 custom-scrollbar" onClick={() => setShowHistory(false)}>
-                {/* Empty state */}
+                {}
                 {!isSearching && tracks.length === 0 && quickPicks.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-6">
                     <div className="relative">
@@ -2598,7 +2389,7 @@ export default function VanguardPlayer() {
                   </div>
                 )}
 
-              {/* Quick picks */}
+              {}
                 {!isSearching && tracks.length === 0 && quickPicks.length > 0 && isHydrated && (
                   <div className="mb-6 pt-1">
                     <div className="flex items-center gap-3 mb-3">
@@ -2632,7 +2423,7 @@ export default function VanguardPlayer() {
                   </div>
                 )}
 
-                {/* Search results */}
+                {}
                 {(isSearching || tracks.length > 0) && (
                   <div className="flex items-center gap-3 mb-3 py-2">
                     <span className="w-1.5 h-5 bg-[#39FF14] rounded-full shadow-[0_0_8px_#39FF14] shrink-0" />
@@ -2676,7 +2467,7 @@ export default function VanguardPlayer() {
             </>
           )}
 
-          {/* ── DOWNLOADS ── */}
+          {}
           {activeNav === 'downloads' && (
             <DownloadsPanel
               downloadPath={downloadPath} onPlayLocalTrack={handlePlayLocalTrack}
@@ -2687,7 +2478,7 @@ export default function VanguardPlayer() {
             />
           )}
 
-          {/* ── LIBRARY ── */}
+          {}
           {activeNav === 'library' && (
             openPlaylist ? (
               <div className="flex-1 overflow-y-auto p-8 z-10 custom-scrollbar">
@@ -2859,7 +2650,7 @@ export default function VanguardPlayer() {
             )
           )}
 
-          {/* ── SETTINGS ── */}
+          {}
           {activeNav === 'stats' && (() => {
             const totalSecs = Object.values(listenSecs).reduce((s, n) => s + n, 0);
             const hrs = Math.floor(totalSecs / 3600);
@@ -2870,19 +2661,19 @@ export default function VanguardPlayer() {
               : [{ val: String(mins).padStart(2,'0'), unit: 'm' }, { val: String(secs).padStart(2,'0'), unit: 's' }];
             return (
               <div className="flex-1 flex flex-col items-center justify-center gap-8 relative overflow-hidden">
-                {/* Ambient glow */}
+                {}
                 <div className="absolute inset-0 pointer-events-none" style={{
                   background: 'radial-gradient(ellipse 70% 50% at 50% 50%, rgba(57,255,20,0.06) 0%, transparent 65%)'
                 }} />
 
-                {/* Label */}
+                {}
                 <div className="relative z-10 flex items-center gap-3">
                   <div className="h-px w-8" style={{ background: 'linear-gradient(90deg, transparent, #39FF14)' }} />
                   <p className="text-[11px] font-bold uppercase tracking-[0.35em] text-white/60">Time Listened</p>
                   <div className="h-px w-8" style={{ background: 'linear-gradient(90deg, #39FF14, transparent)' }} />
                 </div>
 
-                {/* Time display */}
+                {}
                 <div className="relative z-10 flex items-end gap-1">
                   {segments.map(({ val, unit }, idx) => (
                     <div key={unit} className="flex items-end gap-0.5">
@@ -2898,7 +2689,7 @@ export default function VanguardPlayer() {
                   ))}
                 </div>
 
-                {/* Divider */}
+                {}
                 <div className="relative z-10 flex flex-col items-center gap-3">
                   <div className="h-px w-48" style={{ background: 'linear-gradient(90deg, transparent, rgba(57,255,20,0.5), transparent)' }} />
                   {totalSecs === 0
@@ -2915,8 +2706,6 @@ export default function VanguardPlayer() {
             <SettingsPanel
               downloadQuality={downloadQuality} setDownloadQuality={setDownloadQuality}
               downloadPath={downloadPath} handleSelectDirectory={handleSelectDirectory}
-              deps={deps} setDeps={setDeps} ytDlpVersion={ytDlpVersion} setYtDlpVersion={setYtDlpVersion}
-              onUpdateYtDlp={handleUpdateYtDlp} isUpdatingYtDlp={isUpdatingYtDlp}
               onBackup={handleBackup} onRestore={handleRestore}
               backupPath={backupPath} setBackupPath={setBackupPath}
               cachePath={cachePath} setCachePath={setCachePath}
@@ -2926,7 +2715,7 @@ export default function VanguardPlayer() {
           )}
         </div>
 
-        {/* ── QUEUE PANEL ── */}
+        {}
         <div className={`shrink-0 bg-[#0a0a0a] border-l border-neutral-800/50 flex flex-col transition-all duration-300 ease-in-out overflow-hidden ${isQueueOpen ? 'w-80' : 'w-0'}`}>
           {isQueueOpen && (
             <>
@@ -3011,7 +2800,7 @@ export default function VanguardPlayer() {
         </div>
       </div>
 
-      {/* ── PLAYER BAR ── */}
+      {}
       <div className="h-[88px] bg-[#0a0a0a] border-t border-neutral-800 flex items-center justify-between px-6 relative z-20 shadow-[0_-8px_40px_rgba(0,0,0,0.9)] shrink-0" style={{ backdropFilter: 'none' }}>
         {isPlaying && !isLoadingTrack && <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/50 to-transparent" />}
         {isLoadingTrack && (
@@ -3020,7 +2809,7 @@ export default function VanguardPlayer() {
           </div>
         )}
 
-        {/* Left: track info */}
+        {}
         <div className="flex items-center gap-4 w-1/4 min-w-[180px]">
           {currentTrack ? (
             <>
@@ -3062,7 +2851,7 @@ export default function VanguardPlayer() {
           )}
         </div>
 
-        {/* Center: controls + progress + speed */}
+        {}
         <div className="flex flex-col items-center justify-center w-2/4 gap-2 max-w-2xl">
           <div className="flex items-center gap-5">
             <button onClick={toggleShuffle} className={`transition-all duration-200 ${shuffle ? 'text-[#39FF14] drop-shadow-[0_0_6px_#39FF14]' : 'text-neutral-600 hover:text-neutral-300'}`}><Shuffle size={18} /></button>
@@ -3079,11 +2868,11 @@ export default function VanguardPlayer() {
             </button>
           </div>
 
-          {/* Progress row + speed selector */}
+          {}
           <div className="w-full flex items-center gap-2 mt-1">
-            {/* Speed selector — left of time */}
+            {}
             <SpeedSelector speed={playbackSpeed} onChange={setPlaybackSpeed} />
-            {/* A-B Loop button */}
+            {}
             <button
               title={abLoop.a === null ? 'Set A point' : abLoop.b === null ? 'Set B point' : 'Clear A-B loop'}
               onClick={() => {
@@ -3126,10 +2915,10 @@ export default function VanguardPlayer() {
           </div>
         </div>
 
-        {/* Right: crossfade + volume */}
+        {}
         <div className="w-1/4 flex items-center justify-end gap-3 pr-4">
-          {/* Crossfade indicator */}
-          {/* Bookmark button */}
+          {}
+          {}
           {currentTrack && (
             <button
               onClick={() => {
@@ -3170,7 +2959,7 @@ export default function VanguardPlayer() {
         </div>
       </div>
 
-      {/* ── CONTEXT MENU ── */}
+      {}
       {ctxMenu && (() => {
         const { track, playlist } = ctxMenu;
         if ((ctxMenu.type === 'track' || ctxMenu.type === 'quickpick' || ctxMenu.type === 'queue-track') && track) {
@@ -3229,7 +3018,7 @@ export default function VanguardPlayer() {
         return null;
       })()}
 
-      {/* ── ADD TO PLAYLIST MODAL ── */}
+      {}
       {addToPlaylistTrack && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md" onClick={() => setAddToPlaylistTrack(null)}>
           <div className="bg-[#0d0d0d] border border-neutral-800/60 rounded-2xl w-80 overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.95)]" onClick={e => e.stopPropagation()}>
@@ -3267,7 +3056,7 @@ export default function VanguardPlayer() {
         </div>
       )}
 
-      {/* ── INFO MODAL ── */}
+      {}
       {infoModalTrack && (() => {
         const ytId = infoModalTrack.url?.match(/[?&]v=([^&]+)/)?.[1] || infoModalTrack.url?.split('youtu.be/')?.[1]?.split('?')?.[0] || '';
         const ytUrl = ytId ? `https://youtube.com/watch?v=${ytId}` : infoModalTrack.url;
@@ -3281,7 +3070,7 @@ export default function VanguardPlayer() {
               style={{ background: '#0c0c0c', border: '1px solid rgba(255,255,255,0.08)' }}
               onClick={e => e.stopPropagation()}>
 
-              {/* Cover hero */}
+              {}
               <div className="relative h-44 w-full shrink-0 overflow-hidden">
                 <img src={infoModalTrack.cover} className="w-full h-full object-cover opacity-30" style={{ filter: 'blur(20px)', transform: 'scale(1.1)' }} alt="" />
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#0c0c0c]" />
@@ -3294,13 +3083,13 @@ export default function VanguardPlayer() {
                 </button>
               </div>
 
-              {/* Track title + artist */}
+              {}
               <div className="px-6 pt-3 pb-4 text-center">
                 <p className="text-base font-bold text-white leading-snug">{infoModalTrack.title}</p>
                 <p className="text-sm text-neutral-500 mt-0.5">{infoModalTrack.artist}</p>
               </div>
 
-              {/* Pills row */}
+              {}
               <div className="flex gap-2 px-6 pb-4 flex-wrap justify-center">
                 {infoModalTrack.duration && infoModalTrack.duration !== '0:00' && (
                   <span className="bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-full text-xs font-bold text-cyan-400 flex items-center gap-1.5">
@@ -3335,7 +3124,7 @@ export default function VanguardPlayer() {
                 )}
               </div>
 
-              {/* Info rows */}
+              {}
               <div className="mx-6 mb-4 rounded-xl overflow-hidden border border-neutral-800/60 divide-y divide-neutral-800/60">
                 {[
                   { icon: Music, label: 'Title', value: infoModalTrack.title, color: 'text-blue-400', bg: 'bg-blue-500/10' },
@@ -3356,7 +3145,7 @@ export default function VanguardPlayer() {
                 ))}
               </div>
 
-              {/* Action buttons */}
+              {}
               <div className="px-6 pb-5 flex flex-col gap-2.5">
                 <div className="grid grid-cols-2 gap-2.5">
                   <CopyButton text={ytId || ''} label="Copy ID" icon={Copy} disabled={!ytId} />
@@ -3376,7 +3165,7 @@ export default function VanguardPlayer() {
         );
       })()}
 
-      {/* ── DUPLICATE FINDER MODAL ── */}
+      {}
       {showYtImportModal && (
         <YtImportModal
           onClose={() => setShowYtImportModal(false)}
@@ -3450,7 +3239,7 @@ export default function VanguardPlayer() {
         );
       })()}
 
-      {/* ── BULK TAG EDITOR MODAL ── */}
+      {}
       {bulkEditPlaylist && (() => {
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)' }}>
@@ -3517,7 +3306,7 @@ export default function VanguardPlayer() {
         );
       })()}
 
-      {/* ── CREATE PLAYLIST MODAL ── */}
+      {}
       {isPlaylistModalOpen && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="bg-[#111] border border-[#39FF14]/40 p-6 rounded-xl w-96 shadow-[0_0_30px_rgba(57,255,20,0.1)]">
@@ -3543,7 +3332,7 @@ export default function VanguardPlayer() {
         </div>
       )}
 
-      {/* ── EDIT PLAYLIST MODAL ── */}
+      {}
       {renamingPlaylist && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="bg-[#111] border border-neutral-800 p-6 rounded-xl w-96 shadow-2xl">
@@ -3570,10 +3359,10 @@ export default function VanguardPlayer() {
         </div>
       )}
 
-      {/* ── SPOTIFY IMPORT MODAL ── */}
+      {}
       
 
-      {/* ── TOAST ── */}
+      {}
       {toast && (
         <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 bg-[#111] border border-neutral-800/80 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-2xl pointer-events-none">
           {toast}

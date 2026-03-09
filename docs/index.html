@@ -964,7 +964,6 @@
             background: var(--bg-card-hover);
         }
         .feature-card:hover::before { opacity: 1; }
-        .feature-card.wide { grid-column: span 2; }
         .feature-icon {
             width: 44px; height: 44px;
             border-radius: 12px;
@@ -1181,7 +1180,6 @@
         /* ── Tablet: features 2-col, screenshots stack ── */
         @media (max-width: 900px) {
             .features-grid { grid-template-columns: repeat(2, 1fr); }
-            .feature-card.wide { grid-column: span 2; }
         }
 
         /* ── General responsive: hide desktop nav ── */
@@ -1272,7 +1270,6 @@
                 grid-template-columns: 1fr;
                 gap: 12px;
             }
-            .feature-card.wide { grid-column: span 1; }
             .feature-card { padding: 20px 18px; border-radius: 12px; }
             .feature-icon { width: 38px; height: 38px; border-radius: 10px; margin-bottom: 14px; }
             .feature-title { font-size: 14px; }
@@ -1443,35 +1440,14 @@
 
         <div class="download-buttons reveal-on-scroll delay-200">
 
-            <!-- Windows dropdown button -->
-            <div class="dl-btn-wrap" id="dl-windows-wrap">
-                <button class="dl-btn-trigger" id="dl-windows" aria-expanded="false" aria-haspopup="listbox">
+            <!-- Windows direct download -->
+            <div class="dl-btn-wrap">
+                <a href="#" class="dl-btn-trigger dl-btn-direct">
                     <span class="dl-btn-trigger-text">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/8/87/Windows_logo_-_2021.svg" alt="Windows" />
-                        Download for Windows
+                        Download for Windows (.exe)
                     </span>
-                    <span class="dl-btn-arrow">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                    </span>
-                </button>
-                <div class="dl-dropdown-panel" id="windows-dropdown" role="listbox">
-                    <div class="dl-dropdown-list">
-                        <a href="#" class="dl-drop-item" role="option">
-                            <span class="dl-drop-item-label">
-                                <span class="dl-drop-item-icon"></span>
-                                Portable (.exe)
-                            </span>
-                            <span class="dl-drop-item-arch">x64</span>
-                        </a>
-                        <a href="#" class="dl-drop-item" role="option">
-                            <span class="dl-drop-item-label">
-                                <span class="dl-drop-item-icon"></span>
-                                Installer (.msi)
-                            </span>
-                            <span class="dl-drop-item-arch">x64</span>
-                        </a>
-                    </div>
-                </div>
+                </a>
             </div>
 
             <!-- Linux direct download -->
@@ -1481,7 +1457,6 @@
                         <img src="https://upload.wikimedia.org/wikipedia/commons/3/35/Tux.svg" alt="Linux" />
                         Download for Linux (.deb)
                     </span>
-                    <span style="font-size:11px;font-weight:600;opacity:0.6;">x64</span>
                 </a>
             </div>
 
@@ -1521,15 +1496,15 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 </div>
                 <div class="feature-title">Offline Downloads</div>
-                <div class="feature-desc">Save any track as a high-quality MP3 via the built-in yt-dlp extractor. Choose High (320kbps+), Medium (~128kbps), or Low quality. Listen anywhere — even without internet.</div>
+                <div class="feature-desc">Save any track as a high-quality MP3. Choose High (320kbps+), Medium (~128kbps), or Low quality. Listen anywhere — even without internet.</div>
             </div>
 
-            <div class="feature-card wide reveal-on-scroll delay-100">
+            <div class="feature-card reveal-on-scroll delay-100">
                 <div class="feature-icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 17 21 12 16 7"/><polyline points="8 7 3 12 8 17"/></svg>
                 </div>
-                <div class="feature-title">Spotify &amp; YouTube Playlist Import</div>
-                <div class="feature-desc">Bring your playlists from anywhere. For Spotify: export a CSV via <a href="https://exportify.net" target="_blank" rel="noopener" style="color:var(--vanguard-green);text-decoration:none;">Exportify</a>, upload it and Vanguard auto-matches every track on YouTube — no Spotify login or API keys. For YouTube: paste any public playlist URL and all videos are imported instantly, no matching needed. Works with YouTube Music playlists too.</div>
+                <div class="feature-title">Playlist Import</div>
+                <div class="feature-desc">Import from Spotify via Exportify CSV or paste any YouTube/YouTube Music playlist URL — Vanguard auto-matches every track. No login or API keys needed.</div>
             </div>
 
             <div class="feature-card reveal-on-scroll delay-200">
@@ -1537,18 +1512,18 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
                 </div>
                 <div class="feature-title">Playlists &amp; Queue</div>
-                <div class="feature-desc">Create, edit, and reorder unlimited playlists. Full queue management with drag-to-reorder, shuffle, and repeat support.</div>
+                <div class="feature-desc">Create, edit, and reorder unlimited playlists. Full queue management with shuffle and repeat support.</div>
             </div>
 
-            <div class="feature-card reveal-on-scroll delay-100">
+            <div class="feature-card reveal-on-scroll delay-300">
                 <div class="feature-icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                 </div>
                 <div class="feature-title">Precision Playback Controls</div>
-                <div class="feature-desc">Shuffle, repeat one or all, seek, volume, crossfade, and variable playback speed — with smooth progress tracking and animated now-playing indicators.</div>
+                <div class="feature-desc">Shuffle, repeat, seek, volume, and variable playback speed — with smooth progress tracking and animated now-playing indicators.</div>
             </div>
 
-            <div class="feature-card reveal-on-scroll delay-200">
+            <div class="feature-card reveal-on-scroll delay-100">
                 <div class="feature-icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                 </div>
@@ -1556,60 +1531,20 @@
                 <div class="feature-desc">Set an auto-pause timer from quick presets (5m – 90m) or a custom duration. Perfect for falling asleep to music without leaving it running all night.</div>
             </div>
 
-            <div class="feature-card reveal-on-scroll delay-300">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                </div>
-                <div class="feature-title">Listening Stats</div>
-                <div class="feature-desc">Track your total listening time with a minimalist stats dashboard — hours, minutes, and seconds, all stored locally on your machine, never sent anywhere.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-100">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                </div>
-                <div class="feature-title">Liked Songs</div>
-                <div class="feature-desc">Heart any track to instantly add it to your Liked Songs collection. Your favourites are always one click away, synced locally.</div>
-            </div>
-
-            <div class="feature-card wide reveal-on-scroll delay-200">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                </div>
-                <div class="feature-title">Lightweight Rust + Tauri Core</div>
-                <div class="feature-desc">Unlike Electron-based players that consume hundreds of MB of RAM, Vanguard is built on Tauri and Rust — talking directly to the OS via IPC sockets (Unix) or named pipes (Windows). The result is a blazing-fast, sub-50MB install with minimal CPU and memory footprint, even with large libraries loaded.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-100">
+            <div class="feature-card reveal-on-scroll delay-200">
                 <div class="feature-icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                 </div>
                 <div class="feature-title">Zero Telemetry. Zero Tracking.</div>
-                <div class="feature-desc">Absolutely no analytics, no crash reporters, no data collection of any kind. Everything — playlists, history, settings — stays on your machine.</div>
+                <div class="feature-desc">No analytics, no crash reporters, no data collection of any kind. Everything — playlists, history, settings — stays on your machine.</div>
             </div>
 
-            <div class="feature-card wide reveal-on-scroll delay-200">
+            <div class="feature-card reveal-on-scroll delay-300">
                 <div class="feature-icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
                 </div>
-                <div class="feature-title">Backup &amp; Restore via JSON</div>
-                <div class="feature-desc">Export your entire library — playlists, liked songs, stats, and settings — as a portable JSON file with one click. Restore it anytime to pick up exactly where you left off, on any machine.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-100">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                </div>
-                <div class="feature-title">Audio Info Panel</div>
-                <div class="feature-desc">Inspect codec, bitrate, sample rate, channels, and format for any playing track — real metadata powered by ffprobe under the hood.</div>
-            </div>
-
-            <div class="feature-card wide reveal-on-scroll delay-100">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-                </div>
-                <div class="feature-title">Fully Open Source</div>
-                <div class="feature-desc">Every line of code is public on GitHub. Audit it, fork it, contribute to it. No hidden binaries, no obfuscation — community-driven, always.</div>
+                <div class="feature-title">Backup &amp; Restore</div>
+                <div class="feature-desc">Export your entire library — playlists, liked songs, and settings — as a portable JSON file. Restore it on any machine and pick up exactly where you left off.</div>
             </div>
 
         </div>
@@ -2060,7 +1995,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">Currently, Vanguard Player is fully supported on <strong style="color:#fff">Windows (.exe)</strong> and <strong style="color:#fff">Linux</strong>, available as <strong style="color:#fff">.AppImage</strong>, <strong style="color:#fff">.deb</strong> (Debian/Ubuntu), and <strong style="color:#fff">.rpm</strong> (Fedora/RHEL) — all x64.</div>
+                        <div class="faq-answer-inner">Currently, Vanguard Player is fully supported on <strong style="color:#fff">Windows</strong> (NSIS installer, <strong style="color:#fff">.exe</strong>) and <strong style="color:#fff">Linux</strong> (<strong style="color:#fff">.deb</strong> for Debian/Ubuntu) — all x64.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2069,7 +2004,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">Vanguard requires <strong style="color:#fff">mpv</strong> (audio playback), <strong style="color:#fff">yt-dlp</strong> (YouTube streaming &amp; downloads), and <strong style="color:#fff">ffprobe</strong> (metadata &amp; waveforms) to function. You don't need to install them manually — the built-in <strong style="color:#fff">Dependencies</strong> screen in Settings lets you check status, view version info, and install or update everything in one click using your system's package manager (apt, pacman, dnf, winget, brew).</div>
+                        <div class="faq-answer-inner">On <strong style="color:#fff">Linux</strong>, all required dependencies (<strong style="color:#fff">mpv</strong>, <strong style="color:#fff">yt-dlp</strong>, <strong style="color:#fff">ffmpeg</strong>) are declared as package dependencies in the <strong style="color:#fff">.deb</strong> — <code style="color:#4ff828;font-size:12px;">apt</code> installs them automatically alongside the app, nothing manual needed. On <strong style="color:#fff">Windows</strong>, all required binaries are bundled inside the installer — no extra setup required.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2097,7 +2032,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">No. There is zero telemetry, zero analytics, and zero data collection of any kind. The only stats Vanguard tracks are your <strong style="color:#fff">total listening time</strong> — stored entirely in your browser's local storage, never sent anywhere. Your playlists, history, and settings never leave your machine.</div>
+                        <div class="faq-answer-inner">No. There is zero telemetry, zero analytics, and zero data collection of any kind. The only stats Vanguard tracks are your <strong style="color:#fff">total listening time</strong> — stored entirely on your local machine, never sent anywhere. Your playlists, history, and settings never leave your device.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2115,7 +2050,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner"><strong style="color:#fff">yt-dlp</strong> handles audio extraction and YouTube streaming with up to 12 concurrent searches for playlist imports. <strong style="color:#fff">mpv</strong> is the audio engine, controlled via a Unix IPC socket (<code style="color:#4ff828;font-size:12px;">/tmp/mpvsocket</code>) on Linux and a named pipe (<code style="color:#4ff828;font-size:12px;">\\.\pipe\mpvsocket</code>) on Windows. <strong style="color:#fff">ffprobe</strong> powers the Audio Info panel (codec, bitrate, sample rate, channels). Vanguard also exposes variable playback speed, crossfade, and loudness normalisation — all piped directly into mpv's audio filter chain.</div>
+                        <div class="faq-answer-inner"><strong style="color:#fff">yt-dlp</strong> handles audio extraction and YouTube streaming with up to 12 concurrent searches for playlist imports. <strong style="color:#fff">mpv</strong> is the audio engine, controlled via a Unix IPC socket (<code style="color:#4ff828;font-size:12px;">/tmp/mpvsocket</code>) on Linux and a named pipe (<code style="color:#4ff828;font-size:12px;">\\.\pipe\mpvsocket</code>) on Windows. <strong style="color:#fff">ffprobe</strong> powers the Audio Info panel (codec, bitrate, sample rate, channels). Vanguard also exposes variable playback speed and loudness normalisation — all piped directly into mpv's audio filter chain.</div>
                     </div>
                 </div>
             </div>
@@ -2213,62 +2148,6 @@
                 mobileToggle.classList.remove('open');
             });
         });
-
-        // ── Windows dropdown toggle ──
-        const windowsBtn = document.getElementById('dl-windows');
-        const windowsWrap = document.getElementById('dl-windows-wrap');
-        if (windowsBtn && windowsWrap) {
-            windowsBtn.addEventListener('click', function(e) {
-                const isOpen = windowsWrap.classList.toggle('open');
-                windowsBtn.setAttribute('aria-expanded', isOpen);
-                // Close Linux if open
-                if (isOpen && linuxWrap) {
-                    linuxWrap.classList.remove('open');
-                    if (linuxBtn) linuxBtn.setAttribute('aria-expanded', 'false');
-                }
-            });
-            windowsBtn.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    const isOpen = windowsWrap.classList.toggle('open');
-                    windowsBtn.setAttribute('aria-expanded', isOpen);
-                }
-            });
-            document.addEventListener('click', function(e) {
-                if (!windowsWrap.contains(e.target)) {
-                    windowsWrap.classList.remove('open');
-                    windowsBtn.setAttribute('aria-expanded', 'false');
-                }
-            });
-        }
-
-        // ── Linux dropdown toggle ──
-        const linuxBtn = document.getElementById('dl-linux');
-        const linuxWrap = document.getElementById('dl-linux-wrap');
-        if (linuxBtn && linuxWrap) {
-            linuxBtn.addEventListener('click', function(e) {
-                const isOpen = linuxWrap.classList.toggle('open');
-                linuxBtn.setAttribute('aria-expanded', isOpen);
-                // Close Windows if open
-                if (isOpen && windowsWrap) {
-                    windowsWrap.classList.remove('open');
-                    if (windowsBtn) windowsBtn.setAttribute('aria-expanded', 'false');
-                }
-            });
-            linuxBtn.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    const isOpen = linuxWrap.classList.toggle('open');
-                    linuxBtn.setAttribute('aria-expanded', isOpen);
-                }
-            });
-            document.addEventListener('click', function(e) {
-                if (!linuxWrap.contains(e.target)) {
-                    linuxWrap.classList.remove('open');
-                    linuxBtn.setAttribute('aria-expanded', 'false');
-                }
-            });
-        }
 
         // ── Auto year ──
         document.getElementById('footer-year').textContent = new Date().getFullYear();

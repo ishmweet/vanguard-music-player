@@ -40,3 +40,7 @@ Thumbs.db
 *.swp
 *.swo
 .vscode/
+
+#binaries
+src-tauri/binaries/*
+src-tauri/binaries/*.exe
