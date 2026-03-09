@@ -563,7 +563,8 @@ function CsvImportModal({
                 <div>
                   <p className="text-sm font-semibold text-white">{step.title}</p>
                   <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{step.desc}</p>
-                  {step.link && <a href={step.link} target="_blank" rel="noreferrer" className="text-xs mt-1 inline-block font-semibold hover:underline" style={{ color: '#39FF14' }}>{step.linkLabel}</a>}
+                  {step.link && <button onClick={() => import('@tauri-apps/plugin-opener').then(m => m.openUrl(step.link!)).catch(() => window.open(step.link!, '_blank'))}
+                    className="text-base mt-2 inline-block font-bold hover:underline cursor-pointer" style={{ color: '#39FF14' }}>{step.linkLabel}</button>}
                 </div>
               </div>
             ))}
@@ -1381,10 +1382,14 @@ export default function VanguardPlayer() {
   const repeatModeRef = useRef<RepeatMode>(loadLS('vg_repeatMode', 'off'));
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const dragQueueIdx = useRef<number | null>(null);
+  const dragOverQueueIdxRef = useRef<number | null>(null);
+  const [dragOverQueueIdx, setDragOverQueueIdx] = React.useState<number | null>(null);
   const dragPlaylistIdx = useRef<number | null>(null);
+  const dragOverPlaylistIdxRef = useRef<number | null>(null);
   const [dragOverPlaylistIdx, setDragOverPlaylistIdx] = React.useState<number | null>(null);
-  const [dragOverPlaylistCardIdx, setDragOverPlaylistCardIdx] = React.useState<number | null>(null);
   const dragPlaylistCardIdx = useRef<number | null>(null);
+  const dragOverPlaylistCardIdxRef = useRef<number | null>(null);
+  const [dragOverPlaylistCardIdx, setDragOverPlaylistCardIdx] = React.useState<number | null>(null);
 
   const [volume, setVolume] = useState<number>(() => loadLS('vg_volume', 100));
   const [previousVolume, setPreviousVolume] = useState(100);
@@ -2341,6 +2346,8 @@ export default function VanguardPlayer() {
         .custom-scrollbar::-webkit-scrollbar-track{background:transparent}
         .custom-scrollbar::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
         .custom-scrollbar::-webkit-scrollbar-thumb:hover{background:#444}
+        *{-webkit-user-select:none!important;user-select:none!important;}
+        input,textarea{-webkit-user-select:text!important;user-select:text!important;}
       `}</style>
 
       <DepsBanner deps={deps} onGoToSettings={() => navigateTo('settings')} />
@@ -2720,51 +2727,46 @@ export default function VanguardPlayer() {
                 </div>
                 {openPlaylist.tracks.length === 0
                   ? <div className="flex flex-col items-center justify-center h-40 text-neutral-700 gap-3"><Music size={32} strokeWidth={1} /><p className="text-sm">No tracks yet.</p></div>
-                  : <div className="flex flex-col gap-1 select-none">
+                  : <div className="flex flex-col gap-1">
                       {openPlaylist.tracks.map((t, i) => (
-                        <div key={t.url} className="relative group/row flex items-center gap-1">
-                          {/* Drop line indicator */}
-                          {dragOverPlaylistIdx === i && dragPlaylistIdx.current !== null && (
-                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#39FF14] rounded-full z-10 shadow-[0_0_6px_#39FF14] pointer-events-none" />
+                        <div key={t.url}
+                          className="relative group/row flex items-center gap-1"
+                          onMouseEnter={() => { if (dragPlaylistIdx.current !== null) { dragOverPlaylistIdxRef.current = i; setDragOverPlaylistIdx(i); } }}>
+                          {dragOverPlaylistIdx === i && dragPlaylistIdx.current !== null && dragPlaylistIdx.current !== i && (
+                            <div className="absolute top-0 left-8 right-0 h-0.5 bg-[#39FF14] rounded-full z-10 shadow-[0_0_6px_#39FF14] pointer-events-none" />
                           )}
-                          {/* Grip handle — only this part is draggable */}
                           <div
-                            draggable="true"
-                            onDragStart={e => {
+                            className="px-1.5 py-4 cursor-grab flex items-center justify-center shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity"
+                            onMouseDown={e => {
+                              e.preventDefault();
                               dragPlaylistIdx.current = i;
-                              e.dataTransfer.effectAllowed = 'move';
-                              e.dataTransfer.setData('text/plain', String(i));
-                            }}
-                            onDragEnd={() => {
-                              dragPlaylistIdx.current = null;
-                              setDragOverPlaylistIdx(null);
-                            }}
-                            className="px-1.5 py-4 cursor-grab active:cursor-grabbing flex items-center justify-center shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity touch-none">
+                              dragOverPlaylistIdxRef.current = i;
+                              setDragOverPlaylistIdx(i);
+                              const onUp = () => {
+                                const from = dragPlaylistIdx.current;
+                                const to = dragOverPlaylistIdxRef.current;
+                                dragPlaylistIdx.current = null;
+                                dragOverPlaylistIdxRef.current = null;
+                                setDragOverPlaylistIdx(null);
+                                window.removeEventListener('mouseup', onUp);
+                                if (from === null || to === null || from === to) return;
+                                setPlaylists(prev => prev.map(pl => {
+                                  if (pl.id !== openPlaylist.id) return pl;
+                                  const arr = [...pl.tracks];
+                                  const [moved] = arr.splice(from, 1);
+                                  arr.splice(to, 0, moved);
+                                  return { ...pl, tracks: arr };
+                                }));
+                              };
+                              window.addEventListener('mouseup', onUp);
+                            }}>
                             <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className="text-neutral-500">
                               <circle cx="3" cy="3" r="1.3"/><circle cx="7" cy="3" r="1.3"/>
                               <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
                               <circle cx="3" cy="13" r="1.3"/><circle cx="7" cy="13" r="1.3"/>
                             </svg>
                           </div>
-                          {/* Track row — receives drop */}
-                          <div className="flex-1 min-w-0"
-                            onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverPlaylistIdx(i); }}
-                            onDragLeave={() => { setDragOverPlaylistIdx(null); }}
-                            onDrop={e => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const from = dragPlaylistIdx.current;
-                              dragPlaylistIdx.current = null;
-                              setDragOverPlaylistIdx(null);
-                              if (from === null || from === i) return;
-                              setPlaylists(prev => prev.map(pl => {
-                                if (pl.id !== openPlaylist.id) return pl;
-                                const arr = [...pl.tracks];
-                                const [moved] = arr.splice(from, 1);
-                                arr.splice(i, 0, moved);
-                                return { ...pl, tracks: arr };
-                              }));
-                            }}>
+                          <div className="flex-1 min-w-0">
                             <TrackRow track={t} index={i} showRemove onRemove={() => removeFromPlaylist(openPlaylist.id, t.url)}
                               isActive={currentTrack?.url === t.url} isHovered={hoveredTrackUrl === t.url}
                               isLoadingTrack={isLoadingTrack} isPlaying={isPlaying}
@@ -2787,44 +2789,43 @@ export default function VanguardPlayer() {
                     <ListMusic size={18} /> Create Playlist
                   </button>
                 </div>
-                <div className="grid gap-2 select-none" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))' }}>
+                <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))' }}>
                   {playlists.map((pl, plIdx) => {
                     const cover = getPlaylistCover(pl);
                     const isDragTarget = dragOverPlaylistCardIdx === plIdx && dragPlaylistCardIdx.current !== null && dragPlaylistCardIdx.current !== plIdx;
                     return (
                       <div key={pl.id}
-                        draggable="true"
-                        onDragStart={e => {
-                          dragPlaylistCardIdx.current = plIdx;
-                          e.dataTransfer.effectAllowed = 'move';
-                          e.dataTransfer.setData('text/plain', String(plIdx));
-                        }}
-                        onDragEnd={() => {
-                          dragPlaylistCardIdx.current = null;
-                          setDragOverPlaylistCardIdx(null);
-                        }}
-                        onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverPlaylistCardIdx(plIdx); }}
-                        onDragLeave={() => setDragOverPlaylistCardIdx(null)}
-                        onDrop={e => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const from = dragPlaylistCardIdx.current;
-                          dragPlaylistCardIdx.current = null;
-                          setDragOverPlaylistCardIdx(null);
-                          if (from === null || from === plIdx) return;
-                          setPlaylists(prev => {
-                            const arr = [...prev];
-                            const [moved] = arr.splice(from, 1);
-                            arr.splice(plIdx, 0, moved);
-                            return arr;
-                          });
-                        }}
-                        className={`group relative cursor-pointer rounded-lg transition-all duration-200 p-2
+                        onMouseEnter={() => { if (dragPlaylistCardIdx.current !== null) { dragOverPlaylistCardIdxRef.current = plIdx; setDragOverPlaylistCardIdx(plIdx); } }}
+                        className={`group relative rounded-lg transition-all duration-200 p-2
                           ${isDragTarget
-                            ? 'ring-2 ring-[#39FF14] ring-offset-2 ring-offset-[#050505] bg-[#39FF14]/[0.05]'
+                            ? 'ring-2 ring-[#39FF14] ring-offset-1 ring-offset-[#050505] bg-[#39FF14]/[0.05]'
                             : 'hover:bg-white/[0.04]'}`}
-                        onClick={() => setOpenPlaylistId(pl.id)} onContextMenu={e => openCtx(e, { type: 'playlist', playlist: pl })}>
-                        <div className="w-full aspect-square rounded-md overflow-hidden bg-neutral-900 flex items-center justify-center relative mb-2 shadow-md">
+                        onClick={() => { if (dragPlaylistCardIdx.current === null) setOpenPlaylistId(pl.id); }}
+                        onContextMenu={e => openCtx(e, { type: 'playlist', playlist: pl })}>
+                        <div
+                          className="w-full aspect-square rounded-md overflow-hidden bg-neutral-900 flex items-center justify-center relative mb-2 shadow-md cursor-grab active:cursor-grabbing"
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            dragPlaylistCardIdx.current = plIdx;
+                            dragOverPlaylistCardIdxRef.current = plIdx;
+                            setDragOverPlaylistCardIdx(plIdx);
+                            const onUp = () => {
+                              const from = dragPlaylistCardIdx.current;
+                              const to = dragOverPlaylistCardIdxRef.current;
+                              dragPlaylistCardIdx.current = null;
+                              dragOverPlaylistCardIdxRef.current = null;
+                              setDragOverPlaylistCardIdx(null);
+                              window.removeEventListener('mouseup', onUp);
+                              if (from === null || to === null || from === to) return;
+                              setPlaylists(prev => {
+                                const arr = [...prev];
+                                const [moved] = arr.splice(from, 1);
+                                arr.splice(to, 0, moved);
+                                return arr;
+                              });
+                            };
+                            window.addEventListener('mouseup', onUp);
+                          }}>
                           {cover
                             ? <img src={cover} className="w-full h-full object-cover" alt="" />
                             : pl.id === 'p1'
@@ -2857,179 +2858,52 @@ export default function VanguardPlayer() {
 
           {/* ── SETTINGS ── */}
           {activeNav === 'stats' && (() => {
-            // ── Compute all real stats from persistent data ────────────────
-            const totalUniqueTracks = Object.keys(playCounts).length;
-            const totalPlays = Object.values(playCounts).reduce((s, n) => s + n, 0);
-            const totalListenedSecs = Object.values(listenSecs).reduce((s, n) => s + n, 0);
-            const totalListenHours = totalListenedSecs / 3600;
-            const listenDisplay = totalListenHours >= 1
-              ? `${totalListenHours.toFixed(1)}h`
-              : `${Math.round(totalListenedSecs / 60)}m`;
-
-            // Top tracks by play count — join with playHistory for metadata
-            const trackMeta: Record<string, Track> = {};
-            playHistory.forEach(t => { if (!trackMeta[t.url]) trackMeta[t.url] = t; });
-            const topTracks = Object.entries(playCounts)
-              .filter(([url]) => trackMeta[url])
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 8)
-              .map(([url, count]) => ({ track: trackMeta[url], count, secs: listenSecs[url] || 0 }));
-
-            // Top artists by total listen time
-            const artistSecs: Record<string, number> = {};
-            const artistPlays: Record<string, number> = {};
-            Object.entries(listenSecs).forEach(([url, s]) => {
-              const meta = trackMeta[url]; if (!meta?.artist) return;
-              artistSecs[meta.artist] = (artistSecs[meta.artist] || 0) + s;
-              artistPlays[meta.artist] = (artistPlays[meta.artist] || 0) + (playCounts[url] || 0);
-            });
-            const topArtists = Object.entries(artistSecs)
-              .sort((a, b) => b[1] - a[1]).slice(0, 6);
-
-            // Last 14 days activity heatmap
-            const days14: { date: string; label: string; count: number }[] = [];
-            for (let i = 13; i >= 0; i--) {
-              const d = new Date(); d.setDate(d.getDate() - i);
-              const iso = d.toISOString().slice(0, 10);
-              const label = i === 0 ? 'Today' : i === 1 ? 'Yest.' : d.toLocaleDateString('en', { weekday: 'short' });
-              days14.push({ date: iso, label, count: dailyPlays[iso] || 0 });
-            }
-            const maxDay = Math.max(...days14.map(d => d.count), 1);
-
-            // Current streak (consecutive days with at least 1 play)
-            let streak = 0;
-            for (let i = 0; ; i++) {
-              const d = new Date(); d.setDate(d.getDate() - i);
-              const iso = d.toISOString().slice(0, 10);
-              if ((dailyPlays[iso] || 0) > 0) streak++;
-              else break;
-            }
-
-            const hasData = totalPlays > 0;
-
+            const totalSecs = Object.values(listenSecs).reduce((s, n) => s + n, 0);
+            const hrs = Math.floor(totalSecs / 3600);
+            const mins = Math.floor((totalSecs % 3600) / 60);
+            const secs = Math.floor(totalSecs % 60);
+            const segments = hrs > 0
+              ? [{ val: String(hrs).padStart(2,'0'), unit: 'h' }, { val: String(mins).padStart(2,'0'), unit: 'm' }, { val: String(secs).padStart(2,'0'), unit: 's' }]
+              : [{ val: String(mins).padStart(2,'0'), unit: 'm' }, { val: String(secs).padStart(2,'0'), unit: 's' }];
             return (
-              <div className="flex-1 overflow-y-auto p-6 space-y-7 custom-scrollbar">
-                {/* Header */}
-                <div className="flex items-end justify-between">
-                  <div>
-                    <h1 className="text-2xl font-bold text-white">Your Stats</h1>
-                    <p className="text-sm text-neutral-600 mt-0.5">Live data — updates as you listen.</p>
-                  </div>
-                  {streak > 1 && (
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
-                      <span className="text-base">🔥</span>
-                      <span className="text-xs font-bold text-amber-400">{streak} day streak</span>
-                    </div>
-                  )}
+              <div className="flex-1 flex flex-col items-center justify-center gap-8 relative overflow-hidden">
+                {/* Ambient glow */}
+                <div className="absolute inset-0 pointer-events-none" style={{
+                  background: 'radial-gradient(ellipse 70% 50% at 50% 50%, rgba(57,255,20,0.06) 0%, transparent 65%)'
+                }} />
+
+                {/* Label */}
+                <div className="relative z-10 flex items-center gap-3">
+                  <div className="h-px w-8" style={{ background: 'linear-gradient(90deg, transparent, #39FF14)' }} />
+                  <p className="text-[11px] font-bold uppercase tracking-[0.35em] text-white/60">Time Listened</p>
+                  <div className="h-px w-8" style={{ background: 'linear-gradient(90deg, #39FF14, transparent)' }} />
                 </div>
 
-                {!hasData && (
-                  <div className="flex flex-col items-center justify-center py-24 text-neutral-700">
-                    <BarChart2 size={44} className="mb-3 opacity-20" />
-                    <p className="text-sm font-medium">Start playing tracks to see your real stats.</p>
-                  </div>
-                )}
-
-                {hasData && (
-                  <>
-                    {/* ── Top 4 stat cards ── */}
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { label: 'Total plays', value: totalPlays.toLocaleString(), sub: `${totalUniqueTracks} unique tracks`, icon: Play, color: 'text-[#39FF14]', border: 'border-[#39FF14]/15', bg: 'bg-[#39FF14]/[0.04]' },
-                        { label: 'Time listened', value: listenDisplay, sub: `${Math.round(totalListenedSecs / 60)} minutes total`, icon: Clock, color: 'text-cyan-400', border: 'border-cyan-500/15', bg: 'bg-cyan-500/[0.04]' },
-                        { label: 'Artists heard', value: Object.keys(artistSecs).length.toLocaleString(), sub: 'across all plays', icon: Music, color: 'text-purple-400', border: 'border-purple-500/15', bg: 'bg-purple-500/[0.04]' },
-                        { label: 'Today', value: (dailyPlays[new Date().toISOString().slice(0,10)] || 0).toString(), sub: 'plays today', icon: Zap, color: 'text-amber-400', border: 'border-amber-500/15', bg: 'bg-amber-500/[0.04]' },
-                      ].map(({ label, value, sub, icon: Icon, color, border, bg }) => (
-                        <div key={label} className={`p-4 rounded-xl border ${border} ${bg}`}>
-                          <Icon size={15} className={`${color} mb-2.5`} />
-                          <p className="text-xl font-black text-white leading-none">{value}</p>
-                          <p className="text-[11px] text-neutral-600 mt-1">{sub}</p>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-700 mt-1">{label}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* ── 14-day activity bar chart ── */}
-                    <div>
-                      <h2 className="text-[10px] font-bold uppercase tracking-widest text-neutral-600 mb-3">14-Day Activity</h2>
-                      <div className="flex items-end gap-1 h-16">
-                        {days14.map(({ date, label, count }) => (
-                          <div key={date} className="flex-1 flex flex-col items-center gap-1 group" title={`${label}: ${count} plays`}>
-                            <div className="w-full rounded-sm transition-all duration-300 relative"
-                              style={{
-                                height: `${Math.max(2, (count / maxDay) * 48)}px`,
-                                background: count > 0 ? '#39FF14' : '#1a1a1a',
-                                opacity: count > 0 ? Math.max(0.3, count / maxDay) : 1,
-                              }} />
-                            <span className="text-[8px] text-neutral-700 group-hover:text-neutral-500 transition-colors">{label}</span>
-                          </div>
-                        ))}
+                {/* Time display */}
+                <div className="relative z-10 flex items-end gap-1">
+                  {segments.map(({ val, unit }, idx) => (
+                    <div key={unit} className="flex items-end gap-0.5">
+                      {idx > 0 && <span className="text-3xl font-black mb-2 mx-0.5" style={{ color: 'rgba(57,255,20,0.3)' }}>:</span>}
+                      <div className="flex flex-col items-center">
+                        <span className="font-black text-white leading-none tabular-nums"
+                          style={{ fontSize: '96px', letterSpacing: '-5px', textShadow: '0 0 60px rgba(57,255,20,0.4), 0 0 120px rgba(57,255,20,0.15)' }}>
+                          {val}
+                        </span>
+                        <span className="text-[11px] font-bold uppercase tracking-widest mt-1" style={{ color: '#39FF14' }}>{unit === 'h' ? 'hrs' : unit === 'm' ? 'min' : 'sec'}</span>
                       </div>
                     </div>
+                  ))}
+                </div>
 
-                    {/* ── Most played tracks ── */}
-                    {topTracks.length > 0 && (
-                      <div>
-                        <h2 className="text-[10px] font-bold uppercase tracking-widest text-neutral-600 mb-3">Most Played</h2>
-                        <div className="space-y-1.5">
-                          {topTracks.map(({ track, count, secs }, i) => {
-                            const listenMins = Math.round(secs / 60);
-                            const pct = topTracks[0].count > 0 ? (count / topTracks[0].count) * 100 : 0;
-                            return (
-                              <div key={track.url} onClick={() => handlePlayTrack(track)}
-                                className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-neutral-900/40 border border-neutral-800/40 cursor-pointer hover:bg-neutral-800/60 transition-colors group">
-                                <span className="text-xs font-bold text-neutral-700 w-4 shrink-0 tabular-nums">{i + 1}</span>
-                                <img src={track.cover} className="w-9 h-9 rounded-lg object-cover shrink-0 border border-neutral-800/60" alt="" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-white truncate group-hover:text-[#39FF14] transition-colors leading-snug">{track.title}</p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <div className="flex-1 h-0.5 bg-neutral-800 rounded-full overflow-hidden">
-                                      <div className="h-full bg-[#39FF14]/60 rounded-full" style={{ width: `${pct}%` }} />
-                                    </div>
-                                    {listenMins > 0 && <span className="text-[10px] text-neutral-700 shrink-0">{listenMins}m</span>}
-                                  </div>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <span className="text-sm font-black text-[#39FF14]">{count}</span>
-                                  <span className="text-[10px] text-neutral-700 ml-0.5">plays</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ── Top artists by listen time ── */}
-                    {topArtists.length > 0 && (
-                      <div>
-                        <h2 className="text-[10px] font-bold uppercase tracking-widest text-neutral-600 mb-3">Top Artists</h2>
-                        <div className="space-y-1.5">
-                          {topArtists.map(([artist, secs], i) => {
-                            const mins = Math.round(secs / 60);
-                            const display = mins >= 60 ? `${(mins/60).toFixed(1)}h` : `${mins}m`;
-                            const pct = topArtists[0][1] > 0 ? (secs / topArtists[0][1]) * 100 : 0;
-                            return (
-                              <div key={artist} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-neutral-900/40 border border-neutral-800/40">
-                                <span className="text-xs font-bold text-neutral-700 w-4 shrink-0 tabular-nums">{i + 1}</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-white truncate">{artist}</p>
-                                  <div className="mt-1 h-0.5 bg-neutral-800 rounded-full overflow-hidden">
-                                    <div className="h-full bg-purple-500/60 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                                  </div>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <span className="text-sm font-bold text-purple-400">{display}</span>
-                                  <p className="text-[10px] text-neutral-700">{artistPlays[artist] || 0} plays</p>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
+                {/* Divider */}
+                <div className="relative z-10 flex flex-col items-center gap-3">
+                  <div className="h-px w-48" style={{ background: 'linear-gradient(90deg, transparent, rgba(57,255,20,0.5), transparent)' }} />
+                  {totalSecs === 0
+                    ? <p className="text-xs font-medium tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.3)' }}>Play something to start tracking</p>
+                    : <p className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                        {hrs > 0 ? `${hrs}h ${mins}m total` : `${mins} minutes total`}
+                      </p>}
+                </div>
               </div>
             );
           })()}
@@ -3090,30 +2964,40 @@ export default function VanguardPlayer() {
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-600 px-5 pt-4 pb-2">Up Next</p>
                       {queue.map((track, i) => (
                         <div key={`${track.url}-${i}`}
-                          draggable
-                          onDragStart={() => { dragQueueIdx.current = i; }}
-                          onDragOver={e => { e.preventDefault(); }}
-                          onDrop={e => {
-                            e.preventDefault();
-                            const from = dragQueueIdx.current;
-                            if (from === null || from === i) return;
-                            setQueue(prev => {
-                              const next = [...prev];
-                              const [moved] = next.splice(from, 1);
-                              next.splice(i, 0, moved);
-                              return next;
-                            });
-                            dragQueueIdx.current = null;
-                          }}
-                          onContextMenu={e => openCtx(e, { type: 'queue-track', track })}
-                          onClick={() => { setQueue(prev => prev.filter((_, idx) => idx !== i)); handlePlayTrack(track, true); }}
-                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer group transition-colors select-none ${currentTrack?.url === track.url ? 'bg-[#39FF14]/[0.06]' : 'hover:bg-white/[0.04]'}`}>
-                          <div className="w-5 shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing">
+                          className={`relative flex items-center gap-3 px-4 py-3 group transition-colors ${currentTrack?.url === track.url ? 'bg-[#39FF14]/[0.06]' : 'hover:bg-white/[0.04]'}`}
+                          onMouseEnter={() => { if (dragQueueIdx.current !== null) { dragOverQueueIdxRef.current = i; setDragOverQueueIdx(i); } }}
+                          onContextMenu={e => openCtx(e, { type: 'queue-track', track })}>
+                          {dragOverQueueIdx === i && dragQueueIdx.current !== null && dragQueueIdx.current !== i && (
+                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#39FF14] rounded-full z-10 shadow-[0_0_6px_#39FF14] pointer-events-none" />
+                          )}
+                          <div className="w-5 shrink-0 flex items-center justify-center"
+                            onMouseDown={e => {
+                              e.preventDefault();
+                              dragQueueIdx.current = i;
+                              dragOverQueueIdxRef.current = i;
+                              setDragOverQueueIdx(i);
+                              const onUp = () => {
+                                const from = dragQueueIdx.current;
+                                const to = dragOverQueueIdxRef.current;
+                                dragQueueIdx.current = null;
+                                dragOverQueueIdxRef.current = null;
+                                setDragOverQueueIdx(null);
+                                window.removeEventListener('mouseup', onUp);
+                                if (from === null || to === null || from === to) return;
+                                setQueue(prev => {
+                                  const next = [...prev];
+                                  const [moved] = next.splice(from, 1);
+                                  next.splice(to, 0, moved);
+                                  return next;
+                                });
+                              };
+                              window.addEventListener('mouseup', onUp);
+                            }}>
                             <span className="text-xs text-neutral-700 group-hover:hidden tabular-nums">{i + 1}</span>
-                            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" className="text-neutral-600 hidden group-hover:block"><circle cx="3" cy="2.5" r="1.2"/><circle cx="7" cy="2.5" r="1.2"/><circle cx="3" cy="7" r="1.2"/><circle cx="7" cy="7" r="1.2"/><circle cx="3" cy="11.5" r="1.2"/><circle cx="7" cy="11.5" r="1.2"/></svg>
+                            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" className="text-neutral-600 hidden group-hover:block cursor-grab"><circle cx="3" cy="2.5" r="1.2"/><circle cx="7" cy="2.5" r="1.2"/><circle cx="3" cy="7" r="1.2"/><circle cx="7" cy="7" r="1.2"/><circle cx="3" cy="11.5" r="1.2"/><circle cx="7" cy="11.5" r="1.2"/></svg>
                           </div>
-                          <img src={track.cover} className="w-10 h-10 rounded-md object-cover shrink-0 border border-neutral-800/60" alt="" />
-                          <div className="flex-1 min-w-0">
+                          <img src={track.cover} className="w-10 h-10 rounded-md object-cover shrink-0 border border-neutral-800/60" alt="" onClick={() => { if (dragQueueIdx.current === null) { setQueue(prev => prev.filter((_, idx) => idx !== i)); handlePlayTrack(track, true); } }} />
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (dragQueueIdx.current === null) { setQueue(prev => prev.filter((_, idx) => idx !== i)); handlePlayTrack(track, true); } }}>
                             <p className={`text-sm font-semibold truncate leading-snug ${currentTrack?.url === track.url ? 'text-[#39FF14]' : 'text-white'}`}>{track.title}</p>
                             <p className="text-xs text-neutral-500 truncate mt-0.5">{track.artist}</p>
                           </div>
