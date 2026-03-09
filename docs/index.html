@@ -3,29 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vanguard Player — Open Source Music Player</title>
+    <title>Vanguard Project — Open Source Music Player</title>
 
     <!-- ── SEO ── -->
     <meta name="description" content="Vanguard Player is a free, open-source, ad-free music player for Windows and Linux. High-fidelity playback, seamless library management, zero tracking.">
     <meta name="robots" content="index, follow">
-    <link rel="canonical" href="https://vanguardplayer.app/">
+    <link rel="canonical" href="https://ishmweet.github.io/vanguard-music-player/">
 
     <!-- ── OpenGraph (Discord, Facebook, Slack, etc.) ── -->
     <meta property="og:type"        content="website">
-    <meta property="og:url"         content="https://vanguardplayer.app/">
-    <meta property="og:title"       content="Vanguard Player — Open Source Music Player">
+    <meta property="og:url"         content="https://ishmweet.github.io/vanguard-music-player/">
+    <meta property="og:title"       content="Vanguard Project — Open Source Music Player">
     <meta property="og:description" content="Ad-free, open-source music player for Windows and Linux. Zero tracking, zero paywalls. Just your music.">
-    <meta property="og:image"       content="/vanguardplayer-preview.png">
-    <meta property="og:image:width"  content="1200">
-    <meta property="og:image:height" content="630">
     <meta property="og:site_name"   content="Vanguard Player">
 
     <!-- ── Twitter / X Card ── -->
     <meta name="twitter:card"        content="summary_large_image">
-    <meta name="twitter:url"         content="https://vanguardplayer.app/">
+    <meta name="twitter:url"         content="https://ishmweet.github.io/vanguard-music-player/">
     <meta name="twitter:title"       content="Vanguard Player — Open Source Music Player">
     <meta name="twitter:description" content="Ad-free, open-source music player for Windows and Linux. Zero tracking, zero paywalls. Just your music.">
-    <meta name="twitter:image"       content="https://vanguardplayer.app/preview.png">
 
     <!-- ── Favicon ── -->
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Crect width='30' height='30' rx='7' fill='%234ff828'/%3E%3Cg transform='translate(3, 3)'%3E%3Cpath d='M9 18V5l12-2v13M9 9l12-2' stroke='%23000' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='6' cy='18' r='3.2' fill='%23000'/%3E%3Ccircle cx='18' cy='16' r='3.2' fill='%23000'/%3E%3C/g%3E%3C/svg%3E" type="image/svg+xml">
@@ -1089,6 +1085,131 @@
             .nav-mobile-toggle { display: flex; }
             .nav-btn { display: none; }
         }
+
+        /* ═══════════════════════════════════════
+           FEATURES SECTION
+        ═══════════════════════════════════════ */
+        .features-section {
+            padding: 100px 5%;
+            text-align: center;
+            position: relative;
+        }
+
+        .features-section .section-label {
+            display: inline-block;
+            color: var(--vanguard-green);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 14px;
+            opacity: 0.8;
+        }
+
+        .features-section h2 {
+            font-size: 42px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 14px;
+        }
+
+        .features-section > p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            max-width: 520px;
+            margin: 0 auto 64px;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 18px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 28px 26px;
+            text-align: left;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(79,248,40,0.3), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .feature-card:hover {
+            border-color: rgba(79, 248, 40, 0.25);
+            box-shadow: 0 16px 48px rgba(0,0,0,0.6), 0 0 30px rgba(79,248,40,0.05);
+            background: var(--bg-card-hover);
+        }
+
+        .feature-card:hover::before {
+            opacity: 1;
+        }
+
+        .feature-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: var(--vanguard-green-dim);
+            border: 1px solid rgba(79,248,40,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 18px;
+            color: var(--vanguard-green);
+            flex-shrink: 0;
+        }
+
+        .feature-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 8px;
+            letter-spacing: -0.2px;
+        }
+
+        .feature-desc {
+            font-size: 13.5px;
+            color: var(--text-secondary);
+            line-height: 1.65;
+        }
+
+        /* Feature card — wide (spans 2 columns) */
+        .feature-card.wide {
+            grid-column: span 2;
+        }
+
+        @media (max-width: 900px) {
+            .features-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .feature-card.wide {
+                grid-column: span 2;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+            .feature-card.wide {
+                grid-column: span 1;
+            }
+            .features-section h2 { font-size: 30px; }
+        }
     </style>
 </head>
 <body>
@@ -1115,6 +1236,7 @@
         </a>
         <div class="nav-links">
             <a href="#"             class="nav-link">Home</a>
+            <a href="#features"     class="nav-link">Features</a>
             <a href="#screenshots"  class="nav-link">Screenshots</a>
             <a href="#faqs"         class="nav-link">FAQs</a>
             <a href="#donate"       class="nav-link">Donate</a>
@@ -1126,6 +1248,7 @@
     </nav>
     <div class="nav-mobile-menu" id="nav-mobile-menu">
         <a href="#"             class="nav-mobile-link">Home</a>
+        <a href="#features"     class="nav-mobile-link">Features</a>
         <a href="#screenshots"  class="nav-mobile-link">Screenshots</a>
         <a href="#faqs"         class="nav-mobile-link">FAQs</a>
         <a href="#donate"       class="nav-mobile-link">Donate</a>
@@ -1158,16 +1281,35 @@
 
         <div class="download-buttons reveal-on-scroll delay-200">
 
-            <!-- Windows direct button -->
+            <!-- Windows dropdown button -->
             <div class="dl-btn-wrap" id="dl-windows-wrap">
-                <a href="#" class="dl-btn-trigger dl-btn-direct" id="dl-windows">
+                <button class="dl-btn-trigger" id="dl-windows" aria-expanded="false" aria-haspopup="listbox">
                     <span class="dl-btn-trigger-text">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/8/87/Windows_logo_-_2021.svg" alt="Windows" />
                         Download for Windows
                     </span>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                </a>
-                <div style="text-align:center; margin-top:9px; font-size:12px; color:var(--text-secondary);">.exe (x64)</div>
+                    <span class="dl-btn-arrow">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </span>
+                </button>
+                <div class="dl-dropdown-panel" id="windows-dropdown" role="listbox">
+                    <div class="dl-dropdown-list">
+                        <a href="#" class="dl-drop-item" role="option">
+                            <span class="dl-drop-item-label">
+                                <span class="dl-drop-item-icon"></span>
+                                Installer (.exe)
+                            </span>
+                            <span class="dl-drop-item-arch">x64</span>
+                        </a>
+                        <a href="#" class="dl-drop-item" role="option">
+                            <span class="dl-drop-item-label">
+                                <span class="dl-drop-item-icon"></span>
+                                Installer (.msi)
+                            </span>
+                            <span class="dl-drop-item-arch">x64</span>
+                        </a>
+                    </div>
+                </div>
             </div>
 
             <!-- Linux dropdown button -->
@@ -1214,6 +1356,137 @@
     <div class="section-divider"></div>
 
     <!-- ══════════════════════════════════════════
+         FEATURES SECTION
+    ══════════════════════════════════════════ -->
+    <section id="features" class="features-section">
+        <span class="section-label reveal-on-scroll">What's Inside</span>
+        <h2 class="reveal-on-scroll delay-100">Everything you need.<br>Nothing you don't.</h2>
+        <p class="reveal-on-scroll delay-200">Vanguard Player is built for music lovers who want power without clutter — zero ads, zero tracking, just pure listening.</p>
+
+        <div class="features-grid">
+
+            <!-- Streaming -->
+            <div class="feature-card reveal-on-scroll delay-100">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
+                </div>
+                <div class="feature-title">YouTube Audio Streaming</div>
+                <div class="feature-desc">Search and stream any track directly from YouTube — no account, no API key, no ads. Pure audio, bypassing all video overhead.</div>
+            </div>
+
+            <!-- Local Library -->
+            <div class="feature-card reveal-on-scroll delay-200">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                </div>
+                <div class="feature-title">Local Music Library</div>
+                <div class="feature-desc">Import and manage your local MP3, FLAC, and audio files. Vanguard reads metadata tags and organises your collection automatically.</div>
+            </div>
+
+            <!-- Offline Downloads -->
+            <div class="feature-card reveal-on-scroll delay-300">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </div>
+                <div class="feature-title">Offline Downloads</div>
+                <div class="feature-desc">Save any track to your device as a high-quality MP3 via the built-in yt-dlp extractor. Listen anywhere — even without internet.</div>
+            </div>
+
+            <!-- Spotify Import — wide -->
+            <div class="feature-card wide reveal-on-scroll delay-100">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 17 21 12 16 7"/><polyline points="8 7 3 12 8 17"/></svg>
+                </div>
+                <div class="feature-title">Spotify Playlist Import</div>
+                <div class="feature-desc">Export your Spotify playlist as a CSV using <a href="https://exportify.net" target="_blank" rel="noopener" style="color:var(--vanguard-green);text-decoration:none;">Exportify</a>, then drop the file into Vanguard. It auto-matches every track on YouTube and rebuilds your entire playlist — no Spotify login, no API keys, no spotdl required.</div>
+            </div>
+
+            <!-- Playlists -->
+            <div class="feature-card reveal-on-scroll delay-200">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                </div>
+                <div class="feature-title">Playlists & Queue</div>
+                <div class="feature-desc">Create, edit, and reorder unlimited playlists with custom covers. Full queue management with drag-to-reorder and shuffle support.</div>
+            </div>
+
+            <!-- Playback Controls -->
+            <div class="feature-card reveal-on-scroll delay-100">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                </div>
+                <div class="feature-title">Precision Playback Controls</div>
+                <div class="feature-desc">Shuffle, repeat one or all, skip, seek, and volume control — all with smooth visual waveform progress and animated now-playing indicators.</div>
+            </div>
+
+            <!-- Sleep Timer -->
+            <div class="feature-card reveal-on-scroll delay-200">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </div>
+                <div class="feature-title">Sleep Timer</div>
+                <div class="feature-desc">Set an auto-pause timer from quick presets (5m – 90m) or a custom duration. Perfect for falling asleep to music without leaving it playing all night.</div>
+            </div>
+
+            <!-- Stats -->
+            <div class="feature-card reveal-on-scroll delay-300">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                </div>
+                <div class="feature-title">Listening Stats</div>
+                <div class="feature-desc">Track your total listening time with a built-in stats dashboard — all stored locally on your machine, never sent anywhere.</div>
+            </div>
+
+            <!-- Liked Songs -->
+            <div class="feature-card reveal-on-scroll delay-100">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                </div>
+                <div class="feature-title">Liked Songs</div>
+                <div class="feature-desc">Heart any track to instantly add it to your Liked Songs collection. Your favourites are always one click away, synced locally.</div>
+            </div>
+
+            <!-- Tauri + Rust — wide -->
+            <div class="feature-card wide reveal-on-scroll delay-200">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                </div>
+                <div class="feature-title">Lightweight Rust + Tauri Core</div>
+                <div class="feature-desc">Unlike Electron-based players that consume hundreds of MB of RAM, Vanguard is built on Tauri and Rust — talking directly to the OS via IPC. The result is a blazing-fast, sub-50MB install with minimal CPU and memory footprint, even with large libraries loaded.</div>
+            </div>
+
+            <!-- Zero Tracking -->
+            <div class="feature-card reveal-on-scroll delay-100">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div class="feature-title">Zero Telemetry. Zero Tracking.</div>
+                <div class="feature-desc">Absolutely no analytics, no crash reporters, no data collection of any kind. Everything — playlists, history, settings — stays on your machine.</div>
+            </div>
+
+            <!-- Audio Info -->
+            <div class="feature-card reveal-on-scroll delay-200">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <div class="feature-title">Audio Info Panel</div>
+                <div class="feature-desc">Inspect codec, bitrate, sample rate, channels, and format for any playing track — real metadata, powered by ffprobe under the hood.</div>
+            </div>
+
+            <!-- Open Source -->
+            <div class="feature-card reveal-on-scroll delay-300">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                </div>
+                <div class="feature-title">Fully Open Source</div>
+                <div class="feature-desc">Every line of code is public on GitHub. Audit it, fork it, contribute to it. No hidden binaries, no obfuscation — community-driven, always.</div>
+            </div>
+
+        </div>
+    </section>
+    <div class="section-divider"></div>
+
+    <!-- ══════════════════════════════════════════
          SCREENSHOTS SECTION
     ══════════════════════════════════════════ -->
     <section id="screenshots" class="screenshots-section">
@@ -1230,129 +1503,195 @@
                     <div class="chrome-dot amber"></div>
                     <div class="chrome-dot green"></div>
                 </div>
-                <svg class="screenshot-img" viewBox="0 0 1200 620" xmlns="http://www.w3.org/2000/svg" style="padding-top:32px;background:#0d0d0d;">
-                    <!-- Sidebar -->
-                    <rect x="0" y="0" width="220" height="620" fill="#0a0a0a"/>
-                    <rect x="0" y="0" width="220" height="620" fill="url(#sideGrad)"/>
+                <svg class="screenshot-img" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" style="padding-top:32px;background:#0a0a0a;">
                     <defs>
-                        <linearGradient id="sideGrad" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0%" stop-color="#111"/>
-                            <stop offset="100%" stop-color="#0d0d0d"/>
-                        </linearGradient>
                         <linearGradient id="progressGrad" x1="0" y1="0" x2="1" y2="0">
                             <stop offset="0%" stop-color="#4ff828"/>
                             <stop offset="100%" stop-color="#20d859"/>
                         </linearGradient>
-                        <linearGradient id="albumGrad" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0%" stop-color="#1a2a1a"/>
-                            <stop offset="100%" stop-color="#0a180a"/>
-                        </linearGradient>
                         <filter id="glow1">
-                            <feGaussianBlur stdDeviation="8" result="blur"/>
+                            <feGaussianBlur stdDeviation="6" result="blur"/>
                             <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
                         </filter>
+                        <clipPath id="sidebar-clip"><rect width="200" height="720"/></clipPath>
                     </defs>
-                    <!-- Logo in sidebar -->
-                    <rect x="18" y="20" width="26" height="26" rx="6" fill="#4ff828"/>
-                    <text x="54" y="37" font-family="Inter,sans-serif" font-size="13" font-weight="800" fill="#fff">Vanguard</text>
-                    <!-- Sidebar nav items -->
-                    <rect x="10" y="75" width="200" height="34" rx="8" fill="rgba(79,248,40,0.1)"/>
-                    <text x="42" y="97" font-family="Inter,sans-serif" font-size="13" fill="#4ff828" font-weight="600">Home</text>
-                    <text x="42" y="135" font-family="Inter,sans-serif" font-size="13" fill="#555">Library</text>
-                    <text x="42" y="170" font-family="Inter,sans-serif" font-size="13" fill="#555">Playlists</text>
-                    <text x="42" y="205" font-family="Inter,sans-serif" font-size="13" fill="#555">Downloads</text>
-                    <text x="42" y="240" font-family="Inter,sans-serif" font-size="13" fill="#555">Settings</text>
-                    <!-- Sidebar icons (simple circles) -->
-                    <circle cx="26" cy="93" r="6" fill="#4ff828" opacity="0.8"/>
-                    <circle cx="26" cy="131" r="6" fill="#333"/>
-                    <circle cx="26" cy="166" r="6" fill="#333"/>
-                    <circle cx="26" cy="201" r="6" fill="#333"/>
-                    <circle cx="26" cy="236" r="6" fill="#333"/>
-                    <!-- Sidebar playlist section -->
-                    <text x="18" y="295" font-family="Inter,sans-serif" font-size="10" fill="#444" letter-spacing="1.5">PLAYLISTS</text>
-                    <rect x="10" y="306" width="200" height="1" fill="#1e1e1e"/>
-                    <text x="18" y="330" font-family="Inter,sans-serif" font-size="12" fill="#555">Chill Vibes</text>
-                    <text x="18" y="355" font-family="Inter,sans-serif" font-size="12" fill="#555">Lo-fi Study</text>
-                    <text x="18" y="380" font-family="Inter,sans-serif" font-size="12" fill="#555">Late Night Drive</text>
-                    <text x="18" y="405" font-family="Inter,sans-serif" font-size="12" fill="#555">Workout Mix</text>
-                    <!-- Main content area -->
-                    <rect x="220" y="0" width="980" height="620" fill="#0d0d0d"/>
-                    <!-- Search bar -->
-                    <rect x="250" y="20" width="500" height="36" rx="10" fill="#161616" stroke="#242424" stroke-width="1"/>
-                    <text x="278" y="43" font-family="Inter,sans-serif" font-size="13" fill="#444">Search for songs, artists, albums...</text>
-                    <!-- Now playing card -->
-                    <rect x="250" y="80" width="680" height="260" rx="16" fill="url(#albumGrad)" stroke="#1e1e1e" stroke-width="1"/>
-                    <!-- Album art placeholder -->
-                    <rect x="274" y="104" width="140" height="140" rx="10" fill="#1a3020"/>
-                    <!-- Music note icon in album art -->
-                    <text x="320" y="186" font-family="Inter,sans-serif" font-size="52" fill="#4ff828" opacity="0.4">♪</text>
-                    <!-- Song info -->
-                    <text x="438" y="130" font-family="Inter,sans-serif" font-size="11" fill="#4ff828" letter-spacing="1.5" font-weight="600">NOW PLAYING</text>
-                    <text x="438" y="158" font-family="Inter,sans-serif" font-size="22" fill="#fff" font-weight="800">Midnight Echoes</text>
-                    <text x="438" y="182" font-family="Inter,sans-serif" font-size="14" fill="#666">Neon Drift · Synthwave Collection</text>
-                    <!-- Progress bar -->
-                    <rect x="438" y="204" width="460" height="4" rx="2" fill="#1e1e1e"/>
-                    <rect x="438" y="204" width="190" height="4" rx="2" fill="url(#progressGrad)"/>
-                    <circle cx="628" cy="206" r="7" fill="#4ff828" filter="url(#glow1)"/>
-                    <text x="438" y="226" font-family="Inter,sans-serif" font-size="11" fill="#555">1:54</text>
-                    <text x="876" y="226" font-family="Inter,sans-serif" font-size="11" fill="#555">4:12</text>
+
+                    <!-- ── Sidebar ── -->
+                    <rect x="0" y="0" width="200" height="720" fill="#0d0d0d"/>
+                    <rect x="199" y="0" width="1" height="720" fill="#1a1a1a"/>
+
+                    <!-- Logo -->
+                    <rect x="16" y="18" width="28" height="28" rx="7" fill="#4ff828"/>
+                    <!-- music note icon inside logo -->
+                    <text x="22" y="37" font-family="Inter,sans-serif" font-size="16" fill="#000" font-weight="900">♪</text>
+                    <text x="52" y="36" font-family="Inter,sans-serif" font-size="14" font-weight="800" fill="#4ff828" letter-spacing="1">VANGUARD</text>
+
+                    <!-- Nav items: Home (active), Offline, Stats, Settings -->
+                    <rect x="8" y="62" width="184" height="34" rx="8" fill="rgba(79,248,40,0.1)" stroke="rgba(79,248,40,0.2)" stroke-width="1"/>
+                    <text x="36" y="84" font-family="Inter,sans-serif" font-size="13" fill="#4ff828" font-weight="600">Home</text>
+                    <circle cx="20" cy="79" r="5" fill="#4ff828"/>
+
+                    <text x="36" y="122" font-family="Inter,sans-serif" font-size="13" fill="#555">Offline</text>
+                    <circle cx="20" cy="117" r="5" fill="#2a2a2a"/>
+                    <text x="36" y="157" font-family="Inter,sans-serif" font-size="13" fill="#555">Stats</text>
+                    <circle cx="20" cy="152" r="5" fill="#2a2a2a"/>
+                    <text x="36" y="192" font-family="Inter,sans-serif" font-size="13" fill="#555">Settings</text>
+                    <circle cx="20" cy="187" r="5" fill="#2a2a2a"/>
+
+                    <!-- Queue nav (active green border) -->
+                    <rect x="8" y="205" width="184" height="34" rx="8" fill="rgba(79,248,40,0.07)" stroke="rgba(79,248,40,0.18)" stroke-width="1"/>
+                    <text x="36" y="227" font-family="Inter,sans-serif" font-size="13" fill="#4ff828" font-weight="600">Queue</text>
+                    <circle cx="20" cy="222" r="5" fill="#4ff828" opacity="0.5"/>
+
+                    <!-- Playlists section -->
+                    <text x="14" y="265" font-family="Inter,sans-serif" font-size="10" fill="#333" letter-spacing="2">PLAYLISTS</text>
+                    <rect x="8" y="274" width="184" height="1" fill="#1e1e1e"/>
+
+                    <!-- Liked Songs playlist -->
+                    <rect x="10" y="284" width="32" height="32" rx="6" fill="#1a2a1a"/>
+                    <text x="24" y="305" font-family="Inter,sans-serif" font-size="14" fill="#4ff828" opacity="0.6">♥</text>
+                    <text x="50" y="300" font-family="Inter,sans-serif" font-size="12" fill="#888" font-weight="500">Liked Songs</text>
+                    <text x="170" y="300" font-family="Inter,sans-serif" font-size="10" fill="#444">12</text>
+
+                    <rect x="10" y="324" width="32" height="32" rx="6" fill="#2a1a10"/>
+                    <text x="24" y="346" font-family="Inter,sans-serif" font-size="14" fill="#ff8c00" opacity="0.5">♪</text>
+                    <text x="50" y="340" font-family="Inter,sans-serif" font-size="12" fill="#666">Late Night Drive</text>
+                    <text x="170" y="340" font-family="Inter,sans-serif" font-size="10" fill="#333">47</text>
+
+                    <rect x="10" y="364" width="32" height="32" rx="6" fill="#1a1a2a"/>
+                    <text x="24" y="386" font-family="Inter,sans-serif" font-size="14" fill="#6688ff" opacity="0.5">♪</text>
+                    <text x="50" y="380" font-family="Inter,sans-serif" font-size="12" fill="#666">Chill Vibes</text>
+                    <text x="170" y="380" font-family="Inter,sans-serif" font-size="10" fill="#333">83</text>
+
+                    <rect x="10" y="404" width="32" height="32" rx="6" fill="#2a1a2a"/>
+                    <text x="24" y="426" font-family="Inter,sans-serif" font-size="14" fill="#ff44aa" opacity="0.5">♪</text>
+                    <text x="50" y="420" font-family="Inter,sans-serif" font-size="12" fill="#666">Workout Mix</text>
+                    <text x="170" y="420" font-family="Inter,sans-serif" font-size="10" fill="#333">31</text>
+
+                    <!-- Import buttons at bottom -->
+                    <rect x="10" y="628" width="180" height="32" rx="8" fill="rgba(29,185,84,0.12)" stroke="rgba(29,185,84,0.3)" stroke-width="1"/>
+                    <circle cx="26" cy="644" r="7" fill="#1DB954"/>
+                    <text x="40" y="649" font-family="Inter,sans-serif" font-size="11" fill="#1DB954" font-weight="600">Import from Spotify</text>
+
+                    <rect x="10" y="666" width="180" height="32" rx="8" fill="rgba(255,0,0,0.1)" stroke="rgba(255,0,0,0.25)" stroke-width="1"/>
+                    <circle cx="26" cy="682" r="7" fill="#ff0000"/>
+                    <text x="40" y="687" font-family="Inter,sans-serif" font-size="11" fill="#ff5555" font-weight="600">Import from YouTube</text>
+
+                    <!-- ── Main content area ── -->
+                    <rect x="200" y="0" width="880" height="720" fill="#0a0a0a"/>
+
+                    <!-- Top bar: breadcrumb + search -->
+                    <text x="220" y="28" font-family="Inter,sans-serif" font-size="11" fill="#333">HOME</text>
+                    <rect x="340" y="10" width="500" height="36" rx="10" fill="#161616" stroke="#222" stroke-width="1"/>
+                    <text x="366" y="33" font-family="Inter,sans-serif" font-size="13" fill="#333">Search YouTube...  (Ctrl+F)</text>
+                    <!-- Search icon -->
+                    <circle cx="356" cy="28" r="5" fill="none" stroke="#333" stroke-width="1.5"/>
+                    <line x1="360" y1="32" x2="363" y2="35" stroke="#333" stroke-width="1.5" stroke-linecap="round"/>
+                    <!-- Search button -->
+                    <rect x="850" y="10" width="72" height="36" rx="8" fill="#161616" stroke="#222" stroke-width="1"/>
+                    <text x="868" y="33" font-family="Inter,sans-serif" font-size="12" fill="#555" font-weight="600">Search</text>
+
+                    <!-- Recently Played header -->
+                    <rect x="216" y="54" width="4" height="18" rx="2" fill="#4ff828"/>
+                    <text x="228" y="68" font-family="Inter,sans-serif" font-size="15" fill="#fff" font-weight="700">Recently Played</text>
+                    <text x="920" y="68" font-family="Inter,sans-serif" font-size="12" fill="#333">Clear</text>
+
+                    <!-- Recently played grid: 2 cols × 4 rows -->
+                    <!-- Row 1 -->
+                    <rect x="216" y="82" width="420" height="68" rx="10" fill="rgba(79,248,40,0.06)" stroke="rgba(79,248,40,0.18)" stroke-width="1"/>
+                    <rect x="228" y="93" width="44" height="44" rx="7" fill="#1a2a1a"/>
+                    <text x="242" y="121" font-family="Inter,sans-serif" font-size="20" fill="#4ff828" opacity="0.5">♪</text>
+                    <text x="282" y="112" font-family="Inter,sans-serif" font-size="13" fill="#4ff828" font-weight="700">Blinding Lights</text>
+                    <text x="282" y="130" font-family="Inter,sans-serif" font-size="11" fill="#444">The Weeknd</text>
+
+                    <rect x="648" y="82" width="420" height="68" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
+                    <rect x="660" y="93" width="44" height="44" rx="7" fill="#1a1a2a"/>
+                    <text x="674" y="121" font-family="Inter,sans-serif" font-size="20" fill="#6688ff" opacity="0.5">♪</text>
+                    <text x="714" y="112" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="600">As It Was</text>
+                    <text x="714" y="130" font-family="Inter,sans-serif" font-size="11" fill="#444">Harry Styles</text>
+
+                    <!-- Row 2 -->
+                    <rect x="216" y="158" width="420" height="68" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
+                    <rect x="228" y="169" width="44" height="44" rx="7" fill="#2a1a1a"/>
+                    <text x="242" y="197" font-family="Inter,sans-serif" font-size="20" fill="#ff4488" opacity="0.4">♪</text>
+                    <text x="282" y="188" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="600">Heat Waves</text>
+                    <text x="282" y="206" font-family="Inter,sans-serif" font-size="11" fill="#444">Glass Animals</text>
+
+                    <rect x="648" y="158" width="420" height="68" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
+                    <rect x="660" y="169" width="44" height="44" rx="7" fill="#1a2020"/>
+                    <text x="674" y="197" font-family="Inter,sans-serif" font-size="20" fill="#44ffaa" opacity="0.4">♪</text>
+                    <text x="714" y="188" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="600">Starboy</text>
+                    <text x="714" y="206" font-family="Inter,sans-serif" font-size="11" fill="#444">The Weeknd</text>
+
+                    <!-- Row 3 -->
+                    <rect x="216" y="234" width="420" height="68" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
+                    <rect x="228" y="245" width="44" height="44" rx="7" fill="#2a2010"/>
+                    <text x="242" y="273" font-family="Inter,sans-serif" font-size="20" fill="#ffaa22" opacity="0.4">♪</text>
+                    <text x="282" y="264" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="600">Levitating</text>
+                    <text x="282" y="282" font-family="Inter,sans-serif" font-size="11" fill="#444">Dua Lipa</text>
+
+                    <rect x="648" y="234" width="420" height="68" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
+                    <rect x="660" y="245" width="44" height="44" rx="7" fill="#1a1a2a"/>
+                    <text x="674" y="273" font-family="Inter,sans-serif" font-size="20" fill="#aa44ff" opacity="0.4">♪</text>
+                    <text x="714" y="264" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="600">Save Your Tears</text>
+                    <text x="714" y="282" font-family="Inter,sans-serif" font-size="11" fill="#444">The Weeknd</text>
+
+                    <!-- Row 4 -->
+                    <rect x="216" y="310" width="420" height="68" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
+                    <rect x="228" y="321" width="44" height="44" rx="7" fill="#10201a"/>
+                    <text x="242" y="349" font-family="Inter,sans-serif" font-size="20" fill="#20d859" opacity="0.4">♪</text>
+                    <text x="282" y="340" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="600">Stay</text>
+                    <text x="282" y="358" font-family="Inter,sans-serif" font-size="11" fill="#444">The Kid LAROI &amp; Justin Bieber</text>
+
+                    <rect x="648" y="310" width="420" height="68" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
+                    <rect x="660" y="321" width="44" height="44" rx="7" fill="#201010"/>
+                    <text x="674" y="349" font-family="Inter,sans-serif" font-size="20" fill="#ff6644" opacity="0.4">♪</text>
+                    <text x="714" y="340" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="600">Anti-Hero</text>
+                    <text x="714" y="358" font-family="Inter,sans-serif" font-size="11" fill="#444">Taylor Swift</text>
+
+                    <!-- ── Queue panel (right sidebar) ── -->
+                    <rect x="1080" y="0" width="200" height="720" fill="#0d0d0d"/>
+                    <rect x="1080" y="0" width="1" height="720" fill="#1a1a1a"/>
+                    <text x="1096" y="28" font-family="Inter,sans-serif" font-size="13" fill="#fff" font-weight="700">Queue</text>
+
+                    <!-- Now Playing in queue -->
+                    <text x="1096" y="56" font-family="Inter,sans-serif" font-size="9" fill="#333" letter-spacing="1.5">NOW PLAYING</text>
+                    <rect x="1088" y="64" width="184" height="52" rx="8" fill="rgba(79,248,40,0.06)" stroke="rgba(79,248,40,0.15)" stroke-width="1"/>
+                    <rect x="1096" y="72" width="36" height="36" rx="6" fill="#1a2a1a"/>
+                    <text x="1110" y="95" font-family="Inter,sans-serif" font-size="16" fill="#4ff828" opacity="0.5">♪</text>
+                    <text x="1140" y="85" font-family="Inter,sans-serif" font-size="11" fill="#4ff828" font-weight="600">Blinding Lights</text>
+                    <text x="1140" y="100" font-family="Inter,sans-serif" font-size="10" fill="#444">The Weeknd</text>
+
+                    <!-- Queue empty label -->
+                    <text x="1130" y="400" font-family="Inter,sans-serif" font-size="11" fill="#2a2a2a" text-anchor="middle">Queue is empty</text>
+
+                    <!-- ── Bottom player bar ── -->
+                    <rect x="200" y="660" width="880" height="60" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
+                    <!-- Album thumb -->
+                    <rect x="210" y="670" width="40" height="40" rx="6" fill="#1a2a1a"/>
+                    <text x="224" y="696" font-family="Inter,sans-serif" font-size="18" fill="#4ff828" opacity="0.5">♪</text>
+                    <!-- Track info -->
+                    <text x="260" y="684" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Blinding Lights</text>
+                    <text x="260" y="700" font-family="Inter,sans-serif" font-size="10" fill="#444">The Weeknd</text>
                     <!-- Controls -->
-                    <text x="490" y="270" font-family="Inter,sans-serif" font-size="18" fill="#555">⇄</text>
-                    <text x="542" y="272" font-family="Inter,sans-serif" font-size="22" fill="#888">⏮</text>
-                    <circle cx="624" cy="258" r="24" fill="#4ff828"/>
-                    <text x="612" y="267" font-family="Inter,sans-serif" font-size="22" fill="#000">▶</text>
-                    <text x="656" y="272" font-family="Inter,sans-serif" font-size="22" fill="#888">⏭</text>
-                    <text x="702" y="270" font-family="Inter,sans-serif" font-size="18" fill="#555">↻</text>
+                    <text x="540" y="695" font-family="Inter,sans-serif" font-size="16" fill="#555">⇄</text>
+                    <text x="576" y="697" font-family="Inter,sans-serif" font-size="20" fill="#888">⏮</text>
+                    <circle cx="630" cy="688" r="18" fill="#fff"/>
+                    <text x="621" y="696" font-family="Inter,sans-serif" font-size="18" fill="#000">▶</text>
+                    <text x="658" y="697" font-family="Inter,sans-serif" font-size="20" fill="#888">⏭</text>
+                    <text x="692" y="695" font-family="Inter,sans-serif" font-size="16" fill="#555">↻</text>
+                    <!-- Progress bar -->
+                    <text x="726" y="693" font-family="Inter,sans-serif" font-size="9" fill="#333">0:00</text>
+                    <rect x="752" y="686" width="200" height="3" rx="1.5" fill="#1e1e1e"/>
+                    <rect x="752" y="686" width="0" height="3" rx="1.5" fill="#4ff828"/>
+                    <text x="958" y="693" font-family="Inter,sans-serif" font-size="9" fill="#333">3:22</text>
                     <!-- Volume -->
-                    <text x="760" y="270" font-family="Inter,sans-serif" font-size="13" fill="#555">🔊</text>
-                    <rect x="784" y="258" width="100" height="3" rx="2" fill="#1e1e1e"/>
-                    <rect x="784" y="258" width="72" height="3" rx="2" fill="#4ff828" opacity="0.6"/>
-                    <!-- Queue section -->
-                    <text x="952" y="100" font-family="Inter,sans-serif" font-size="11" fill="#444" letter-spacing="1.5">UP NEXT</text>
-                    <rect x="952" y="112" width="218" height="52" rx="10" fill="#141414" stroke="#222" stroke-width="1"/>
-                    <rect x="964" y="122" width="36" height="36" rx="6" fill="#1a2a1a"/>
-                    <text x="980" y="147" font-family="Inter,sans-serif" font-size="14" fill="#4ff828" opacity="0.5">♪</text>
-                    <text x="1010" y="136" font-family="Inter,sans-serif" font-size="12" fill="#ccc" font-weight="600">Starlight Drive</text>
-                    <text x="1010" y="153" font-family="Inter,sans-serif" font-size="11" fill="#555">Solar Fields</text>
-                    <rect x="952" y="172" width="218" height="52" rx="10" fill="#111" stroke="#1a1a1a" stroke-width="1"/>
-                    <rect x="964" y="182" width="36" height="36" rx="6" fill="#1a1a2a"/>
-                    <text x="980" y="207" font-family="Inter,sans-serif" font-size="14" fill="#4488ff" opacity="0.5">♪</text>
-                    <text x="1010" y="196" font-family="Inter,sans-serif" font-size="12" fill="#888" font-weight="600">Neon Rain</text>
-                    <text x="1010" y="213" font-family="Inter,sans-serif" font-size="11" fill="#444">Lazerhawk</text>
-                    <rect x="952" y="232" width="218" height="52" rx="10" fill="#111" stroke="#1a1a1a" stroke-width="1"/>
-                    <rect x="964" y="242" width="36" height="36" rx="6" fill="#2a1a1a"/>
-                    <text x="980" y="267" font-family="Inter,sans-serif" font-size="14" fill="#ff4488" opacity="0.5">♪</text>
-                    <text x="1010" y="256" font-family="Inter,sans-serif" font-size="12" fill="#888" font-weight="600">Electric Dreams</text>
-                    <text x="1010" y="273" font-family="Inter,sans-serif" font-size="11" fill="#444">Perturbator</text>
-                    <!-- Recommended section title -->
-                    <text x="250" y="374" font-family="Inter,sans-serif" font-size="14" fill="#fff" font-weight="700">Recommended for you</text>
-                    <!-- Track list rows -->
-                    <rect x="250" y="388" width="680" height="44" rx="8" fill="rgba(255,255,255,0.02)"/>
-                    <text x="272" y="415" font-family="Inter,sans-serif" font-size="12" fill="#777">1</text>
-                    <rect x="290" y="396" width="30" height="30" rx="5" fill="#1a2a1a"/>
-                    <text x="334" y="415" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="500">Crystal Skies</text>
-                    <text x="540" y="415" font-family="Inter,sans-serif" font-size="12" fill="#555">Dreamwave</text>
-                    <text x="840" y="415" font-family="Inter,sans-serif" font-size="12" fill="#555">3:47</text>
-                    <rect x="250" y="436" width="680" height="44" rx="8" fill="rgba(255,255,255,0)"/>
-                    <text x="272" y="463" font-family="Inter,sans-serif" font-size="12" fill="#777">2</text>
-                    <rect x="290" y="444" width="30" height="30" rx="5" fill="#1a1a2a"/>
-                    <text x="334" y="463" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="500">Parallel Universe</text>
-                    <text x="540" y="463" font-family="Inter,sans-serif" font-size="12" fill="#555">Kavinsky</text>
-                    <text x="840" y="463" font-family="Inter,sans-serif" font-size="12" fill="#555">5:02</text>
-                    <rect x="250" y="484" width="680" height="44" rx="8" fill="rgba(255,255,255,0.02)"/>
-                    <text x="272" y="511" font-family="Inter,sans-serif" font-size="12" fill="#777">3</text>
-                    <rect x="290" y="492" width="30" height="30" rx="5" fill="#2a1a1a"/>
-                    <text x="334" y="511" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="500">After Hours</text>
-                    <text x="540" y="511" font-family="Inter,sans-serif" font-size="12" fill="#555">FM-84</text>
-                    <text x="840" y="511" font-family="Inter,sans-serif" font-size="12" fill="#555">4:28</text>
-                    <rect x="250" y="532" width="680" height="44" rx="8" fill="rgba(255,255,255,0)"/>
-                    <text x="272" y="559" font-family="Inter,sans-serif" font-size="12" fill="#777">4</text>
-                    <rect x="290" y="540" width="30" height="30" rx="5" fill="#1a2a20"/>
-                    <text x="334" y="559" font-family="Inter,sans-serif" font-size="13" fill="#ccc" font-weight="500">Resonance</text>
-                    <text x="540" y="559" font-family="Inter,sans-serif" font-size="12" fill="#555">HOME</text>
-                    <text x="840" y="559" font-family="Inter,sans-serif" font-size="12" fill="#555">3:58</text>
-                    <!-- Green scanline accent -->
-                    <rect x="220" y="0" width="2" height="620" fill="url(#progressGrad)" opacity="0.2"/>
+                    <text x="990" y="693" font-family="Inter,sans-serif" font-size="11" fill="#555">🔊</text>
+                    <rect x="1010" y="686" width="60" height="3" rx="1.5" fill="#1e1e1e"/>
+                    <rect x="1010" y="686" width="44" height="3" rx="1.5" fill="#4ff828" opacity="0.7"/>
+
+                    <!-- Sidebar border accent -->
+                    <rect x="200" y="0" width="2" height="720" fill="url(#progressGrad)" opacity="0.15"/>
                 </svg>
                 <div class="screenshot-chrome" style="background:rgba(14,14,14,0.95);">
                     <div class="chrome-dot red"></div>
@@ -1446,41 +1785,53 @@
                             <stop offset="100%" stop-color="#20d859"/>
                         </linearGradient>
                     </defs>
-                    <!-- Import header -->
-                    <text x="20" y="44" font-family="Inter,sans-serif" font-size="20" fill="#fff" font-weight="800">Import Spotify Playlist</text>
-                    <text x="20" y="66" font-family="Inter,sans-serif" font-size="13" fill="#555">Paste your public Spotify playlist link below</text>
-                    <!-- URL input -->
-                    <rect x="20" y="84" width="430" height="42" rx="10" fill="#161616" stroke="#242424" stroke-width="1"/>
-                    <text x="36" y="110" font-family="Inter,sans-serif" font-size="12" fill="#666">https://open.spotify.com/playlist/37i9dQZF1DX...</text>
-                    <rect x="458" y="84" width="102" height="42" rx="10" fill="url(#pg3)"/>
-                    <text x="477" y="110" font-family="Inter,sans-serif" font-size="13" fill="#000" font-weight="700">Import</text>
-                    <!-- Progress -->
-                    <text x="20" y="154" font-family="Inter,sans-serif" font-size="11" fill="#4ff828" letter-spacing="1">FETCHING TRACKS · 18 / 24</text>
-                    <rect x="20" y="162" width="540" height="5" rx="2.5" fill="#1e1e1e"/>
-                    <rect x="20" y="162" width="405" height="5" rx="2.5" fill="url(#pg3)"/>
-                    <!-- Imported tracks -->
-                    <rect x="20" y="182" width="540" height="44" rx="8" fill="rgba(79,248,40,0.04)" stroke="rgba(79,248,40,0.1)" stroke-width="1"/>
-                    <text x="36" y="208" font-family="Inter,sans-serif" font-size="13" fill="#ccc">Blinding Lights</text>
-                    <text x="240" y="208" font-family="Inter,sans-serif" font-size="12" fill="#555">The Weeknd</text>
-                    <text x="490" y="208" font-family="Inter,sans-serif" font-size="11" fill="#4ff828">✓ Matched</text>
+                    <!-- Header with Spotify icon -->
+                    <rect x="20" y="18" width="28" height="28" rx="7" fill="#1DB954"/>
+                    <text x="28" y="37" font-family="Inter,sans-serif" font-size="14" fill="#fff" font-weight="900">S</text>
+                    <text x="56" y="36" font-family="Inter,sans-serif" font-size="16" fill="#fff" font-weight="800">Import Spotify Playlist</text>
+                    <!-- Step instructions -->
+                    <circle cx="30" cy="72" r="9" fill="#4ff828"/>
+                    <text x="27" y="76" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">1</text>
+                    <text x="48" y="70" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Go to Exportify</text>
+                    <text x="48" y="84" font-family="Inter,sans-serif" font-size="11" fill="#555">Open exportify.net in your browser</text>
 
-                    <rect x="20" y="230" width="540" height="44" rx="8" fill="rgba(79,248,40,0.04)" stroke="rgba(79,248,40,0.1)" stroke-width="1"/>
-                    <text x="36" y="256" font-family="Inter,sans-serif" font-size="13" fill="#ccc">As It Was</text>
-                    <text x="240" y="256" font-family="Inter,sans-serif" font-size="12" fill="#555">Harry Styles</text>
-                    <text x="490" y="256" font-family="Inter,sans-serif" font-size="11" fill="#4ff828">✓ Matched</text>
+                    <circle cx="30" cy="112" r="9" fill="#4ff828"/>
+                    <text x="27" y="116" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">2</text>
+                    <text x="48" y="110" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Log in with Spotify</text>
+                    <text x="48" y="124" font-family="Inter,sans-serif" font-size="11" fill="#555">Authorise Exportify to read your playlists</text>
 
-                    <rect x="20" y="278" width="540" height="44" rx="8" fill="rgba(79,248,40,0.04)" stroke="rgba(79,248,40,0.1)" stroke-width="1"/>
-                    <text x="36" y="304" font-family="Inter,sans-serif" font-size="13" fill="#ccc">Heat Waves</text>
-                    <text x="240" y="304" font-family="Inter,sans-serif" font-size="12" fill="#555">Glass Animals</text>
-                    <text x="490" y="304" font-family="Inter,sans-serif" font-size="11" fill="#4ff828">✓ Matched</text>
+                    <circle cx="30" cy="152" r="9" fill="#4ff828"/>
+                    <text x="27" y="156" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">3</text>
+                    <text x="48" y="150" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Export your playlist</text>
+                    <text x="48" y="164" font-family="Inter,sans-serif" font-size="11" fill="#555">Click the green Export button — a .csv file will download</text>
 
-                    <rect x="20" y="326" width="540" height="44" rx="8" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
-                    <text x="36" y="352" font-family="Inter,sans-serif" font-size="13" fill="#777">Stay</text>
-                    <text x="240" y="352" font-family="Inter,sans-serif" font-size="12" fill="#444">The Kid LAROI</text>
-                    <text x="476" y="352" font-family="Inter,sans-serif" font-size="11" fill="#555">⟳ Fetching...</text>
+                    <circle cx="30" cy="192" r="9" fill="#4ff828"/>
+                    <text x="27" y="196" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">4</text>
+                    <text x="48" y="190" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Upload the CSV here</text>
+                    <text x="48" y="204" font-family="Inter,sans-serif" font-size="11" fill="#555">Click the button below and select the .csv file</text>
 
-                    <rect x="20" y="374" width="540" height="30" rx="8" fill="#0f0f0f"/>
-                    <text x="36" y="394" font-family="Inter,sans-serif" font-size="12" fill="#444">Anti-Hero · Taylor Swift</text>
+                    <!-- Upload CSV button -->
+                    <rect x="20" y="222" width="540" height="44" rx="11" fill="url(#pg3)"/>
+                    <text x="210" y="249" font-family="Inter,sans-serif" font-size="14" fill="#000" font-weight="800">⬆  Upload Exportify CSV</text>
+
+                    <!-- Divider + progress -->
+                    <rect x="20" y="280" width="540" height="1" fill="#1e1e1e"/>
+                    <text x="20" y="300" font-family="Inter,sans-serif" font-size="10" fill="#4ff828" letter-spacing="1.5">MATCHING · 18 / 24</text>
+                    <rect x="20" y="308" width="540" height="4" rx="2" fill="#1e1e1e"/>
+                    <rect x="20" y="308" width="405" height="4" rx="2" fill="url(#pg3)"/>
+
+                    <!-- Matched track rows -->
+                    <rect x="20" y="322" width="540" height="36" rx="7" fill="rgba(79,248,40,0.05)" stroke="rgba(79,248,40,0.12)" stroke-width="1"/>
+                    <rect x="28" y="330" width="20" height="20" rx="4" fill="#1a2a1a"/>
+                    <text x="58" y="344" font-family="Inter,sans-serif" font-size="12" fill="#ccc">Blinding Lights</text>
+                    <text x="240" y="344" font-family="Inter,sans-serif" font-size="11" fill="#555">The Weeknd</text>
+                    <text x="492" y="344" font-family="Inter,sans-serif" font-size="10" fill="#4ff828">✓ Matched</text>
+
+                    <rect x="20" y="362" width="540" height="36" rx="7" fill="rgba(79,248,40,0.05)" stroke="rgba(79,248,40,0.12)" stroke-width="1"/>
+                    <rect x="28" y="370" width="20" height="20" rx="4" fill="#1a1a2a"/>
+                    <text x="58" y="384" font-family="Inter,sans-serif" font-size="12" fill="#ccc">Heat Waves</text>
+                    <text x="240" y="384" font-family="Inter,sans-serif" font-size="11" fill="#555">Glass Animals</text>
+                    <text x="492" y="384" font-family="Inter,sans-serif" font-size="10" fill="#4ff828">✓ Matched</text>
                 </svg>
                 <div class="screenshot-chrome">
                     <div class="chrome-dot red"></div>
@@ -1494,12 +1845,13 @@
                 <div class="screenshot-overlay">
                     <div class="screenshot-overlay-tag">Import</div>
                     <div class="screenshot-overlay-title">Bring your Spotify playlists over</div>
-                    <div class="screenshot-overlay-desc">Paste a Spotify link and Vanguard auto-matches every track. Your curation, your way.</div>
+                    <div class="screenshot-overlay-desc">Export via Exportify, upload the CSV — Vanguard matches every track automatically.</div>
                 </div>
             </div>
 
         </div>
     </section>
+
 
     <div class="section-divider"></div>
 
@@ -1560,7 +1912,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">Yes! You can easily import your existing Spotify playlists directly into Vanguard Player. Simply provide your Spotify playlist link, and the app will automatically fetch and match the tracks so you don't lose your carefully curated libraries.</div>
+                        <div class="faq-answer-inner">Yes! Export your Spotify playlist as a CSV using <a href="https://exportify.net" target="_blank" rel="noopener" style="color:var(--vanguard-green);">Exportify</a>, then upload the file inside Vanguard Player. It auto-matches every track on YouTube and rebuilds your playlist — no Spotify login inside the app, no API keys, no extra software needed.</div>
                     </div>
                 </div>
             </div>
@@ -1634,7 +1986,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">Under the hood, it utilizes <strong style="color:#fff">yt-dlp</strong> for lightning-fast, secure audio scraping, and <strong style="color:#fff">mpv</strong> as the highly versatile background audio engine, communicating seamlessly via Unix IPC sockets.</div>
+                        <div class="faq-answer-inner">Under the hood, it utilizes <strong style="color:#fff">yt-dlp</strong> for lightning-fast, secure audio scraping, and <strong style="color:#fff">mpv</strong> as the background audio engine. On Linux it communicates via Unix IPC sockets; on Windows via named pipes — keeping playback control fast and seamless on both platforms.</div>
                     </div>
                 </div>
             </div>
@@ -1732,6 +2084,29 @@
                 mobileToggle.classList.remove('open');
             });
         });
+
+        // ── Windows dropdown toggle ──
+        const windowsBtn = document.getElementById('dl-windows');
+        const windowsWrap = document.getElementById('dl-windows-wrap');
+        if (windowsBtn && windowsWrap) {
+            windowsBtn.addEventListener('click', function(e) {
+                const isOpen = windowsWrap.classList.toggle('open');
+                windowsBtn.setAttribute('aria-expanded', isOpen);
+            });
+            windowsBtn.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    const isOpen = windowsWrap.classList.toggle('open');
+                    windowsBtn.setAttribute('aria-expanded', isOpen);
+                }
+            });
+            document.addEventListener('click', function(e) {
+                if (!windowsWrap.contains(e.target)) {
+                    windowsWrap.classList.remove('open');
+                    windowsBtn.setAttribute('aria-expanded', 'false');
+                }
+            });
+        }
 
         // ── Linux dropdown toggle ──
         const linuxBtn = document.getElementById('dl-linux');
