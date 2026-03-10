@@ -9,6 +9,14 @@
 
   <body>
     <div id="root"></div>
+    <script>
+      {
+        const invoke = window.__TAURI_INTERNALS__?.invoke;
+        if (!invoke) {
+          console.error("Tauri bridge not available");
+        }
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

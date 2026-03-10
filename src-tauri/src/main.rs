@@ -1,31 +1,10 @@
+use std::fmt::Write as FmtWrite;
 use std::io::{Write, BufRead, BufReader};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use serde_json::Value;
 use tauri::Emitter;
-use tauri::Manager;
-
-// On Windows, every spawned process gets a visible CMD flash unless we set
-// CREATE_NO_WINDOW. This trait applies it automatically on Windows and is a
-// no-op on Linux/macOS, so all call sites stay identical.
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-trait NoWindow {
-    fn no_window(&mut self) -> &mut Self;
-}
-
-impl NoWindow for Command {
-    #[cfg(windows)]
-    fn no_window(&mut self) -> &mut Self {
-        self.creation_flags(0x08000000)
-    }
-    #[cfg(not(windows))]
-    fn no_window(&mut self) -> &mut Self {
-        self
-    }
-}
 
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
@@ -39,155 +18,7 @@ const SOCKET_PATH: &str = "/tmp/mpvsocket";
 #[cfg(windows)]
 const SOCKET_PATH: &str = r"\\.\pipe\mpvsocket";
 
-#[derive(Clone, Default)]
-struct MprisMetadata {
-    title: String,
-    artist: String,
-    cover_url: String,
-    duration_us: i64,
-    playing: bool,
-}
-
-static MPRIS_META: std::sync::OnceLock<Mutex<MprisMetadata>> = std::sync::OnceLock::new();
-
-fn mpris_meta() -> &'static Mutex<MprisMetadata> {
-    MPRIS_META.get_or_init(|| Mutex::new(MprisMetadata::default()))
-}
-
-#[cfg(target_os = "linux")]
-static MPRIS_TX: std::sync::OnceLock<tokio::sync::watch::Sender<()>> = std::sync::OnceLock::new();
-
-#[cfg(target_os = "linux")]
-fn mpris_notify() {
-    if let Some(tx) = MPRIS_TX.get() { let _ = tx.send(()); }
-}
-#[cfg(not(target_os = "linux"))]
-fn mpris_notify() {}
-
-fn resolve_bin(name: &str, search_paths: &[String]) -> String {
-    for dir in search_paths {
-        #[cfg(target_os = "windows")]
-        let full = format!("{}\\{}.exe", dir, name);
-        #[cfg(not(target_os = "windows"))]
-        let full = format!("{}/{}", dir, name);
-
-        let p = std::path::Path::new(&full);
-        if p.is_file() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(meta) = p.metadata() {
-                    if meta.permissions().mode() & 0o111 != 0 {
-                        return full;
-                    }
-                }
-            }
-            #[cfg(windows)]
-            return full;
-        }
-    }
-    name.to_string()
-}
-
-static BIN_MPV:     std::sync::OnceLock<String> = std::sync::OnceLock::new();
-static BIN_YTDLP:   std::sync::OnceLock<String> = std::sync::OnceLock::new();
-static BIN_FFPROBE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-static BIN_FFMPEG:  std::sync::OnceLock<String> = std::sync::OnceLock::new();
-
-fn init_bin_paths() {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let mut paths: Vec<String> = Vec::new();
-
-    #[cfg(target_os = "windows")]
-    {
-        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        let user_profile   = std::env::var("USERPROFILE").unwrap_or_default();
-        
-        paths.push(format!("{}\\Programs\\vanguard-deps\\mpv",    local_app_data));
-        paths.push(format!("{}\\Programs\\vanguard-deps\\ffmpeg",  local_app_data));
-        paths.push(format!("{}\\Programs\\vanguard-deps",          local_app_data));
-        
-        paths.push(format!("{}\\Programs\\mpv",    local_app_data));
-        paths.push("C:\\Program Files\\mpv".into());
-        paths.push("C:\\Program Files (x86)\\mpv".into());
-        paths.push("C:\\ProgramData\\chocolatey\\bin".into());
-        paths.push(format!("{}\\scoop\\shims", user_profile));
-        paths.push(format!("{}\\AppData\\Local\\Microsoft\\WindowsApps", user_profile));
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        
-        let appimage = std::env::var("APPIMAGE").is_ok();
-        let host = if appimage { "/proc/1/root" } else { "" };
-
-        for p in &[
-            format!("{}/.local/bin", home),
-            format!("{}/.cargo/bin", home),
-            "/usr/local/bin".to_string(),
-            "/usr/bin".to_string(),
-            "/bin".to_string(),
-            "/snap/bin".to_string(),
-            "/var/lib/flatpak/exports/bin".to_string(),
-            "/usr/games".to_string(),
-        ] {
-            if !host.is_empty() { paths.push(format!("{}{}", host, p)); }
-            paths.push(p.clone());
-        }
-    }
-
-    
-    if let Ok(env_path) = std::env::var("PATH") {
-        #[cfg(target_os = "windows")]
-        let sep = ';';
-        #[cfg(not(target_os = "windows"))]
-        let sep = ':';
-        for p in env_path.split(sep) {
-            let s = p.to_string();
-            if !paths.contains(&s) { paths.push(s); }
-        }
-    }
-
-    
-    #[cfg(target_os = "windows")]
-    let sep = ";";
-    #[cfg(not(target_os = "windows"))]
-    let sep = ":";
-
-    let clean: Vec<&str> = paths.iter()
-        .filter(|p| !p.starts_with("/proc/1/root"))
-        .map(|s| s.as_str())
-        .collect();
-    std::env::set_var("PATH", clean.join(sep));
-
-    let mpv     = resolve_bin("mpv",     &paths);
-    let ytdlp   = resolve_bin("yt-dlp",  &paths);
-    let ffprobe = resolve_bin("ffprobe", &paths);
-    let ffmpeg  = resolve_bin("ffmpeg",  &paths);
-
-    eprintln!("[vanguard] mpv     -> {}", mpv);
-    eprintln!("[vanguard] yt-dlp  -> {}", ytdlp);
-    eprintln!("[vanguard] ffprobe -> {}", ffprobe);
-    eprintln!("[vanguard] ffmpeg  -> {}", ffmpeg);
-
-    
-    
-    fn set_or_update(lock: &std::sync::OnceLock<String>, val: String) {
-        if lock.get().is_none() {
-            let _ = lock.set(val);
-        }
-        
-    }
-    set_or_update(&BIN_MPV,     mpv);
-    set_or_update(&BIN_YTDLP,   ytdlp);
-    set_or_update(&BIN_FFPROBE, ffprobe);
-    set_or_update(&BIN_FFMPEG,  ffmpeg);
-}
-
-fn bin_mpv()     -> &'static str { BIN_MPV.get().map(|s| s.as_str()).unwrap_or("mpv") }
-fn bin_ytdlp()   -> &'static str { BIN_YTDLP.get().map(|s| s.as_str()).unwrap_or("yt-dlp") }
-fn bin_ffprobe() -> &'static str { BIN_FFPROBE.get().map(|s| s.as_str()).unwrap_or("ffprobe") }
-fn bin_ffmpeg()  -> &'static str { BIN_FFMPEG.get().map(|s| s.as_str()).unwrap_or("ffmpeg") }
+// ── Global state ──────────────────────────────────────────────────────────────
 
 struct CacheEntry { url: String, ts: std::time::Instant }
 
@@ -202,16 +33,16 @@ lazy_static::lazy_static! {
     static ref STREAM_CACHE_DIR: Arc<Mutex<String>> =
         Arc::new(Mutex::new(default_cache_dir()));
 
-    
-    
+    // When false the --af flag is omitted entirely from mpv args. [C4]
+    // mpv rejects `--af=` (empty value) on most builds.
     static ref LOUDNORM_ENABLED: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
 }
 
 fn default_cache_dir() -> String {
     #[cfg(target_os = "windows")]
     {
-        
-        
+        // LOCALAPPDATA = C:\Users\<n>\AppData\Local
+        // Does not sync to OneDrive; excluded from system backups.
         std::env::var("LOCALAPPDATA")
             .map(|h| format!("{}\\Vanguard\\Cache", h))
             .or_else(|_| std::env::var("APPDATA").map(|h| format!("{}\\Vanguard\\Cache", h)))
@@ -224,6 +55,8 @@ fn default_cache_dir() -> String {
             .unwrap_or_else(|_| "/tmp/VanguardCache".to_string())
     }
 }
+
+// ── Path / URL helpers ────────────────────────────────────────────────────────
 
 fn expand_tilde(path: &str) -> String {
     if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
@@ -261,15 +94,153 @@ fn sanitize_file_path(path: &str) -> Result<std::path::PathBuf, String> {
     }
 }
 
+// [C1] write!() requires FmtWrite (std::fmt::Write) in scope.
+// The global `use std::io::Write` is a different trait and does NOT satisfy this.
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for ch in s.chars() {
+        match ch {
+            '"'  => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => { let _ = write!(out, "\\u{:04x}", c as u32); }
+            c => out.push(c),
+        }
+    }
+    out
+}
 
 fn safe_f64(v: f64) -> f64 {
     if v.is_finite() { v } else { 0.0 }
 }
 
+// ── Helper: Find command in PATH and common Homebrew paths ───────────────────
+
+fn find_command(cmd: &str) -> String {
+    // Try direct command first
+    if Command::new("which").arg(cmd).output()
+        .map(|o| o.status.success()).unwrap_or(false) {
+        return cmd.to_string();
+    }
+    
+    // Try Homebrew paths on macOS
+    #[cfg(target_os = "macos")]
+    {
+        for base_path in &["/opt/homebrew/bin", "/usr/local/bin"] {
+            let full_path = format!("{}/{}", base_path, cmd);
+            if std::path::Path::new(&full_path).exists() {
+                return full_path;
+            }
+        }
+    }
+    
+    // Fallback to command name (will fail gracefully later)
+    cmd.to_string()
+}
+
+// ── Dependency checker ────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct DepsStatus { mpv: bool, yt_dlp: bool, ffprobe: bool }
+
+#[tauri::command]
+async fn check_dependencies() -> Result<DepsStatus, String> {
+    tokio::task::spawn_blocking(|| {
+        let check_cmd = |cmd: &str| -> bool {
+            let path = find_command(cmd);
+            if let Ok(out) = Command::new(&path).arg("--version").output() {
+                if out.status.success() {
+                    return true;
+                }
+            }
+            if let Ok(out) = Command::new(&path).arg("-version").output() {
+                if out.status.success() {
+                    return true;
+                }
+            }
+            false
+        };
+        
+        let mpv     = check_cmd("mpv");
+        let yt_dlp  = check_cmd("yt-dlp");
+        let ffprobe = check_cmd("ffprobe");
+        Ok(DepsStatus { mpv, yt_dlp, ffprobe })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ── yt-dlp version / update ───────────────────────────────────────────────────
+
+#[tauri::command]
+async fn get_yt_dlp_version() -> Result<String, String> {
+    tokio::task::spawn_blocking(|| {
+        // Try direct command first
+        if let Ok(out) = Command::new("yt-dlp").arg("--version").output() {
+            if out.status.success() {
+                return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
+            }
+        }
+        
+        // Try Homebrew paths
+        #[cfg(target_os = "macos")]
+        {
+            for base_path in &["/opt/homebrew/bin", "/usr/local/bin"] {
+                let full_path = format!("{}/yt-dlp", base_path);
+                if let Ok(out) = Command::new(&full_path).arg("--version").output() {
+                    if out.status.success() {
+                        return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
+                    }
+                }
+            }
+        }
+        
+        Err("yt-dlp not found".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn update_yt_dlp() -> Result<String, String> {
+    tokio::task::spawn_blocking(|| {
+        let yt_dlp_cmd = "yt-dlp";
+        
+        // Try Homebrew paths first on macOS
+        #[cfg(target_os = "macos")]
+        {
+            for base_path in &["/opt/homebrew/bin", "/usr/local/bin"] {
+                let full_path = format!("{}/yt-dlp", base_path);
+                if let Ok(out) = Command::new(&full_path).arg("-U").output() {
+                    if out.status.success() || !out.stdout.is_empty() {
+                        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                        return Ok(if stdout.trim().is_empty() { stderr } else { stdout });
+                    }
+                }
+            }
+        }
+        
+        // Fall back to direct command
+        let out = Command::new(yt_dlp_cmd).arg("-U")
+            .output().map_err(|_| "yt-dlp not found".to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        Ok(if stdout.trim().is_empty() { stderr } else { stdout })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ── YouTube search ────────────────────────────────────────────────────────────
+
 #[tauri::command]
 async fn search_youtube(query: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let mut child = Command::new(bin_ytdlp())
+        let yt_dlp_path = find_command("yt-dlp");
+        let mut child = Command::new(&yt_dlp_path)
             .args([
                 &format!("ytsearch10:{}", query),
                 "--flat-playlist",
@@ -280,13 +251,12 @@ async fn search_youtube(query: String) -> Result<String, String> {
             ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .no_window()
             .spawn()
             .map_err(|e| format!("yt-dlp not found: {}", e))?;
 
-        
-        
-        
+        // Hard 15s kill — prevents hang on bad network.
+        // kill+wait path returns immediately; wait_with_output only on normal exit.
+        // (Calling wait_with_output on an already-waited process would panic.)
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
         loop {
             match child.try_wait() {
@@ -314,6 +284,8 @@ async fn search_youtube(query: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+// ── Open URL in browser ───────────────────────────────────────────────────────
+
 #[tauri::command]
 async fn open_url_in_browser(url: String) -> Result<(), String> {
     let sanitized = url.trim().to_string();
@@ -322,21 +294,23 @@ async fn open_url_in_browser(url: String) -> Result<(), String> {
     }
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "linux")]
-        { Command::new("xdg-open").arg(&sanitized).no_window().spawn().map_err(|e| e.to_string())?; }
+        { Command::new("xdg-open").arg(&sanitized).spawn().map_err(|e| e.to_string())?; }
         #[cfg(target_os = "macos")]
-        { Command::new("open").arg(&sanitized).no_window().spawn().map_err(|e| e.to_string())?; }
+        { Command::new("open").arg(&sanitized).spawn().map_err(|e| e.to_string())?; }
         #[cfg(target_os = "windows")]
-        { Command::new("cmd").args(["/c", "start", "", &sanitized]).no_window().spawn().map_err(|e| e.to_string())?; }
+        { Command::new("cmd").args(["/c", "start", "", &sanitized]).spawn().map_err(|e| e.to_string())?; }
         Ok::<(), String>(())
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
+// ── YouTube playlist import ───────────────────────────────────────────────────
+
 #[tauri::command]
 async fn import_youtube_playlist(url: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let mut child = Command::new(bin_ytdlp())
+        let mut child = Command::new("yt-dlp")
             .args([
                 "--flat-playlist",
                 "--no-warnings",
@@ -348,11 +322,10 @@ async fn import_youtube_playlist(url: String) -> Result<String, String> {
             ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .no_window()
             .spawn()
             .map_err(|e| format!("yt-dlp not found: {}", e))?;
 
-        
+        // 60s hard kill — large playlists can legitimately take ~45s
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         loop {
             match child.try_wait() {
@@ -378,6 +351,8 @@ async fn import_youtube_playlist(url: String) -> Result<String, String> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ── CSV Playlist import ───────────────────────────────────────────────────────
 
 #[tauri::command]
 async fn import_csv_playlist(csv_content: String) -> Result<String, String> {
@@ -434,6 +409,8 @@ fn parse_csv_row(line: &str) -> Vec<String> {
     fields
 }
 
+// ── Prefetch ──────────────────────────────────────────────────────────────────
+
 #[tauri::command]
 async fn prefetch_track(url: String) -> Result<(), String> {
     if url.starts_with("local://") { return Ok(()); }
@@ -442,7 +419,8 @@ async fn prefetch_track(url: String) -> Result<(), String> {
     tokio::spawn(async move {
         let url_clone = url.clone();
         let result = tokio::task::spawn_blocking(move || {
-            Command::new(bin_ytdlp())
+            let yt_dlp_path = find_command("yt-dlp");
+            Command::new(&yt_dlp_path)
                 .args([
                     "--print", "urls",
                     "--format", "bestaudio[ext=webm]/bestaudio/best",
@@ -452,7 +430,6 @@ async fn prefetch_track(url: String) -> Result<(), String> {
                     "--socket-timeout", "8",
                     &url_clone,
                 ])
-                .no_window()
                 .output()
         })
         .await;
@@ -470,6 +447,8 @@ async fn prefetch_track(url: String) -> Result<(), String> {
     });
     Ok(())
 }
+
+// ── Loudnorm / Cache settings ─────────────────────────────────────────────────
 
 #[tauri::command]
 fn set_loudnorm_enabled(enabled: bool) -> Result<(), String> {
@@ -528,6 +507,10 @@ fn clear_cache() -> Result<u64, String> {
     Ok(freed)
 }
 
+// ── Playback ──────────────────────────────────────────────────────────────────
+
+// [C4] Returns Some("--af=loudnorm=...") when on, None when off.
+// Callers push into Vec<String> — never passes an empty --af= to mpv.
 fn mpv_af_flag() -> Option<String> {
     if *LOUDNORM_ENABLED.lock().unwrap() {
         Some("--af=loudnorm=I=-16:TP=-1.5:LRA=11".to_string())
@@ -558,8 +541,11 @@ async fn play_audio(url: String) -> Result<(), String> {
         kill_mpv();
         cleanup_socket();
 
-        
-        
+        // Find yt-dlp path for mpv's ytdl_hook
+        let yt_dlp_path = find_command("yt-dlp");
+
+        // [C4] Build args as Vec so --af is only included when loudnorm is on.
+        // `--af=` (empty) causes "Error parsing option af" on most mpv builds.
         let mut args: Vec<String> = vec![
             "--no-video".into(),
             "--cache=yes".into(),
@@ -574,7 +560,7 @@ async fn play_audio(url: String) -> Result<(), String> {
         ];
         if let Some(af) = mpv_af_flag() { args.push(af); }
         args.extend([
-            "--script-opts=ytdl_hook-ytdl_path=yt-dlp".into(),
+            format!("--script-opts=ytdl_hook-ytdl_path={}", yt_dlp_path),
             "--ytdl-format=bestaudio[ext=webm]/bestaudio/best".into(),
             "--ytdl-raw-options=ignore-config=,no-check-certificates=,retries=2,fragment-retries=2,concurrent-fragments=4,socket-timeout=10".into(),
             format!("--input-ipc-server={}", SOCKET_PATH),
@@ -585,12 +571,12 @@ async fn play_audio(url: String) -> Result<(), String> {
             actual_url,
         ]);
 
-        Command::new(bin_mpv()).args(&args)
-            .no_window()
+        let mpv_path = find_command("mpv");
+        Command::new(&mpv_path).args(&args)
             .spawn()
             .map_err(|e| format!("mpv not found or failed to start: {}", e))?;
 
-        
+        // [C6] Surface mpv startup failure instead of silently returning Ok(())
         if !wait_for_socket(2500) {
             return Err("mpv failed to start (IPC socket never appeared)".to_string());
         }
@@ -608,7 +594,7 @@ async fn play_local_file(path: String) -> Result<(), String> {
         kill_mpv();
         cleanup_socket();
 
-        
+        // [C4] Same conditional --af — omit entirely when loudnorm is off
         let mut args: Vec<String> = vec![
             "--no-video".into(),
             "--cache=no".into(),
@@ -626,12 +612,12 @@ async fn play_local_file(path: String) -> Result<(), String> {
             safe_path,
         ]);
 
-        Command::new(bin_mpv()).args(&args)
-            .no_window()
+        let mpv_path = find_command("mpv");
+        Command::new(&mpv_path).args(&args)
             .spawn()
             .map_err(|e| format!("mpv not found or failed to start: {}", e))?;
 
-        
+        // [C6] Local files start fast — 1500ms is generous
         if !wait_for_socket(1500) {
             return Err("mpv failed to start (IPC socket never appeared)".to_string());
         }
@@ -640,6 +626,8 @@ async fn play_local_file(path: String) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ── IPC — playback control ────────────────────────────────────────────────────
 
 #[tauri::command]
 async fn pause_audio() -> Result<(), String> {
@@ -714,6 +702,8 @@ async fn is_paused() -> Result<bool, String> {
     .map_err(|e| e.to_string())?
 }
 
+// ── Playback state snapshot ───────────────────────────────────────────────────
+
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct PlaybackState {
     playing: bool,
@@ -786,6 +776,8 @@ async fn get_playback_speed() -> Result<f64, String> {
     .map_err(|e| e.to_string())?
 }
 
+// ── Audio info ────────────────────────────────────────────────────────────────
+
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct AudioInfo {
     codec: String,
@@ -798,12 +790,12 @@ struct AudioInfo {
 
 #[tauri::command]
 async fn get_audio_info() -> Result<AudioInfo, String> {
-    
-    
-    
-    
-    
-    
+    // [C2] Logic inlined — NOT in a nested fn.
+    // Nested fns in Rust cannot capture outer-scope statics (SOCKET_PATH etc.)
+    // and produce "cannot find value in this scope" compile errors.
+    //
+    // [C3] Parse helpers written as direct index access, not nested closures.
+    // Two closures both capturing `responses` by-move cause borrow-check failures.
     tokio::task::spawn_blocking(|| {
         let queries: &[&str] = &[
             r#"{"command": ["get_property", "audio-codec-name"]}"#,
@@ -813,10 +805,10 @@ async fn get_audio_info() -> Result<AudioInfo, String> {
             r#"{"command": ["get_property", "file-format"]}"#,
             r#"{"command": ["get_property", "path"]}"#,
         ];
-        
+        // send_ipc_batch handles both Unix (UnixStream) and Windows (named pipe)
         let responses = send_ipc_batch(queries);
 
-        
+        // [C3] Direct helpers — no closure chain over responses
         let raw = |i: usize| -> String {
             responses.get(i).and_then(|r| r.as_ref().ok()).cloned().unwrap_or_default()
         };
@@ -850,6 +842,8 @@ async fn get_audio_info() -> Result<AudioInfo, String> {
     .map_err(|e| e.to_string())?
 }
 
+// ── Equalizer ─────────────────────────────────────────────────────────────────
+
 #[tauri::command]
 async fn set_equalizer(bass: f64, mid: f64, treble: f64) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
@@ -859,15 +853,15 @@ async fn set_equalizer(bass: f64, mid: f64, treble: f64) -> Result<(), String> {
         let loudnorm_on = *LOUDNORM_ENABLED.lock().unwrap();
         let eq_active   = !(b == 0.0 && m == 0.0 && t == 0.0);
 
-        
-        
+        // [C5] Respect LOUDNORM_ENABLED — do NOT silently re-enable loudnorm.
+        // Old code always prepended "loudnorm=..." regardless of the toggle.
         let af_value = match (loudnorm_on, eq_active) {
             (true,  false) => "loudnorm=I=-16:TP=-1.5:LRA=11".to_string(),
             (true,  true)  => format!(
                 "loudnorm=I=-16:TP=-1.5:LRA=11,equalizer={b}:{b}:{b}:{b}:{m}:{m}:{m}:{m}:{t}:{t}",
                 b=b, m=m, t=t
             ),
-            (false, false) => return Ok(()), 
+            (false, false) => return Ok(()), // nothing to apply
             (false, true)  => format!(
                 "equalizer={b}:{b}:{b}:{b}:{m}:{m}:{m}:{m}:{t}:{t}",
                 b=b, m=m, t=t
@@ -881,17 +875,16 @@ async fn set_equalizer(bass: f64, mid: f64, treble: f64) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+// ── Download ──────────────────────────────────────────────────────────────────
+
 #[tauri::command]
-async fn download_song(url: String, quality: String, format: Option<String>, embed_thumbnail: Option<bool>, path: String) -> Result<String, String> {
+async fn download_song(url: String, quality: String, path: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let resolved_path = expand_tilde(&path);
-        let fmt = format.as_deref().unwrap_or("mp3");
-        let do_embed = embed_thumbnail.unwrap_or(true);
-        let audio_format = match fmt {
-            "opus" => "opus",
-            "m4a"  => "m4a",
-            "flac" => "flac",
-            _      => "mp3",
+        let format = match quality.as_str() {
+            "Low"    => "worstaudio/worst",
+            "Medium" => "bestaudio[abr<=160]/bestaudio/best",
+            _        => "bestaudio/best",
         };
         let audio_quality = match quality.as_str() {
             "Low"    => "9",
@@ -904,22 +897,11 @@ async fn download_song(url: String, quality: String, format: Option<String>, emb
         } else {
             format!("{}{}%(title)s.%(ext)s", resolved_path, sep)
         };
-        let mut args = vec![
-            "--extract-audio".to_string(),
-            "--audio-format".to_string(), audio_format.to_string(),
-            "--audio-quality".to_string(), audio_quality.to_string(),
-            "--add-metadata".to_string(),
-            "--no-check-certificates".to_string(),
-            "--no-warnings".to_string(),
-            "-o".to_string(), output_template.clone(),
-        ];
-        if do_embed {
-            args.push("--embed-thumbnail".to_string());
-        }
-        args.push(url.clone());
-        let output = Command::new(bin_ytdlp())
-            .args(&args)
-            .no_window()
+        let yt_dlp_path = find_command("yt-dlp");
+        let output = Command::new(&yt_dlp_path)
+            .args(["-f", format, "--extract-audio", "--audio-format", "mp3",
+                   "--audio-quality", audio_quality, "--embed-thumbnail", "--add-metadata",
+                   "--no-check-certificates", "--no-warnings", "-o", &output_template, &url])
             .output()
             .map_err(|e| format!("yt-dlp not found: {}", e))?;
         if output.status.success() {
@@ -931,6 +913,8 @@ async fn download_song(url: String, quality: String, format: Option<String>, emb
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ── Batch download ────────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct BatchProgress {
@@ -969,11 +953,11 @@ async fn batch_download(
             };
             let sep = std::path::MAIN_SEPARATOR;
             let tpl = format!("{}{}%(title)s.%(ext)s", path_clone, sep);
-            let out = Command::new(bin_ytdlp())
+            let yt_dlp_path = find_command("yt-dlp");
+            let out = Command::new(&yt_dlp_path)
                 .args(["-f", format, "--extract-audio", "--audio-format", "mp3",
                        "--audio-quality", audio_quality, "--embed-thumbnail", "--add-metadata",
                        "--no-check-certificates", "--no-warnings", "-o", &tpl, &url_clone])
-                .no_window()
                 .output()
                 .map_err(|e| format!("yt-dlp not found: {}", e))?;
             if out.status.success() {
@@ -995,6 +979,8 @@ async fn batch_download(
     }
     Ok(())
 }
+
+// ── Local file management ─────────────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct LocalTrack { title: String, path: String, size_bytes: u64, extension: String }
@@ -1063,16 +1049,18 @@ async fn open_in_file_manager(path: String) -> Result<(), String> {
             p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or(path)
         } else { path };
         #[cfg(target_os = "macos")]
-        { Command::new("open").arg(&dir).no_window().spawn().map_err(|e| format!("open failed: {}", e))?; }
+        { Command::new("open").arg(&dir).spawn().map_err(|e| format!("open failed: {}", e))?; }
         #[cfg(target_os = "windows")]
-        { Command::new("explorer.exe").arg(&dir).no_window().spawn().map_err(|e| format!("explorer failed: {}", e))?; }
+        { Command::new("explorer.exe").arg(&dir).spawn().map_err(|e| format!("explorer failed: {}", e))?; }
         #[cfg(target_os = "linux")]
-        { Command::new("xdg-open").arg(&dir).no_window().spawn().map_err(|e| format!("xdg-open failed: {}", e))?; }
+        { Command::new("xdg-open").arg(&dir).spawn().map_err(|e| format!("xdg-open failed: {}", e))?; }
         Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ── Audio metadata ────────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct AudioMetadata { title: String, artist: String, album: String, duration: String }
@@ -1080,9 +1068,9 @@ struct AudioMetadata { title: String, artist: String, album: String, duration: S
 #[tauri::command]
 async fn get_audio_metadata(path: String) -> Result<AudioMetadata, String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new(bin_ffprobe())
+        let ffprobe_path = find_command("ffprobe");
+        let output = Command::new(&ffprobe_path)
             .args(["-v", "quiet", "-print_format", "json", "-show_format", &path])
-            .no_window()
             .output()
             .map_err(|_| "ffprobe not found — install ffmpeg".to_string())?;
         let json: Value = serde_json::from_str(
@@ -1105,12 +1093,14 @@ async fn get_audio_metadata(path: String) -> Result<AudioMetadata, String> {
     .map_err(|e| e.to_string())?
 }
 
+// ── Waveform thumbnail ────────────────────────────────────────────────────────
+
 #[tauri::command]
 async fn get_waveform_thumbnail(path: String) -> Result<Vec<f32>, String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new(bin_ffmpeg())
+        let ffmpeg_path = find_command("ffmpeg");
+        let output = Command::new(&ffmpeg_path)
             .args(["-i", &path, "-ac", "1", "-ar", "500", "-f", "f32le", "-"])
-            .no_window()
             .output()
             .map_err(|_| "ffmpeg not found".to_string())?;
         if output.stdout.is_empty() { return Err("No audio data".to_string()); }
@@ -1129,6 +1119,8 @@ async fn get_waveform_thumbnail(path: String) -> Result<Vec<f32>, String> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ── Disk usage ────────────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct DiskInfo { used_bytes: u64, track_count: usize }
@@ -1158,6 +1150,8 @@ async fn get_disk_usage(path: String) -> Result<DiskInfo, String> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ── Playlist M3U export / import ──────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct TrackExport { title: String, artist: String, url: String, duration_secs: i64 }
@@ -1193,15 +1187,16 @@ async fn import_playlist_m3u(path: String) -> Result<Vec<String>, String> {
     .map_err(|e| e.to_string())?
 }
 
+// ── Audio normalization ───────────────────────────────────────────────────────
+
 #[tauri::command]
 async fn normalize_file(path: String, output_path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let resolved_in  = expand_tilde(&path);
         let resolved_out = expand_tilde(&output_path);
-        let out = Command::new(bin_ffmpeg())
+        let out = Command::new("ffmpeg")
             .args(["-i", &resolved_in, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
                    "-ar", "44100", "-y", &resolved_out])
-            .no_window()
             .output()
             .map_err(|_| "ffmpeg not found".to_string())?;
         if out.status.success() { Ok(()) }
@@ -1210,6 +1205,8 @@ async fn normalize_file(path: String, output_path: String) -> Result<(), String>
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ── Sleep timer ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
 async fn set_sleep_timer(seconds: u64) -> Result<(), String> {
@@ -1248,6 +1245,10 @@ async fn get_sleep_timer_remaining() -> Result<i64, String> {
     Ok(remaining)
 }
 
+// ── Platform helpers ──────────────────────────────────────────────────────────
+
+// [C6] Returns true if socket became connectable within timeout_ms.
+// false = timed out; callers should surface this as a startup error.
 fn wait_for_socket(timeout_ms: u64) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
 
@@ -1264,8 +1265,8 @@ fn wait_for_socket(timeout_ms: u64) -> bool {
 
     #[cfg(windows)]
     {
-        
-        
+        // [C7] Plain open — no custom_flags() which requires OpenOptionsExt in scope.
+        // Synchronous named pipe open is the correct readiness probe on Windows.
         while std::time::Instant::now() < deadline {
             if OpenOptions::new().read(true).write(true).open(SOCKET_PATH).is_ok() {
                 return true;
@@ -1279,11 +1280,11 @@ fn wait_for_socket(timeout_ms: u64) -> bool {
 fn kill_mpv() {
     #[cfg(unix)]
     {
-        
-        
-        
-        
-        
+        // [C8] user_arg stored as Option<String>. Build Vec<&str> by pushing
+        // .as_str() slices into it only while user_arg is still in scope.
+        // The original code's extend_from_slice(&["-u", u]) was fine IF u: &str,
+        // but if u came from an Option<String> via if-let, the lifetime is tied
+        // to that if-let guard. Explicit sequential pushes avoid the ambiguity.
         let user_arg: Option<String> = std::env::var("USER").ok();
 
         let mut term_args: Vec<&str> = vec!["-TERM"];
@@ -1292,22 +1293,22 @@ fn kill_mpv() {
             term_args.push(u.as_str());
         }
         term_args.push("mpv");
-        let _ = Command::new("pkill").args(&term_args).no_window().output();
+        let _ = Command::new("pkill").args(&term_args).output();
 
-        
-        
+        // SIGKILL immediately after SIGTERM.
+        // cleanup_socket() polls for socket disappearance, which is the grace period.
         let mut kill_args: Vec<&str> = vec!["-KILL"];
         if let Some(ref u) = user_arg {
             kill_args.push("-u");
             kill_args.push(u.as_str());
         }
         kill_args.push("mpv");
-        let _ = Command::new("pkill").args(&kill_args).no_window().output();
+        let _ = Command::new("pkill").args(&kill_args).output();
     }
     #[cfg(windows)]
     {
-        
-        let _ = Command::new("taskkill").args(["/F", "/T", "/IM", "mpv.exe"]).no_window().output();
+        // /T kills the process tree (children too), /F forces termination
+        let _ = Command::new("taskkill").args(["/F", "/T", "/IM", "mpv.exe"]).output();
     }
 }
 
@@ -1326,7 +1327,7 @@ fn cleanup_socket() {
     }
     #[cfg(windows)]
     {
-        
+        // taskkill /F is synchronous — give the Windows pipe subsystem a moment to release
         std::thread::sleep(std::time::Duration::from_millis(30));
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
         while std::time::Instant::now() < deadline {
@@ -1336,6 +1337,11 @@ fn cleanup_socket() {
     }
 }
 
+// ── IPC helpers ───────────────────────────────────────────────────────────────
+
+// Send N IPC commands over a single socket connection.
+// Unix: write all then read all (true pipeline — one connect/disconnect for N cmds).
+// Windows: write/read interleaved on a single open handle with persistent BufReader.
 fn send_ipc_batch(cmds: &[&str]) -> Vec<Result<String, String>> {
     let n = cmds.len();
 
@@ -1348,10 +1354,10 @@ fn send_ipc_batch(cmds: &[&str]) -> Vec<Result<String, String>> {
         stream.set_read_timeout(Some(std::time::Duration::from_millis(800))).ok();
         stream.set_write_timeout(Some(std::time::Duration::from_millis(400))).ok();
 
-        
-        
-        
-        
+        // Write all commands on a cloned fd before reading any responses.
+        // try_clone() duplicates the fd; both the clone and the original share
+        // the same underlying socket — writes on the clone are visible when
+        // reading from the original BufReader.
         if let Ok(mut w) = stream.try_clone() {
             for cmd in cmds {
                 let _ = w.write_all(cmd.as_bytes());
@@ -1381,9 +1387,9 @@ fn send_ipc_batch(cmds: &[&str]) -> Vec<Result<String, String>> {
 
     #[cfg(not(unix))]
     {
-        
-        
-        
+        // Windows: open named pipe once and keep BufReader alive across ALL iterations.
+        // Do NOT recreate BufReader per command — that discards buffered bytes and
+        // breaks response parsing on subsequent reads.
         let file = match OpenOptions::new().read(true).write(true).open(SOCKET_PATH) {
             Ok(f) => f,
             Err(e) => return vec![Err(format!("IPC connect failed: {}", e)); n],
@@ -1394,7 +1400,7 @@ fn send_ipc_batch(cmds: &[&str]) -> Vec<Result<String, String>> {
         let deadline    = std::time::Instant::now() + std::time::Duration::from_millis(800);
 
         for cmd in cmds {
-            
+            // Write via &file reference — bypasses BufReader without disturbing its buffer
             {
                 let mut w = &file;
                 if w.write_all(cmd.as_bytes()).is_err() || w.write_all(b"\n").is_err() { break; }
@@ -1447,8 +1453,8 @@ fn send_ipc_command(cmd: &str) -> Result<String, String> {
 
     #[cfg(unix)]
     {
-        
-        
+        // Write on stream before moving it into BufReader — no try_clone needed.
+        // (try_clone + write on clone works too, but this is simpler for the single-cmd case.)
         let mut stream = UnixStream::connect(SOCKET_PATH)
             .map_err(|e| format!("IPC connect failed: {}", e))?;
         stream.set_read_timeout(Some(std::time::Duration::from_millis(500))).map_err(|e| e.to_string())?;
@@ -1466,9 +1472,9 @@ fn send_ipc_command(cmd: &str) -> Result<String, String> {
 
     #[cfg(windows)]
     {
-        
-        
-        
+        // No native read timeout on Windows named pipes without windows-sys.
+        // 600ms iteration deadline guard — mpv responses are near-instant once the
+        // pipe is established; this only fires on genuine hangs.
         let file = OpenOptions::new().read(true).write(true)
             .open(SOCKET_PATH)
             .map_err(|e| format!("IPC connect failed: {}", e))?;
@@ -1495,275 +1501,292 @@ fn parse_f64_from_response(response: &str) -> Result<f64, String> {
     json["data"].as_f64().ok_or_else(|| format!("Unexpected data type: {}", response))
 }
 
-#[tauri::command]
-fn ping() -> String { "pong".to_string() }
+// ── Install dependencies ──────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct InstallResult { success: bool, message: String }
 
 #[tauri::command]
-async fn check_for_update() -> Result<Option<String>, String> {
-    let current = env!("CARGO_PKG_VERSION");
-    let client = reqwest::Client::builder()
-        .user_agent("vanguard-player")
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client
-        .get("https://api.github.com/repos/ishmweet/vanguard-player/releases/latest")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let latest = json["tag_name"]
-        .as_str()
-        .unwrap_or("")
-        .trim_start_matches('v');
-
-    if latest.is_empty() || latest == current {
-        Ok(None)
-    } else {
-        Ok(Some(latest.to_string()))
-    }
-}
-
-#[tauri::command]
-async fn set_mpris_metadata(
-    title: String,
-    artist: String,
-    cover_url: String,
-    duration_secs: f64,
-    playing: bool,
-) -> Result<(), String> {
-    {
-        let mut meta = mpris_meta().lock().unwrap();
-        meta.title = title;
-        meta.artist = artist;
-        meta.cover_url = cover_url;
-        meta.duration_us = (duration_secs * 1_000_000.0) as i64;
-        meta.playing = playing;
-    }
-    mpris_notify();
-    Ok(())
-}
-
-#[tauri::command]
-async fn update_mpris_playback(playing: bool) -> Result<(), String> {
-    mpris_meta().lock().unwrap().playing = playing;
-    mpris_notify();
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn start_mpris_server(app_handle: tauri::AppHandle) {
-    let (tx, rx) = tokio::sync::watch::channel(());
-    let _ = MPRIS_TX.set(tx);
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("tokio rt");
-        rt.block_on(async move {
-            if let Err(e) = run_mpris_server(app_handle, rx).await {
-                eprintln!("[vanguard] MPRIS server error: {}", e);
-            }
-        });
-    });
-}
-
-
-#[cfg(target_os = "linux")]
-async fn run_mpris_server(
-    app_handle: tauri::AppHandle,
-    mut rx: tokio::sync::watch::Receiver<()>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use zbus::{ConnectionBuilder, dbus_interface, InterfaceRef};
-    use zbus::zvariant::{Value as ZValue, OwnedValue, ObjectPath};
-
-    struct MediaPlayer2;
-
-    #[dbus_interface(name = "org.mpris.MediaPlayer2")]
-    impl MediaPlayer2 {
-        #[dbus_interface(property)]
-        fn can_quit(&self) -> bool { true }
-        #[dbus_interface(property)]
-        fn can_raise(&self) -> bool { false }
-        #[dbus_interface(property)]
-        fn has_track_list(&self) -> bool { false }
-        #[dbus_interface(property)]
-        fn identity(&self) -> &str { "Vanguard Player" }
-        #[dbus_interface(property)]
-        fn desktop_entry(&self) -> &str { "vanguard-player" }
-        #[dbus_interface(property)]
-        fn supported_uri_schemes(&self) -> Vec<String> { vec![] }
-        #[dbus_interface(property)]
-        fn supported_mime_types(&self) -> Vec<String> { vec![] }
-        fn quit(&self) {}
-        fn raise(&self) {}
-    }
-
-    let app_next = app_handle.clone();
-    let app_prev = app_handle.clone();
-    let app_pp   = app_handle.clone();
-    let app_stop = app_handle.clone();
-
-    struct Player {
-        app_next: tauri::AppHandle,
-        app_prev: tauri::AppHandle,
-        app_pp:   tauri::AppHandle,
-        app_stop: tauri::AppHandle,
-    }
-
-    #[dbus_interface(name = "org.mpris.MediaPlayer2.Player")]
-    impl Player {
-        #[dbus_interface(property)]
-        fn playback_status(&self) -> String {
-            if mpris_meta().lock().unwrap().playing { "Playing".into() } else { "Paused".into() }
-        }
-        #[dbus_interface(property)]
-        fn loop_status(&self) -> String { "None".into() }
-        #[dbus_interface(property)]
-        fn rate(&self) -> f64 { 1.0 }
-        #[dbus_interface(property)]
-        fn shuffle(&self) -> bool { false }
-
-        #[dbus_interface(property)]
-        fn metadata(&self) -> HashMap<String, OwnedValue> {
-            let (title, artist, cover_url, duration_us) = {
-                let m = mpris_meta().lock().unwrap();
-                (m.title.clone(), m.artist.clone(), m.cover_url.clone(), m.duration_us)
-            };
-            let mut map: HashMap<String, OwnedValue> = HashMap::new();
-            map.insert("mpris:trackid".into(),
-                OwnedValue::try_from(ZValue::new(ObjectPath::try_from("/org/vanguard/track/1").unwrap())).unwrap());
-            map.insert("xesam:title".into(),
-                OwnedValue::try_from(ZValue::new(title.as_str())).unwrap());
-            map.insert("xesam:artist".into(),
-                OwnedValue::try_from(ZValue::new(vec![artist.as_str()])).unwrap());
-            if !cover_url.is_empty() {
-                map.insert("mpris:artUrl".into(),
-                    OwnedValue::try_from(ZValue::new(cover_url.as_str())).unwrap());
-            }
-            if duration_us > 0 {
-                map.insert("mpris:length".into(),
-                    OwnedValue::try_from(ZValue::new(duration_us)).unwrap());
-            }
-            map
-        }
-
-        #[dbus_interface(property)]
-        fn volume(&self) -> f64 { 1.0 }
-        #[dbus_interface(property)]
-        fn position(&self) -> i64 {
-            send_ipc_command_with_retry(r#"{"command": ["get_property", "time-pos"]}"#, 1)
-                .ok()
-                .and_then(|r| parse_f64_from_response(&r).ok())
-                .map(|s| (s * 1_000_000.0) as i64)
-                .unwrap_or(0)
-        }
-        #[dbus_interface(property)]
-        fn minimum_rate(&self) -> f64 { 0.5 }
-        #[dbus_interface(property)]
-        fn maximum_rate(&self) -> f64 { 2.0 }
-        #[dbus_interface(property)]
-        fn can_go_next(&self) -> bool { true }
-        #[dbus_interface(property)]
-        fn can_go_previous(&self) -> bool { true }
-        #[dbus_interface(property)]
-        fn can_play(&self) -> bool { true }
-        #[dbus_interface(property)]
-        fn can_pause(&self) -> bool { true }
-        #[dbus_interface(property)]
-        fn can_seek(&self) -> bool { true }
-        #[dbus_interface(property)]
-        fn can_control(&self) -> bool { true }
-
-        fn next(&self)       { let _ = self.app_next.emit("mpris_next", ()); }
-        fn previous(&self)   { let _ = self.app_prev.emit("mpris_prev", ()); }
-        fn play_pause(&self) { let _ = self.app_pp.emit("mpris_play_pause", ()); }
-        fn play(&self)       { let _ = self.app_pp.emit("mpris_play_pause", ()); }
-        fn pause(&self)      { let _ = self.app_pp.emit("mpris_play_pause", ()); }
-        fn stop(&self)       { let _ = self.app_stop.emit("mpris_play_pause", ()); }
-
-        fn seek(&self, offset_us: i64) {
-            let cmd = format!(r#"{{"command": ["seek", {}, "relative"]}}"#, offset_us as f64 / 1_000_000.0);
-            let _ = send_ipc_command_with_retry(&cmd, 1);
-        }
-        fn set_position(&self, _track_id: ObjectPath<'_>, position_us: i64) {
-            let cmd = format!(r#"{{"command": ["seek", {}, "absolute"]}}"#, position_us as f64 / 1_000_000.0);
-            let _ = send_ipc_command_with_retry(&cmd, 1);
-        }
-        fn open_uri(&self, _uri: String) {}
-    }
-
-    let conn = ConnectionBuilder::session()?
-        .name("org.mpris.MediaPlayer2.vanguard")?
-        .serve_at("/org/mpris/MediaPlayer2", MediaPlayer2)?
-        .serve_at("/org/mpris/MediaPlayer2", Player { app_next, app_prev, app_pp, app_stop })?
-        .build()
-        .await?;
-
-    let player_iface: InterfaceRef<Player> = conn
-        .object_server()
-        .interface("/org/mpris/MediaPlayer2")
-        .await?;
-
-    loop {
-        let _ = rx.changed().await;
-        let iface = player_iface.get().await;
-        let ctxt  = player_iface.signal_context();
-        let _ = iface.playback_status_changed(ctxt).await;
-        let _ = iface.metadata_changed(ctxt).await;
-    }
-}
-
-fn main() {
-    
-    
-    
-    init_bin_paths();
-
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .setup(|app| {
-            use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
-
-            let handle = app.handle().clone();
-
-            #[cfg(target_os = "linux")]
-            start_mpris_server(handle.clone());
-
-
-            // Set window icon explicitly — required on Linux for taskbar icon
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_icon(tauri::include_image!("icons/128x128.png"));
-            }
-
-            let shortcuts = [
-                ("MediaPlayPause", "mpris_play_pause"),
-                ("MediaNextTrack",  "mpris_next"),
-                ("MediaPrevTrack",  "mpris_prev"),
+async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallResult, String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "linux")]
+        {
+            let pkg_managers: &[(&str, &[&str])] = &[
+                ("apt-get", &["apt-get", "install", "-y", "mpv", "ffmpeg", "python3-pip"]),
+                ("pacman",  &["pacman", "--noconfirm", "-S", "mpv", "ffmpeg"]),
+                ("dnf",     &["dnf", "install", "-y", "mpv", "ffmpeg"]),
+                ("zypper",  &["zypper", "install", "-y", "mpv", "ffmpeg"]),
             ];
 
-            for (key, event) in shortcuts {
-                if let Ok(shortcut) = key.parse::<Shortcut>() {
-                    let h = handle.clone();
-                    let ev = event.to_string();
-                    let _ = app.global_shortcut().on_shortcut(shortcut, move |_app, _sc, event| {
-                        if event.state == ShortcutState::Pressed {
-                            let _ = h.emit(&ev, ());
+            let mut installed = false;
+            let mut log = String::new();
+
+            for (mgr, pkg_args) in pkg_managers {
+                if Command::new("which").arg(mgr).output().map(|o| o.status.success()).unwrap_or(false) {
+                    log.push_str(&format!("Detected package manager: {}\n", mgr));
+                    let result = Command::new("sudo")
+                        .arg("-n").args(*pkg_args)
+                        .env("DEBIAN_FRONTEND", "noninteractive")
+                        .output()
+                        .or_else(|_| Command::new(pkg_args[0])
+                            .args(&pkg_args[1..])
+                            .env("DEBIAN_FRONTEND", "noninteractive")
+                            .output());
+                    match result {
+                        Ok(out) => {
+                            log.push_str(&String::from_utf8_lossy(&out.stdout));
+                            log.push_str(&String::from_utf8_lossy(&out.stderr));
+                            if out.status.success() { installed = true; }
+                            else {
+                                log.push_str(&format!("\nNote: may need sudo. Run: sudo {} {}\n",
+                                    pkg_args[0], pkg_args[1..].join(" ")));
+                            }
                         }
-                    });
+                        Err(e) => log.push_str(&format!("Error with {}: {}\n", mgr, e)),
+                    }
+                    break;
+                }
+            }
+            if !installed {
+                log.push_str("No supported package manager found (apt, pacman, dnf, zypper).\n");
+            }
+
+            log.push_str("\nInstalling yt-dlp via pip...\n");
+            for pip in &["pip3", "pip"] {
+                if let Ok(out) = Command::new(pip).args(["install", "--upgrade", "--user", "yt-dlp"]).output() {
+                    log.push_str(&String::from_utf8_lossy(&out.stdout));
+                    if out.status.success() { break; }
+                }
+            }
+            if Command::new("yt-dlp").arg("--version").output().is_err() {
+                let _ = Command::new("python3").args(["-m", "pip", "install", "--upgrade", "--user", "yt-dlp"]).output();
+            }
+
+            let check_cmd = |cmd: &str| -> bool {
+                let path = find_command(cmd);
+                if let Ok(out) = Command::new(&path).arg("--version").output() {
+                    if out.status.success() { return true; }
+                }
+                if let Ok(out) = Command::new(&path).arg("-version").output() {
+                    if out.status.success() { return true; }
+                }
+                false
+            };
+            let mpv     = check_cmd("mpv");
+            let yt_dlp  = check_cmd("yt-dlp");
+            let ffprobe = check_cmd("ffprobe");
+            let msg = format!(
+                "Installation complete.\nmpv: {}  yt-dlp: {}  ffprobe: {}\n{}",
+                if mpv     { "✓" } else { "✗ (install manually)" },
+                if yt_dlp  { "✓" } else { "✗ (run: pip3 install yt-dlp)" },
+                if ffprobe { "✓" } else { "✗ (part of ffmpeg)" },
+                if !installed { "No supported package manager found." } else { "" }
+            );
+            Ok(InstallResult { success: mpv || yt_dlp, message: msg })
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let mut log = String::new();
+            let mut success = false;
+
+            // shinchiro.mpv = official mpv Windows builds.
+            // mpv.net is a separate .NET wrapper app — does NOT provide the mpv binary.
+            let winget_ok = Command::new("winget")
+                .args(["install", "--id", "shinchiro.mpv", "-e",
+                       "--accept-source-agreements", "--accept-package-agreements"])
+                .output().map(|o| o.status.success()).unwrap_or(false);
+
+            if winget_ok {
+                let _ = Command::new("winget")
+                    .args(["install", "--id", "Gyan.FFmpeg", "-e",
+                           "--accept-source-agreements", "--accept-package-agreements"])
+                    .output();
+                success = true;
+                log.push_str("Installed via winget.\n");
+            } else {
+                let choco_ok = Command::new("choco")
+                    .args(["install", "mpv", "ffmpeg", "-y"])
+                    .output().map(|o| o.status.success()).unwrap_or(false);
+                if choco_ok {
+                    success = true;
+                    log.push_str("Installed via chocolatey.\n");
+                } else {
+                    log.push_str("winget and chocolatey not found.\nPlease install manually:\n\
+                        - mpv: https://mpv.io/installation/\n\
+                        - yt-dlp: https://github.com/yt-dlp/yt-dlp\n\
+                        - ffmpeg: https://ffmpeg.org/download.html\n");
                 }
             }
 
-            Ok(())
-        })
+            // Try all yt-dlp install paths
+            let _ = Command::new("winget")
+                .args(["install", "--id", "yt-dlp.yt-dlp", "-e",
+                       "--accept-source-agreements", "--accept-package-agreements"])
+                .output();
+            for pip in &["pip", "pip3"] {
+                if Command::new(pip).args(["install", "--upgrade", "yt-dlp"])
+                    .output().map(|o| o.status.success()).unwrap_or(false) { break; }
+            }
+            let _ = Command::new("python").args(["-m", "pip", "install", "--upgrade", "yt-dlp"]).output();
+
+            let mpv     = Command::new("mpv").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+            let yt_dlp  = Command::new("yt-dlp").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+            let ffprobe = Command::new("ffprobe").arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
+            let msg = format!(
+                "{}\nmpv: {}  yt-dlp: {}  ffprobe: {}",
+                log,
+                if mpv     { "✓" } else { "✗ (restart may be needed)" },
+                if yt_dlp  { "✓" } else { "✗ (restart may be needed)" },
+                if ffprobe { "✓" } else { "✗" },
+            );
+            Ok(InstallResult { success, message: msg })
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let mut log = String::new();
+            let mut success = false;
+
+            // Check if Homebrew is installed
+            // Try common Homebrew paths (Apple Silicon and Intel Macs)
+            let brew_path = if std::path::Path::new("/opt/homebrew/bin/brew").exists() {
+                "/opt/homebrew/bin/brew" // Apple Silicon
+            } else if std::path::Path::new("/usr/local/bin/brew").exists() {
+                "/usr/local/bin/brew" // Intel Mac
+            } else {
+                // Fallback to PATH search
+                if Command::new("which")
+                    .arg("brew")
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+                {
+                    "brew"
+                } else {
+                    log.push_str("Homebrew not found. Install from https://brew.sh\n");
+                    return Ok(InstallResult {
+                        success: false,
+                        message: log,
+                    });
+                }
+            };
+
+            log.push_str(&format!("Using Homebrew ({}) to install dependencies...\n", brew_path));
+
+            // Install mpv
+            let mpv_result = Command::new(brew_path)
+                .args(["install", "mpv"])
+                .output();
+            match mpv_result {
+                Ok(out) => {
+                    log.push_str(&String::from_utf8_lossy(&out.stdout));
+                    if out.status.success() {
+                        log.push_str("✓ mpv installed\n");
+                        success = true;
+                    } else {
+                        log.push_str("✗ mpv installation failed\n");
+                    }
+                }
+                Err(e) => log.push_str(&format!("Error installing mpv: {}\n", e)),
+            }
+
+            // Install ffmpeg
+            let ffmpeg_result = Command::new(brew_path)
+                .args(["install", "ffmpeg"])
+                .output();
+            match ffmpeg_result {
+                Ok(out) => {
+                    log.push_str(&String::from_utf8_lossy(&out.stdout));
+                    if out.status.success() {
+                        log.push_str("✓ ffmpeg installed\n");
+                    } else {
+                        log.push_str("✗ ffmpeg installation failed\n");
+                    }
+                }
+                Err(e) => log.push_str(&format!("Error installing ffmpeg: {}\n", e)),
+            }
+
+            // Install yt-dlp via pip
+            log.push_str("Installing yt-dlp via pip...\n");
+            for pip in &["pip3", "pip"] {
+                if let Ok(out) = Command::new(pip).args(["install", "--upgrade", "--user", "yt-dlp"]).output() {
+                    log.push_str(&String::from_utf8_lossy(&out.stdout));
+                    if out.status.success() {
+                        log.push_str("✓ yt-dlp installed\n");
+                        break;
+                    }
+                }
+            }
+
+            // Verify installations with full paths if needed
+            let check_cmd = |cmd: &str| -> bool {
+                // First try direct command
+                if let Ok(out) = Command::new(cmd).arg("--version").output() {
+                    if out.status.success() {
+                        return true;
+                    }
+                } 
+                if let Ok(out) = Command::new(cmd).arg("-version").output() {
+                    if out.status.success() {
+                        return true;
+                    }
+                }
+                
+                // Try with Homebrew paths for Apple Silicon and Intel
+                for base_path in &["/opt/homebrew/bin", "/usr/local/bin"] {
+                    let full_path = format!("{}/{}", base_path, cmd);
+                    if let Ok(out) = Command::new(&full_path).arg("--version").output() {
+                        if out.status.success() {
+                            return true;
+                        }
+                    }
+                    if let Ok(out) = Command::new(&full_path).arg("-version").output() {
+                        if out.status.success() {
+                            return true;
+                        }
+                    }
+                }
+                
+                false
+            };
+
+            let mpv     = check_cmd("mpv");
+            let yt_dlp  = check_cmd("yt-dlp");
+            let ffprobe = check_cmd("ffprobe");
+
+            log.push_str(&format!("\n─── Installation Status ───\n"));
+            log.push_str(&format!("mpv: {}  yt-dlp: {}  ffprobe: {}\n",
+                if mpv     { "✓" } else { "✗" },
+                if yt_dlp  { "✓" } else { "✗" },
+                if ffprobe { "✓" } else { "✗" }
+            ));
+
+            Ok(InstallResult { success: success || mpv || yt_dlp, message: log })
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+        { Ok(InstallResult { success: false, message: "Unsupported platform".to_string() }) }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn ping() -> String { "pong".to_string() }
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             ping,
-            check_for_update,
-            set_mpris_metadata,
-            update_mpris_playback,
+            check_dependencies,
+            install_dependencies,
+            get_yt_dlp_version,
+            update_yt_dlp,
             search_youtube,
             prefetch_track,
             import_csv_playlist,
