@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "vanguard-player",
+        "label": "main",
+        "title": "Vanguard Player",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600
       }
     ],
     "security": {
@@ -23,13 +26,34 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["deb", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico",
       "icons/icon.png"
-    ]
+    ],
+    "resources": {
+      "binaries/mpv-x86_64-pc-windows-msvc.exe": "mpv.exe",
+      "binaries/yt-dlp-x86_64-pc-windows-msvc.exe": "yt-dlp.exe",
+      "binaries/ffmpeg-x86_64-pc-windows-msvc.exe": "ffmpeg.exe",
+      "binaries/ffprobe-x86_64-pc-windows-msvc.exe": "ffprobe.exe"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "mpv",
+          "yt-dlp | python3-yt-dlp",
+          "ffmpeg"
+        ]
+      }
+    },
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "installMode": "currentUser"
+      }
+    }
   }
 }
