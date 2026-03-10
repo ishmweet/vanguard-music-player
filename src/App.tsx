@@ -5,17 +5,16 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Home, Search, Play, Pause, SkipBack, SkipForward,
-  ListMusic, Heart, DownloadCloud, Music, Volume2, VolumeX,
+  ListMusic, Heart, Music, Volume2, VolumeX,
   MoreVertical, ListPlus, Share2, Download, ExternalLink, Copy,
-  Info, X, Clock, Youtube, Disc, Hash, FileCode2, PlaySquare,
+  Info, X, Clock, Youtube, Hash, FileCode2, PlaySquare,
   PlusCircle, FileBadge2, Settings, RefreshCw, FolderDown,
   Shuffle, Repeat, Repeat1, ListOrdered, Trash2, Pencil,
   ChevronRight, ChevronLeft, ImagePlus, AlignLeft, HardDrive,
-  FileMusic, AlertCircle, Gauge, Sliders, Moon, FolderOpen,
-  PackageCheck, RotateCcw, Timer, Zap, BarChart2, FileOutput,
+  FileMusic, AlertCircle, Gauge, Moon, FolderOpen,
+  RotateCcw, Zap, BarChart2, FileOutput,
   CheckCircle, WifiOff, Database, Upload, ArchiveRestore,
-  AlertTriangle, Terminal, ChevronDown, Sparkles, ArrowLeft,
-  Loader2, Link2, CheckCircle2, XCircle
+  AlertTriangle, Terminal, ChevronDown, Loader2, CheckCircle2, XCircle, ArrowUpCircle
 } from 'lucide-react';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -63,8 +62,7 @@ type AudioInfo = { codec: string; bitrate: number; samplerate: number; channels:
 type DiskInfo = { used_bytes: number; track_count: number };
 type BatchProgress = { index: number; total: number; title: string; success: boolean; error?: string };
 type InstallResult = { success: boolean; message: string };
-type SettingsTab = 'dependencies' | 'downloads' | 'storage';
-type NavPage = 'home' | 'downloads' | 'settings' | 'library' | 'stats';
+type SettingsTab = 'updates' | 'downloads' | 'playback' | 'storage';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function parseDurationToSeconds(d: string): number {
@@ -103,7 +101,8 @@ function clampMenu(x: number, y: number, w = 260, h = 320) {
 async function safeInvoke<T = unknown>(cmd: string, args?: Record<string, unknown>, retries = 3): Promise<T> {
   for (let i = 0; i < retries; i++) {
     try {
-      if (!window.__TAURI_INTERNALS__) {
+      const win = window as unknown as { __TAURI_INTERNALS__?: unknown };
+      if (!win.__TAURI_INTERNALS__) {
         if (i < retries - 1) {
           await new Promise(resolve => setTimeout(resolve, 100));
           continue;
@@ -120,25 +119,26 @@ async function safeInvoke<T = unknown>(cmd: string, args?: Record<string, unknow
 }
 
 // ─── SLEEP TIMER BUTTON (top-right, animated) ─────────────────────────────────
-const SleepTimerButton = React.memo(({
-  sleepTimer, onOpen,
-}: { sleepTimer: number; onOpen: () => void }) => {
-  const active = sleepTimer > 0;
-  const mins = active ? Math.ceil(sleepTimer / 60) : 0;
-  return (
-    <button
-      onClick={onOpen}
-      title={active ? `Sleep in ${mins}m, click to change` : 'Set sleep timer'}
-      className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300
-        ${active
-          ? 'bg-amber-500/15 border border-amber-500/40 text-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.2)]'
-          : 'text-neutral-600 hover:text-neutral-400 border border-transparent hover:border-neutral-800'}`}
-    >
-      <Moon size={13} className={active ? 'animate-pulse' : ''} />
-      {active && <span className="tabular-nums">{mins}m</span>}
-    </button>
-  );
-});
+// Commented out - not currently used
+// const SleepTimerButton = React.memo(({
+//   sleepTimer, onOpen,
+// }: { sleepTimer: number; onOpen: () => void }) => {
+//   const active = sleepTimer > 0;
+//   const mins = active ? Math.ceil(sleepTimer / 60) : 0;
+//   return (
+//     <button
+//       onClick={onOpen}
+//       title={active ? `Sleep in ${mins}m, click to change` : 'Set sleep timer'}
+//       className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300
+//         ${active
+//           ? 'bg-amber-500/15 border border-amber-500/40 text-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.2)]'
+//           : 'text-neutral-600 hover:text-neutral-400 border border-transparent hover:border-neutral-800'}`}
+//     >
+//       <Moon size={13} className={active ? 'animate-pulse' : ''} />
+//       {active && <span className="tabular-nums">{mins}m</span>}
+//     </button>
+//   );
+// });
 
 // ─── INFO HINT BUTTON ────────────────────────────────────────────────────────
 const InfoHintButton = React.memo(({ onClick }: { onClick: () => void }) => (
@@ -499,7 +499,7 @@ function CsvImportModal({
     const total = initial.length;
     let completed = 0;
 
-    const semaphore = new Array(CONCURRENCY).fill(null);
+    // const semaphore = new Array(CONCURRENCY).fill(null);
     const matched: Track[] = [];
     let failed = 0;
 
@@ -508,7 +508,7 @@ function CsvImportModal({
       setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: 'fetching' } : r));
       try {
         const q = `${track.title} ${track.artist} audio`;
-        const res: string = await invoke('search_youtube', { query: q });
+        const res: string = await invoke<string>('search_youtube', { query: q });
         const firstLine = res.trim().split('\n')[0];
         const parts = firstLine?.split('====') || [];
         const cleanId = parts[3]?.trim();
@@ -683,7 +683,7 @@ function YtImportModal({
     setPhase('loading');
     setStatusMsg('Fetching playlist from YouTube...');
     try {
-      const raw: string = await invoke('import_youtube_playlist', { url: trimmed });
+      const raw: string = await invoke<string>('import_youtube_playlist', { url: trimmed });
       const lines = raw.trim().split('\n').filter(Boolean);
       const parsed = lines.map(l => {
         const [title, artist, , id] = l.split('====');
@@ -794,33 +794,30 @@ function YtImportModal({
 
 function SettingsPanel({
   downloadQuality, setDownloadQuality, downloadPath, handleSelectDirectory,
-  playbackSpeed, setPlaybackSpeed, eq, setEq,
-  sleepTimer, setSleepTimerMinutes, cancelSleepTimer,
   deps, setDeps, ytDlpVersion, setYtDlpVersion,
   onUpdateYtDlp, isUpdatingYtDlp,
   onBackup, onRestore,
   backupPath, setBackupPath,
   cachePath, setCachePath,
-  crossfadeSeconds, setCrossfadeSeconds,
   loudnormEnabled, setLoudnormEnabled,
   showToast,
 }: {
   downloadQuality: string; setDownloadQuality: (q: string) => void;
   downloadPath: string; handleSelectDirectory: () => void;
-  playbackSpeed: number; setPlaybackSpeed: (s: number) => void;
-  eq: { bass: number; mid: number; treble: number }; setEq: (eq: { bass: number; mid: number; treble: number }) => void;
-  sleepTimer: number; setSleepTimerMinutes: (m: number) => void; cancelSleepTimer: () => void;
+  playbackSpeed?: number; setPlaybackSpeed?: (s: number) => void;
+  eq?: { bass: number; mid: number; treble: number }; setEq?: (eq: { bass: number; mid: number; treble: number }) => void;
+  sleepTimer?: number; setSleepTimerMinutes?: (m: number) => void; cancelSleepTimer?: () => void;
   deps: DepsStatus | null; setDeps: (d: DepsStatus) => void;
   ytDlpVersion: string; setYtDlpVersion: (v: string) => void;
   onUpdateYtDlp: () => void; isUpdatingYtDlp: boolean;
   onBackup: () => void; onRestore: () => void;
   backupPath: string; setBackupPath: (p: string) => void;
   cachePath: string; setCachePath: (p: string) => void;
-  crossfadeSeconds: number; setCrossfadeSeconds: (s: number) => void;
+  crossfadeSeconds?: number; setCrossfadeSeconds?: (s: number) => void;
   loudnormEnabled: boolean; setLoudnormEnabled: (e: boolean) => void;
   showToast: (m: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('dependencies');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('updates');
   const [isInstalling, setIsInstalling] = useState(false);
   const [installLog, setInstallLog] = useState('');
   const [diskInfo, setDiskInfo] = useState<DiskInfo | null>(null);
@@ -845,7 +842,7 @@ function SettingsPanel({
       // Re-check
       const d: DepsStatus = await invoke('check_dependencies');
       setDeps(d);
-        const v: string = await invoke('get_yt_dlp_version').catch(() => '');
+        const v: string = await invoke<string>('get_yt_dlp_version').catch(() => '');
       setYtDlpVersion(v);
     } catch (e) {
       setInstallLog(`Error: ${e}`);
@@ -855,8 +852,9 @@ function SettingsPanel({
   };
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'dependencies', label: 'Dependencies', icon: <PackageCheck size={15} /> },
+    { id: 'updates', label: 'Updates', icon: <ArrowUpCircle size={15} /> },
     { id: 'downloads', label: 'Downloads', icon: <FolderDown size={15} /> },
+    { id: 'playback', label: 'Playback', icon: <Zap size={15} /> },
     { id: 'storage', label: 'Storage', icon: <Database size={15} /> },
   ];
 
@@ -875,7 +873,7 @@ function SettingsPanel({
                 : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.03] border border-transparent'}`}>
             <span className={activeTab === tab.id ? 'text-[#39FF14]' : 'text-neutral-600'}>{tab.icon}</span>
             {tab.label}
-            {tab.id === 'dependencies' && deps && (!deps.mpv || !deps.yt_dlp) && (
+            {tab.id === 'updates' && deps && (!deps.mpv || !deps.yt_dlp) && (
               <span className="ml-auto w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
             )}
           </button>
@@ -886,7 +884,7 @@ function SettingsPanel({
       <div className="flex-1 overflow-y-auto px-8 py-8 custom-scrollbar">
 
         {/* ── DEPENDENCIES ── */}
-        {activeTab === 'dependencies' && (
+        {activeTab === 'updates' && (
           <div className="space-y-5">
             <div>
               <h2 className="text-xl font-bold text-white mb-1">Dependencies</h2>
@@ -1183,7 +1181,7 @@ function DownloadsPanel({
         } catch { return t; }
       }));
       setTracks(enriched.map(r => r.status === 'fulfilled' ? r.value : (r as PromiseRejectedResult).reason));
-      const di: DiskInfo = await invoke('get_disk_usage', { path: downloadPath }).catch(() => null);
+      const di: DiskInfo | null = (await invoke<DiskInfo>('get_disk_usage', { path: downloadPath }).catch(() => null)) || null;
       if (di) setDiskInfo(di);
     } catch (e) { setError(String(e)); }
     finally { setScanning(false); }
@@ -1194,7 +1192,7 @@ function DownloadsPanel({
   const confirmRename = async () => {
     if (!renaming || !renameVal.trim()) return;
     try {
-      const newPath: string = await invoke('rename_local_file', { oldPath: renaming.path, newTitle: renameVal.trim() });
+      const newPath: string = await invoke<string>('rename_local_file', { oldPath: renaming.path, newTitle: renameVal.trim() });
       setTracks(prev => prev.map(t => t.path === renaming.path ? { ...t, title: renameVal.trim(), path: newPath } : t));
       setRenaming(null);
     } catch (e) { setError(String(e)); }
@@ -1366,7 +1364,7 @@ export default function VanguardPlayer() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchHistory, setSearchHistory] = useState<string[]>(() => loadLS('vg_searchHistory', []));
   const [showHistory, setShowHistory] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [, setHasSearched] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(() => loadLS('vg_currentTrack', null));
   const [currentLocalPath, setCurrentLocalPath] = useState<string | null>(null);
   const currentLocalPathRef = useRef<string | null>(null);
@@ -1377,7 +1375,7 @@ export default function VanguardPlayer() {
 
   const [isLoadingTrack, setIsLoadingTrack] = useState(false);
   const [activeNav, setActiveNav] = useState('home');
-  const [navHistory, setNavHistory] = useState<string[]>([]);
+  const [, setNavHistory] = useState<string[]>([]);
 
   // Wrap setActiveNav to push to history
   const navigateTo = useCallback((nav: string) => {
@@ -1501,7 +1499,7 @@ export default function VanguardPlayer() {
   const [showInfoHint, setShowInfoHint] = useState(false);
   const infoHintBtnRef = useRef<HTMLDivElement>(null);
   const [infoHintPos, setInfoHintPos] = useState<{ top: number; left: number } | null>(null);
-  const sleepPopoverRef = useRef<HTMLDivElement>(null);
+  // const sleepPopoverRef = useRef<HTMLDivElement>(null);
 
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1665,9 +1663,9 @@ export default function VanguardPlayer() {
   const handleUpdateYtDlp = useCallback(async () => {
     setIsUpdatingYtDlp(true);
     try {
-      const r: string = await invoke('update_yt_dlp');
+      const r: string = await invoke<string>('update_yt_dlp');
       showToast(r.includes('up-to-date') ? 'yt-dlp is up to date' : 'yt-dlp updated');
-      const v: string = await invoke('get_yt_dlp_version').catch(() => '');
+      const v: string = await invoke<string>('get_yt_dlp_version').catch(() => '');
       setYtDlpVersion(v);
       const d: DepsStatus = await invoke('check_dependencies');
       setDeps(d);
@@ -2252,7 +2250,7 @@ export default function VanguardPlayer() {
     setIsSearching(true); setTracks([]); setShowHistory(false); setHasSearched(true);
     setSearchHistory(prev => [q, ...prev.filter(h => h !== q)].slice(0, 8));
     try {
-      const res: string = await invoke('search_youtube', { query: q });
+      const res: string = await invoke<string>('search_youtube', { query: q });
       const parsed = res.trim().split('\n').filter(Boolean).map((line, i) => {
         const [title, artist, duration, id] = line.split('====');
         const cleanId = id?.trim();

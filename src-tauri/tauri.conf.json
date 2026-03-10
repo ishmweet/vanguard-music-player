@@ -26,7 +26,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "nsis"],
+    "targets": ["deb", "dmg", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -34,12 +34,6 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "resources": {
-      "binaries/mpv-x86_64-pc-windows-msvc.exe": "mpv.exe",
-      "binaries/yt-dlp-x86_64-pc-windows-msvc.exe": "yt-dlp.exe",
-      "binaries/ffmpeg-x86_64-pc-windows-msvc.exe": "ffmpeg.exe",
-      "binaries/ffprobe-x86_64-pc-windows-msvc.exe": "ffprobe.exe"
-    },
     "linux": {
       "deb": {
         "depends": [

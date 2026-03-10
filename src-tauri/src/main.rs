@@ -116,6 +116,30 @@ fn safe_f64(v: f64) -> f64 {
     if v.is_finite() { v } else { 0.0 }
 }
 
+// ── Helper: Find command in PATH and common Homebrew paths ───────────────────
+
+fn find_command(cmd: &str) -> String {
+    // Try direct command first
+    if Command::new("which").arg(cmd).output()
+        .map(|o| o.status.success()).unwrap_or(false) {
+        return cmd.to_string();
+    }
+    
+    // Try Homebrew paths on macOS
+    #[cfg(target_os = "macos")]
+    {
+        for base_path in &["/opt/homebrew/bin", "/usr/local/bin"] {
+            let full_path = format!("{}/{}", base_path, cmd);
+            if std::path::Path::new(&full_path).exists() {
+                return full_path;
+            }
+        }
+    }
+    
+    // Fallback to command name (will fail gracefully later)
+    cmd.to_string()
+}
+
 // ── Dependency checker ────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -124,9 +148,24 @@ struct DepsStatus { mpv: bool, yt_dlp: bool, ffprobe: bool }
 #[tauri::command]
 async fn check_dependencies() -> Result<DepsStatus, String> {
     tokio::task::spawn_blocking(|| {
-        let mpv     = Command::new("mpv").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        let yt_dlp  = Command::new("yt-dlp").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        let ffprobe = Command::new("ffprobe").arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
+        let check_cmd = |cmd: &str| -> bool {
+            let path = find_command(cmd);
+            if let Ok(out) = Command::new(&path).arg("--version").output() {
+                if out.status.success() {
+                    return true;
+                }
+            }
+            if let Ok(out) = Command::new(&path).arg("-version").output() {
+                if out.status.success() {
+                    return true;
+                }
+            }
+            false
+        };
+        
+        let mpv     = check_cmd("mpv");
+        let yt_dlp  = check_cmd("yt-dlp");
+        let ffprobe = check_cmd("ffprobe");
         Ok(DepsStatus { mpv, yt_dlp, ffprobe })
     })
     .await
@@ -138,9 +177,27 @@ async fn check_dependencies() -> Result<DepsStatus, String> {
 #[tauri::command]
 async fn get_yt_dlp_version() -> Result<String, String> {
     tokio::task::spawn_blocking(|| {
-        let out = Command::new("yt-dlp").arg("--version")
-            .output().map_err(|_| "yt-dlp not found".to_string())?;
-        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+        // Try direct command first
+        if let Ok(out) = Command::new("yt-dlp").arg("--version").output() {
+            if out.status.success() {
+                return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
+            }
+        }
+        
+        // Try Homebrew paths
+        #[cfg(target_os = "macos")]
+        {
+            for base_path in &["/opt/homebrew/bin", "/usr/local/bin"] {
+                let full_path = format!("{}/yt-dlp", base_path);
+                if let Ok(out) = Command::new(&full_path).arg("--version").output() {
+                    if out.status.success() {
+                        return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
+                    }
+                }
+            }
+        }
+        
+        Err("yt-dlp not found".to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -149,7 +206,25 @@ async fn get_yt_dlp_version() -> Result<String, String> {
 #[tauri::command]
 async fn update_yt_dlp() -> Result<String, String> {
     tokio::task::spawn_blocking(|| {
-        let out = Command::new("yt-dlp").arg("-U")
+        let yt_dlp_cmd = "yt-dlp";
+        
+        // Try Homebrew paths first on macOS
+        #[cfg(target_os = "macos")]
+        {
+            for base_path in &["/opt/homebrew/bin", "/usr/local/bin"] {
+                let full_path = format!("{}/yt-dlp", base_path);
+                if let Ok(out) = Command::new(&full_path).arg("-U").output() {
+                    if out.status.success() || !out.stdout.is_empty() {
+                        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                        return Ok(if stdout.trim().is_empty() { stderr } else { stdout });
+                    }
+                }
+            }
+        }
+        
+        // Fall back to direct command
+        let out = Command::new(yt_dlp_cmd).arg("-U")
             .output().map_err(|_| "yt-dlp not found".to_string())?;
         let stdout = String::from_utf8_lossy(&out.stdout).to_string();
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
@@ -164,7 +239,8 @@ async fn update_yt_dlp() -> Result<String, String> {
 #[tauri::command]
 async fn search_youtube(query: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let mut child = Command::new("yt-dlp")
+        let yt_dlp_path = find_command("yt-dlp");
+        let mut child = Command::new(&yt_dlp_path)
             .args([
                 &format!("ytsearch10:{}", query),
                 "--flat-playlist",
@@ -343,7 +419,8 @@ async fn prefetch_track(url: String) -> Result<(), String> {
     tokio::spawn(async move {
         let url_clone = url.clone();
         let result = tokio::task::spawn_blocking(move || {
-            Command::new("yt-dlp")
+            let yt_dlp_path = find_command("yt-dlp");
+            Command::new(&yt_dlp_path)
                 .args([
                     "--print", "urls",
                     "--format", "bestaudio[ext=webm]/bestaudio/best",
@@ -464,6 +541,9 @@ async fn play_audio(url: String) -> Result<(), String> {
         kill_mpv();
         cleanup_socket();
 
+        // Find yt-dlp path for mpv's ytdl_hook
+        let yt_dlp_path = find_command("yt-dlp");
+
         // [C4] Build args as Vec so --af is only included when loudnorm is on.
         // `--af=` (empty) causes "Error parsing option af" on most mpv builds.
         let mut args: Vec<String> = vec![
@@ -480,7 +560,7 @@ async fn play_audio(url: String) -> Result<(), String> {
         ];
         if let Some(af) = mpv_af_flag() { args.push(af); }
         args.extend([
-            "--script-opts=ytdl_hook-ytdl_path=yt-dlp".into(),
+            format!("--script-opts=ytdl_hook-ytdl_path={}", yt_dlp_path),
             "--ytdl-format=bestaudio[ext=webm]/bestaudio/best".into(),
             "--ytdl-raw-options=ignore-config=,no-check-certificates=,retries=2,fragment-retries=2,concurrent-fragments=4,socket-timeout=10".into(),
             format!("--input-ipc-server={}", SOCKET_PATH),
@@ -491,7 +571,8 @@ async fn play_audio(url: String) -> Result<(), String> {
             actual_url,
         ]);
 
-        Command::new("mpv").args(&args)
+        let mpv_path = find_command("mpv");
+        Command::new(&mpv_path).args(&args)
             .spawn()
             .map_err(|e| format!("mpv not found or failed to start: {}", e))?;
 
@@ -531,7 +612,8 @@ async fn play_local_file(path: String) -> Result<(), String> {
             safe_path,
         ]);
 
-        Command::new("mpv").args(&args)
+        let mpv_path = find_command("mpv");
+        Command::new(&mpv_path).args(&args)
             .spawn()
             .map_err(|e| format!("mpv not found or failed to start: {}", e))?;
 
@@ -815,7 +897,8 @@ async fn download_song(url: String, quality: String, path: String) -> Result<Str
         } else {
             format!("{}{}%(title)s.%(ext)s", resolved_path, sep)
         };
-        let output = Command::new("yt-dlp")
+        let yt_dlp_path = find_command("yt-dlp");
+        let output = Command::new(&yt_dlp_path)
             .args(["-f", format, "--extract-audio", "--audio-format", "mp3",
                    "--audio-quality", audio_quality, "--embed-thumbnail", "--add-metadata",
                    "--no-check-certificates", "--no-warnings", "-o", &output_template, &url])
@@ -870,7 +953,8 @@ async fn batch_download(
             };
             let sep = std::path::MAIN_SEPARATOR;
             let tpl = format!("{}{}%(title)s.%(ext)s", path_clone, sep);
-            let out = Command::new("yt-dlp")
+            let yt_dlp_path = find_command("yt-dlp");
+            let out = Command::new(&yt_dlp_path)
                 .args(["-f", format, "--extract-audio", "--audio-format", "mp3",
                        "--audio-quality", audio_quality, "--embed-thumbnail", "--add-metadata",
                        "--no-check-certificates", "--no-warnings", "-o", &tpl, &url_clone])
@@ -984,7 +1068,8 @@ struct AudioMetadata { title: String, artist: String, album: String, duration: S
 #[tauri::command]
 async fn get_audio_metadata(path: String) -> Result<AudioMetadata, String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new("ffprobe")
+        let ffprobe_path = find_command("ffprobe");
+        let output = Command::new(&ffprobe_path)
             .args(["-v", "quiet", "-print_format", "json", "-show_format", &path])
             .output()
             .map_err(|_| "ffprobe not found — install ffmpeg".to_string())?;
@@ -1013,7 +1098,8 @@ async fn get_audio_metadata(path: String) -> Result<AudioMetadata, String> {
 #[tauri::command]
 async fn get_waveform_thumbnail(path: String) -> Result<Vec<f32>, String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new("ffmpeg")
+        let ffmpeg_path = find_command("ffmpeg");
+        let output = Command::new(&ffmpeg_path)
             .args(["-i", &path, "-ac", "1", "-ar", "500", "-f", "f32le", "-"])
             .output()
             .map_err(|_| "ffmpeg not found".to_string())?;
@@ -1476,9 +1562,19 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
                 let _ = Command::new("python3").args(["-m", "pip", "install", "--upgrade", "--user", "yt-dlp"]).output();
             }
 
-            let mpv     = Command::new("mpv").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-            let yt_dlp  = Command::new("yt-dlp").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-            let ffprobe = Command::new("ffprobe").arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
+            let check_cmd = |cmd: &str| -> bool {
+                let path = find_command(cmd);
+                if let Ok(out) = Command::new(&path).arg("--version").output() {
+                    if out.status.success() { return true; }
+                }
+                if let Ok(out) = Command::new(&path).arg("-version").output() {
+                    if out.status.success() { return true; }
+                }
+                false
+            };
+            let mpv     = check_cmd("mpv");
+            let yt_dlp  = check_cmd("yt-dlp");
+            let ffprobe = check_cmd("ffprobe");
             let msg = format!(
                 "Installation complete.\nmpv: {}  yt-dlp: {}  ffprobe: {}\n{}",
                 if mpv     { "✓" } else { "✗ (install manually)" },
@@ -1553,24 +1649,33 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
             let mut success = false;
 
             // Check if Homebrew is installed
-            let brew_exists = Command::new("which")
-                .arg("brew")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
+            // Try common Homebrew paths (Apple Silicon and Intel Macs)
+            let brew_path = if std::path::Path::new("/opt/homebrew/bin/brew").exists() {
+                "/opt/homebrew/bin/brew" // Apple Silicon
+            } else if std::path::Path::new("/usr/local/bin/brew").exists() {
+                "/usr/local/bin/brew" // Intel Mac
+            } else {
+                // Fallback to PATH search
+                if Command::new("which")
+                    .arg("brew")
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+                {
+                    "brew"
+                } else {
+                    log.push_str("Homebrew not found. Install from https://brew.sh\n");
+                    return Ok(InstallResult {
+                        success: false,
+                        message: log,
+                    });
+                }
+            };
 
-            if !brew_exists {
-                log.push_str("Homebrew not found. Install from https://brew.sh\n");
-                return Ok(InstallResult {
-                    success: false,
-                    message: log,
-                });
-            }
-
-            log.push_str("Using Homebrew to install dependencies...\n");
+            log.push_str(&format!("Using Homebrew ({}) to install dependencies...\n", brew_path));
 
             // Install mpv
-            let mpv_result = Command::new("brew")
+            let mpv_result = Command::new(brew_path)
                 .args(["install", "mpv"])
                 .output();
             match mpv_result {
@@ -1587,7 +1692,7 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
             }
 
             // Install ffmpeg
-            let ffmpeg_result = Command::new("brew")
+            let ffmpeg_result = Command::new(brew_path)
                 .args(["install", "ffmpeg"])
                 .output();
             match ffmpeg_result {
@@ -1614,9 +1719,41 @@ async fn install_dependencies(_app_handle: tauri::AppHandle) -> Result<InstallRe
                 }
             }
 
-            let mpv     = Command::new("mpv").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-            let yt_dlp  = Command::new("yt-dlp").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-            let ffprobe = Command::new("ffprobe").arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
+            // Verify installations with full paths if needed
+            let check_cmd = |cmd: &str| -> bool {
+                // First try direct command
+                if let Ok(out) = Command::new(cmd).arg("--version").output() {
+                    if out.status.success() {
+                        return true;
+                    }
+                } 
+                if let Ok(out) = Command::new(cmd).arg("-version").output() {
+                    if out.status.success() {
+                        return true;
+                    }
+                }
+                
+                // Try with Homebrew paths for Apple Silicon and Intel
+                for base_path in &["/opt/homebrew/bin", "/usr/local/bin"] {
+                    let full_path = format!("{}/{}", base_path, cmd);
+                    if let Ok(out) = Command::new(&full_path).arg("--version").output() {
+                        if out.status.success() {
+                            return true;
+                        }
+                    }
+                    if let Ok(out) = Command::new(&full_path).arg("-version").output() {
+                        if out.status.success() {
+                            return true;
+                        }
+                    }
+                }
+                
+                false
+            };
+
+            let mpv     = check_cmd("mpv");
+            let yt_dlp  = check_cmd("yt-dlp");
+            let ffprobe = check_cmd("ffprobe");
 
             log.push_str(&format!("\n─── Installation Status ───\n"));
             log.push_str(&format!("mpv: {}  yt-dlp: {}  ffprobe: {}\n",
