@@ -705,7 +705,6 @@ function SettingsPanel({
   embedThumbnail, setEmbedThumbnail,
   duplicateDetect, setDuplicateDetect,
   continueWhereLO, setContinueWhereLO,
-  autoPauseUnplug, setAutoPauseUnplug,
   onBackup, onRestore,
   backupPath, setBackupPath,
   cachePath, setCachePath,
@@ -719,7 +718,6 @@ function SettingsPanel({
   embedThumbnail: boolean; setEmbedThumbnail: (v: boolean) => void;
   duplicateDetect: boolean; setDuplicateDetect: (v: boolean) => void;
   continueWhereLO: boolean; setContinueWhereLO: (v: boolean) => void;
-  autoPauseUnplug: boolean; setAutoPauseUnplug: (v: boolean) => void;
   onBackup: () => void; onRestore: () => void;
   backupPath: string; setBackupPath: (p: string) => void;
   cachePath: string; setCachePath: (p: string) => void;
@@ -947,16 +945,6 @@ function SettingsPanel({
                 <button onClick={() => setContinueWhereLO(!continueWhereLO)}
                   className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${continueWhereLO ? 'bg-[#39FF14]/80 shadow-[0_0_10px_rgba(57,255,20,0.3)]' : 'bg-neutral-700'}`}>
                   <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${continueWhereLO ? 'left-5' : 'left-0.5'}`} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between px-5 py-4">
-                <div>
-                  <p className="text-sm font-medium text-white">Auto-pause on Headphone Unplug</p>
-                  <p className="text-xs text-neutral-600 mt-1">{autoPauseUnplug ? 'Pauses when audio output device disconnects' : 'Continues playing on device disconnect'}</p>
-                </div>
-                <button onClick={() => setAutoPauseUnplug(!autoPauseUnplug)}
-                  className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${autoPauseUnplug ? 'bg-[#39FF14]/80 shadow-[0_0_10px_rgba(57,255,20,0.3)]' : 'bg-neutral-700'}`}>
-                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${autoPauseUnplug ? 'left-5' : 'left-0.5'}`} />
                 </button>
               </div>
             </div>
@@ -1466,6 +1454,7 @@ export default function VanguardPlayer() {
     loadLS('vg_playlists', [{ id: 'p1', name: 'Liked Songs', description: '', tracks: [] }])
   );
   const [openPlaylistId, setOpenPlaylistId] = useState<string | null>(null);
+  const [playlistSearchQ, setPlaylistSearchQ] = useState('');
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
@@ -1493,7 +1482,6 @@ export default function VanguardPlayer() {
   const [embedThumbnail, setEmbedThumbnailState] = useState<boolean>(() => loadLS('vg_embedThumb', true));
   const [duplicateDetect, setDuplicateDetectState] = useState<boolean>(() => loadLS('vg_dupDetect', true));
   const [continueWhereLO, setContinueWhereLOState] = useState<boolean>(() => loadLS('vg_continueWhere', false));
-  const [autoPauseUnplug, setAutoPauseUnplugState] = useState<boolean>(() => loadLS('vg_autoPause', false));
   const trackPositionsRef = useRef<Record<string, number>>(loadLS('vg_trackPositions', {}));
   const [downloadPath, setDownloadPath] = useState<string>(() => loadLS('vg_dlPath', '~/Downloads'));
   const [backupPath, setBackupPathState] = useState<string>(() => loadLS('vg_backupPath', ''));
@@ -1588,7 +1576,6 @@ export default function VanguardPlayer() {
   useEffect(() => { saveLS('vg_embedThumb', embedThumbnail); }, [embedThumbnail]);
   useEffect(() => { saveLS('vg_dupDetect', duplicateDetect); }, [duplicateDetect]);
   useEffect(() => { saveLS('vg_continueWhere', continueWhereLO); }, [continueWhereLO]);
-  useEffect(() => { saveLS('vg_autoPause', autoPauseUnplug); }, [autoPauseUnplug]);
   useEffect(() => { saveLS('vg_dlPath', downloadPath); }, [downloadPath]);
   useEffect(() => { saveLS('vg_quickPicks', quickPicks); }, [quickPicks]);
   useEffect(() => { saveLS('vg_speed', playbackSpeed); }, [playbackSpeed]);
@@ -2084,35 +2071,9 @@ export default function VanguardPlayer() {
     return () => window.removeEventListener('keydown', h);
   }, [togglePlayPause, toggleMute]);
 
-  const autoPauseUnplugRef = useRef(autoPauseUnplug);
-  useEffect(() => { autoPauseUnplugRef.current = autoPauseUnplug; }, [autoPauseUnplug]);
 
   const continueWhereLORef = useRef(continueWhereLO);
   useEffect(() => { continueWhereLORef.current = continueWhereLO; }, [continueWhereLO]);
-
-  useEffect(() => {
-    if (!navigator.mediaDevices) return;
-    let prevOutputs: string[] = [];
-    const getOutputIds = async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        return devices.filter(d => d.kind === 'audiooutput').map(d => d.deviceId);
-      } catch { return []; }
-    };
-    getOutputIds().then(ids => { prevOutputs = ids; });
-    const h = async () => {
-      if (!autoPauseUnplugRef.current) return;
-      const current = await getOutputIds();
-      const removed = prevOutputs.filter(id => !current.includes(id));
-      if (removed.length > 0 && isPlayingRef.current) {
-        togglePlayPause();
-        showToast('Paused — audio device disconnected');
-      }
-      prevOutputs = current;
-    };
-    navigator.mediaDevices.addEventListener('devicechange', h);
-    return () => navigator.mediaDevices.removeEventListener('devicechange', h);
-  }, [togglePlayPause, showToast]);
 
   
   const handleTrackEnd = useCallback(() => {
@@ -2448,7 +2409,7 @@ export default function VanguardPlayer() {
   }, [showToast]);
 
   const isTrackLiked = useCallback((url: string) => playlists.find(p => p.id === 'p1')?.tracks.some(t => t.url === url) || false, [playlists]);
-  const getPlaylistCover = (p: Playlist) => p.customCover || p.tracks[0]?.cover || null;
+  const getPlaylistCover = (p: Playlist) => p.id === 'p1' ? null : (p.customCover || p.tracks[0]?.cover || null);
 
   const playAll = useCallback((list: Track[]) => {
     if (!list.length) return;
@@ -2796,17 +2757,17 @@ export default function VanguardPlayer() {
           {activeNav === 'library' && (
             openPlaylist ? (
               <div className="flex-1 overflow-y-auto p-8 z-10 custom-scrollbar">
-                <button onClick={() => setOpenPlaylistId(null)} className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors mb-8 group">
+                <button onClick={() => { setOpenPlaylistId(null); setPlaylistSearchQ(''); }} className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors mb-8 group">
                   <ChevronLeft size={18} className="group-hover:-translate-x-0.5 transition-transform" />
                   <span className="text-sm font-medium">Playlists</span>
                 </button>
                 <div className="flex items-end gap-6 mb-8">
-                  <div className="w-28 h-28 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center shrink-0 relative group cursor-pointer overflow-hidden"
-                    onClick={() => handleCoverUpload(openPlaylist.id)}>
+                  <div className={`w-28 h-28 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center shrink-0 relative overflow-hidden ${openPlaylist.id !== 'p1' ? 'group cursor-pointer' : ''}`}
+                    onClick={() => openPlaylist.id !== 'p1' && handleCoverUpload(openPlaylist.id)}>
                     {getPlaylistCover(openPlaylist)
                       ? <img src={getPlaylistCover(openPlaylist)!} className="w-full h-full object-cover" alt="" />
-                      : openPlaylist.id === 'p1' ? <Heart size={48} className="text-red-400" /> : <ListMusic size={48} className="text-neutral-500" />}
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><ImagePlus size={22} className="text-white" /></div>
+                      : openPlaylist.id === 'p1' ? <Heart size={48} className="text-red-400 fill-red-400/20" /> : <ListMusic size={48} className="text-neutral-500" />}
+                    {openPlaylist.id !== 'p1' && <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><ImagePlus size={22} className="text-white" /></div>}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-1">Playlist</p>
@@ -2835,58 +2796,92 @@ export default function VanguardPlayer() {
                 </div>
                 {openPlaylist.tracks.length === 0
                   ? <div className="flex flex-col items-center justify-center h-40 text-neutral-700 gap-3"><Music size={32} strokeWidth={1} /><p className="text-sm">No tracks yet.</p></div>
-                  : <div className="flex flex-col gap-1">
-                      {openPlaylist.tracks.map((t, i) => (
-                        <div key={t.url}
-                          className="relative group/row flex items-center gap-1"
-                          onMouseEnter={() => { if (dragPlaylistIdx.current !== null) { dragOverPlaylistIdxRef.current = i; setDragOverPlaylistIdx(i); } }}>
-                          {dragOverPlaylistIdx === i && dragPlaylistIdx.current !== null && dragPlaylistIdx.current !== i && (
-                            <div className="absolute top-0 left-8 right-0 h-0.5 bg-[#39FF14] rounded-full z-10 shadow-[0_0_6px_#39FF14] pointer-events-none" />
-                          )}
-                          <div
-                            className="px-1.5 py-4 cursor-grab flex items-center justify-center shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity"
-                            onMouseDown={e => {
-                              e.preventDefault();
-                              dragPlaylistIdx.current = i;
-                              dragOverPlaylistIdxRef.current = i;
-                              setDragOverPlaylistIdx(i);
-                              const onUp = () => {
-                                const from = dragPlaylistIdx.current;
-                                const to = dragOverPlaylistIdxRef.current;
-                                dragPlaylistIdx.current = null;
-                                dragOverPlaylistIdxRef.current = null;
-                                setDragOverPlaylistIdx(null);
-                                window.removeEventListener('mouseup', onUp);
-                                if (from === null || to === null || from === to) return;
-                                setPlaylists(prev => prev.map(pl => {
-                                  if (pl.id !== openPlaylist.id) return pl;
-                                  const arr = [...pl.tracks];
-                                  const [moved] = arr.splice(from, 1);
-                                  arr.splice(to, 0, moved);
-                                  return { ...pl, tracks: arr };
-                                }));
-                              };
-                              window.addEventListener('mouseup', onUp);
-                            }}>
-                            <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className="text-neutral-500">
-                              <circle cx="3" cy="3" r="1.3"/><circle cx="7" cy="3" r="1.3"/>
-                              <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
-                              <circle cx="3" cy="13" r="1.3"/><circle cx="7" cy="13" r="1.3"/>
-                            </svg>
+                  : (() => {
+                      const filteredTracks = playlistSearchQ.trim()
+                        ? openPlaylist.tracks.filter(t =>
+                            t.title.toLowerCase().includes(playlistSearchQ.toLowerCase()) ||
+                            (t.artist && t.artist.toLowerCase().includes(playlistSearchQ.toLowerCase()))
+                          )
+                        : openPlaylist.tracks;
+                      return (
+                        <div className="flex flex-col gap-1">
+                          <div className="relative mb-3">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={playlistSearchQ}
+                              onChange={e => setPlaylistSearchQ(e.target.value)}
+                              placeholder="Search in playlist..."
+                              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg pl-8 pr-8 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-[#39FF14]/40 transition-colors"
+                            />
+                            {playlistSearchQ && (
+                              <button onClick={() => setPlaylistSearchQ('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white transition-colors">
+                                <X size={13} />
+                              </button>
+                            )}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <TrackRow track={t} index={i} showRemove onRemove={() => removeFromPlaylist(openPlaylist.id, t.url)}
-                              isActive={currentTrack?.url === t.url} isHovered={hoveredTrackUrl === t.url}
-                              isLoadingTrack={isLoadingTrack} isPlaying={isPlaying}
-                              isLiked={isTrackLiked(t.url)} isDownloading={!!downloadingTracks[t.url]}
-                              onPlay={() => handlePlayInContext(t, openPlaylist.tracks)}
-                              onHoverEnter={() => setHoveredTrackUrl(t.url)} onHoverLeave={() => setHoveredTrackUrl(null)}
-                              onLike={() => toggleLikeTrack(t)} onDownload={() => handleDownload(t)}
-                              onCtx={e => openCtx(e, { type: 'track', track: t })} />
-                          </div>
+                          {filteredTracks.length === 0
+                            ? <div className="flex flex-col items-center justify-center h-32 text-neutral-700 gap-2"><Search size={24} strokeWidth={1} /><p className="text-sm">No results for "{playlistSearchQ}"</p></div>
+                            : filteredTracks.map((t, i) => {
+                                const origIdx = openPlaylist.tracks.indexOf(t);
+                                return (
+                                  <div key={t.url}
+                                    className="relative group/row flex items-center gap-1"
+                                    onMouseEnter={() => { if (dragPlaylistIdx.current !== null) { dragOverPlaylistIdxRef.current = origIdx; setDragOverPlaylistIdx(origIdx); } }}>
+                                    {dragOverPlaylistIdx === origIdx && dragPlaylistIdx.current !== null && dragPlaylistIdx.current !== origIdx && (
+                                      <div className="absolute top-0 left-8 right-0 h-0.5 bg-[#39FF14] rounded-full z-10 shadow-[0_0_6px_#39FF14] pointer-events-none" />
+                                    )}
+                                    {!playlistSearchQ && (
+                                      <div
+                                        className="px-1.5 py-4 cursor-grab flex items-center justify-center shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity"
+                                        onMouseDown={e => {
+                                          e.preventDefault();
+                                          dragPlaylistIdx.current = origIdx;
+                                          dragOverPlaylistIdxRef.current = origIdx;
+                                          setDragOverPlaylistIdx(origIdx);
+                                          const onUp = () => {
+                                            const from = dragPlaylistIdx.current;
+                                            const to = dragOverPlaylistIdxRef.current;
+                                            dragPlaylistIdx.current = null;
+                                            dragOverPlaylistIdxRef.current = null;
+                                            setDragOverPlaylistIdx(null);
+                                            window.removeEventListener('mouseup', onUp);
+                                            if (from === null || to === null || from === to) return;
+                                            setPlaylists(prev => prev.map(pl => {
+                                              if (pl.id !== openPlaylist.id) return pl;
+                                              const arr = [...pl.tracks];
+                                              const [moved] = arr.splice(from, 1);
+                                              arr.splice(to, 0, moved);
+                                              return { ...pl, tracks: arr };
+                                            }));
+                                          };
+                                          window.addEventListener('mouseup', onUp);
+                                        }}>
+                                        <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className="text-neutral-500">
+                                          <circle cx="3" cy="3" r="1.3"/><circle cx="7" cy="3" r="1.3"/>
+                                          <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
+                                          <circle cx="3" cy="13" r="1.3"/><circle cx="7" cy="13" r="1.3"/>
+                                        </svg>
+                                      </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <TrackRow track={t} index={i} showRemove onRemove={() => removeFromPlaylist(openPlaylist.id, t.url)}
+                                        isActive={currentTrack?.url === t.url} isHovered={hoveredTrackUrl === t.url}
+                                        isLoadingTrack={isLoadingTrack} isPlaying={isPlaying}
+                                        isLiked={isTrackLiked(t.url)} isDownloading={!!downloadingTracks[t.url]}
+                                        onPlay={() => handlePlayInContext(t, openPlaylist.tracks)}
+                                        onHoverEnter={() => setHoveredTrackUrl(t.url)} onHoverLeave={() => setHoveredTrackUrl(null)}
+                                        onLike={() => toggleLikeTrack(t)} onDownload={() => handleDownload(t)}
+                                        onCtx={e => openCtx(e, { type: 'track', track: t })} />
+                                    </div>
+                                  </div>
+                                );
+                              })
+                          }
                         </div>
-                      ))}
-                    </div>}
+                      );
+                    })()
+                }
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto p-8 z-10 custom-scrollbar">
@@ -3024,7 +3019,6 @@ export default function VanguardPlayer() {
               embedThumbnail={embedThumbnail} setEmbedThumbnail={setEmbedThumbnailState}
               duplicateDetect={duplicateDetect} setDuplicateDetect={setDuplicateDetectState}
               continueWhereLO={continueWhereLO} setContinueWhereLO={setContinueWhereLOState}
-              autoPauseUnplug={autoPauseUnplug} setAutoPauseUnplug={setAutoPauseUnplugState}
               onBackup={handleBackup} onRestore={handleRestore}
               backupPath={backupPath} setBackupPath={setBackupPath}
               cachePath={cachePath} setCachePath={setCachePath}

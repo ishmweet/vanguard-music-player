@@ -1,24 +1,34 @@
 # Vanguard Player
 
-A free, open-source desktop music player. Stream anything from YouTube with no ads, no tracking, and no subscriptions. Just music.
+> A free, open-source desktop music player. Stream anything from YouTube with no ads, no tracking, and no subscriptions. Download tracks, manage your local library, and own your music.
 
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-informational?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 ![Tauri](https://img.shields.io/badge/Tauri-v2-blue?style=flat-square)
+![Rust](https://img.shields.io/badge/backend-Rust-orange?style=flat-square)
+![React](https://img.shields.io/badge/frontend-React%2019-61DAFB?style=flat-square)
 
 ---
 
 ## Features
 
-- Stream audio directly from YouTube via yt-dlp and mpv
-- Import and manage local music files
-- Playlist creation and management
-- Waveform visualization and audio metadata display
-- Loudness normalization
-- Sleep timer
-- Download tracks for offline playback
-- Queue management with shuffle and repeat modes
-- Backup and restore library data
+**Streaming & Search**
+Search YouTube directly, stream audio instantly via yt-dlp + mpv, with search history and a Quick Picks strip of recently played tracks.
+
+**Offline Library**
+Scan a local folder, play any audio file, filter tracks instantly, drag to reorder, rename files, and export your library as an M3U playlist.
+
+**Downloads**
+Download any YouTube track in your choice of format (MP3, Opus, M4A, FLAC) and quality. Embeds cover art and metadata into files. Skips duplicates automatically.
+
+**Playlists**
+Create and manage playlists, import from Spotify (via Exportify CSV) or directly from a YouTube playlist URL, and maintain a Liked Songs collection.
+
+**Queue**
+A persistent, reorderable queue panel with full drag-to-reorder support that survives across sessions.
+
+**Playback**
+Full transport controls with seek, volume, playback speed, shuffle, three repeat modes, A-B loop, bookmarks, and a 3-band equalizer. Keyboard shortcuts and hardware media keys supported on both platforms.
 
 ---
 
@@ -26,29 +36,15 @@ A free, open-source desktop music player. Stream anything from YouTube with no a
 
 ### Linux (Debian / Ubuntu)
 
-Download the latest `.deb` package from the [Releases](../../releases) page.
-
 ```bash
 sudo apt install ./vanguard-player_<version>_amd64.deb
 ```
 
-`apt` will automatically install all required dependencies (`mpv`, `yt-dlp`, `ffmpeg`) alongside the application.
-
-Once installed, launch Vanguard Player from your application menu or run:
-
-```bash
-vanguard-player
-```
-
----
+All dependencies (`mpv`, `yt-dlp`, `ffmpeg`, `pulseaudio-utils`) are installed automatically by `apt`.
 
 ### Windows
 
-Download the latest `.exe` installer from the [Releases](../../releases) page.
-
-Run the installer and follow the prompts. All required binaries (`mpv`, `yt-dlp`, `ffmpeg`, `ffprobe`) are bundled inside the installer — no additional setup is needed.
-
-Once installed, launch Vanguard Player from the Start Menu or desktop shortcut.
+Download and run the `.exe` installer from the [Releases](../../releases) page. All required binaries are bundled — no extra setup needed.
 
 ---
 
@@ -58,30 +54,26 @@ Once installed, launch Vanguard Player from the Start Menu or desktop shortcut.
 |---|---|
 | Frontend | React 19, TypeScript, Tailwind CSS |
 | Backend | Rust, Tauri v2 |
-| Audio | mpv (IPC-controlled) |
+| Audio | mpv (IPC via socket / named pipe) |
 | Streaming | yt-dlp |
 | Media info | ffprobe / ffmpeg |
+| MPRIS2 | zbus 3 (Linux) |
 
 ---
 
 ## Building from Source
 
-### Prerequisites
+**Prerequisites:** Node.js 18+, Rust stable, Tauri CLI v2.
 
-- [Node.js](https://nodejs.org/) v18 or later
-- [Rust](https://rustup.rs/) (stable toolchain)
-- [Tauri CLI](https://tauri.app/start/prerequisites/) v2
-
-On Linux, also install the system dependencies:
+**Linux** — install system dependencies:
 
 ```bash
-sudo apt install mpv yt-dlp ffmpeg libwebkit2gtk-4.1-dev \
-  libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+sudo apt install mpv yt-dlp ffmpeg ffprobe pulseaudio-utils \
+  libwebkit2gtk-4.1-dev libgtk-3-dev \
+  libayatana-appindicator3-dev librsvg2-dev
 ```
 
-On Windows, the required binaries (`mpv`, `yt-dlp`, `ffmpeg`, `ffprobe`) must be placed in `src-tauri/binaries/` before building.
-
-Download **`binaries.zip`** from the [Releases](../../releases) page, extract it, and copy the contents into `src-tauri/binaries/`. The folder should look like this:
+**Windows** — download `binaries.zip` from the [Releases](../../releases) page and place the contents in `src-tauri/binaries/`:
 
 ```
 src-tauri/binaries/
@@ -91,9 +83,7 @@ src-tauri/binaries/
 └── ffprobe-x86_64-pc-windows-msvc.exe
 ```
 
-Then proceed with the build step below.
-
-### Build
+**Build:**
 
 ```bash
 git clone https://github.com/ishmweet/vanguard-music-player.git
@@ -101,11 +91,6 @@ cd vanguard-music-player
 npm install
 cargo tauri build
 ```
-
-The output package will be at:
-
-- **Linux:** `src-tauri/target/release/bundle/deb/`
-- **Windows:** `src-tauri/target/release/bundle/nsis/`
 
 For development with hot reload:
 

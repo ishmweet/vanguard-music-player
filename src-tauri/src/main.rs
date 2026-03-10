@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use serde_json::Value;
 use tauri::Emitter;
+use tauri::Manager;
 
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
@@ -1537,6 +1538,7 @@ fn start_mpris_server(app_handle: tauri::AppHandle) {
     });
 }
 
+
 #[cfg(target_os = "linux")]
 async fn run_mpris_server(
     app_handle: tauri::AppHandle,
@@ -1699,6 +1701,12 @@ fn main() {
 
             #[cfg(target_os = "linux")]
             start_mpris_server(handle.clone());
+
+
+            // Set window icon explicitly — required on Linux for taskbar icon
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_icon(tauri::include_image!("icons/128x128.png"));
+            }
 
             let shortcuts = [
                 ("MediaPlayPause", "mpris_play_pause"),
