@@ -5,32 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vanguard Project - Open Source Music Player</title>
 
-    <!-- ── SEO ── -->
+    
     <meta name="description" content="Vanguard Player is a free, open-source, ad-free music player for Windows and Linux. High-fidelity playback, seamless library management, zero tracking.">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://ishmweet.github.io/vanguard-music-player/">
 
-    <!-- ── OpenGraph (Discord, Facebook, Slack, etc.) ── -->
+    
     <meta property="og:type"        content="website">
     <meta property="og:url"         content="https://ishmweet.github.io/vanguard-music-player/">
     <meta property="og:title"       content="Vanguard Player — Open Source Music Player">
     <meta property="og:description" content="Ad-free, open-source music player for Windows and Linux. Zero tracking, zero paywalls. Just your music.">
     <meta property="og:site_name"   content="Vanguard Player">
 
-    <!-- ── Twitter / X Card ── -->
+    
     <meta name="twitter:card"        content="summary">
     <meta name="twitter:url"         content="https://ishmweet.github.io/vanguard-music-player/">
     <meta name="twitter:title"       content="Vanguard Player — Open Source Music Player">
     <meta name="twitter:description" content="Ad-free, open-source music player for Windows and Linux. Zero tracking, zero paywalls. Just your music.">
 
-    <!-- ── Favicon ── -->
+    
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Crect width='30' height='30' rx='7' fill='%234ff828'/%3E%3Cg transform='translate(3, 3)'%3E%3Cpath d='M9 18V5l12-2v13M9 9l12-2' stroke='%23000' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='6' cy='18' r='3.2' fill='%23000'/%3E%3Ccircle cx='18' cy='16' r='3.2' fill='%23000'/%3E%3C/g%3E%3C/svg%3E" type="image/svg+xml">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;800&display=swap" rel="stylesheet">
 
-    <!-- ── Noscript: make typewriter title visible if JS is disabled or slow ── -->
+    
     <noscript>
         <style>
             #typewriter { visibility: visible !important; }
@@ -69,7 +69,7 @@
             line-height: 1.6;
         }
 
-        /* ── Background ── */
+        
         .music-pattern {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -106,7 +106,7 @@
             100% { transform: translate(-50%, -50%) scale(1); opacity: 0.10; }
         }
 
-        /* ── Reveal ── */
+        
         .reveal-on-scroll {
             opacity: 0;
             transform: translateY(36px);
@@ -121,7 +121,7 @@
         .delay-300 { transition-delay: 0.3s; }
         .delay-400 { transition-delay: 0.4s; }
 
-        /* ── Scroll progress bar ── */
+        
         #scroll-progress {
             position: fixed;
             top: 0; left: 0;
@@ -134,7 +134,7 @@
             pointer-events: none;
         }
 
-        /* ── Nav ── */
+        
         nav {
             position: fixed;
             top: 0; left: 0; right: 0;
@@ -207,7 +207,7 @@
             background: rgba(255,255,255,0.05);
         }
 
-        /* rotating glow layer for nav-link, nav-btn, hero-btn */
+        
         .nav-link::after, .nav-btn::after, .hero-btn::after {
             content: "";
             position: absolute;
@@ -250,7 +250,7 @@
             box-shadow: 0 0 22px rgba(79, 248, 40, 0.5);
         }
 
-        /* ── GitHub corner ── */
+        
         .github-corner svg {
             fill: var(--vanguard-green);
             color: var(--bg-base);
@@ -273,7 +273,7 @@
             .nav-links { margin-right: 0; }
         }
 
-        /* ── Hero ── */
+        
         .hero {
             min-height: 100vh;
             display: flex; flex-direction: column;
@@ -339,12 +339,12 @@
             animation: blink-cursor 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
 
-        /* While typing line1 (white text), cursor is white */
+        
         #tw-cursor.phase-one {
             background: #ffffff;
         }
 
-        /* Word 365 style: visible → smooth fade out → brief off → snap back on */
+        
         @keyframes blink-cursor {
             0%   { opacity: 1; }
             50%  { opacity: 1; }
@@ -386,7 +386,7 @@
             color: #ffffff;
         }
 
-        /* ── Section separator ── */
+        
         .section-divider {
             width: 100%;
             height: 1px;
@@ -395,7 +395,7 @@
             max-width: 900px;
         }
 
-        /* ── Download ── */
+        
         .download-section {
             min-height: 80vh;
             display: flex; flex-direction: column;
@@ -419,27 +419,27 @@
             align-items: flex-start;
         }
 
-        /* ── Shared button-dropdown wrapper ── */
+        
         .dl-btn-wrap {
             position: relative;
-            width: 260px;
+            width: 300px;
         }
 
-        /* ── Main green trigger button ── */
+        
         .dl-btn-trigger {
             width: 100%;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 10px;
+            gap: 12px;
             background-color: var(--vanguard-green);
             color: #000;
             text-decoration: none;
-            padding: 0 20px;
-            height: 54px;
-            border-radius: 12px;
+            padding: 0 28px;
+            height: 60px;
+            border-radius: 14px;
             font-weight: 700;
-            font-size: 15px;
+            font-size: 16px;
             white-space: nowrap;
             cursor: pointer;
             border: none;
@@ -478,7 +478,7 @@
             transform: rotate(180deg);
         }
 
-        /* ── Windows direct link (no dropdown) ── */
+        
         .dl-btn-trigger.dl-btn-direct {
             border-radius: 12px;
             justify-content: center;
@@ -488,7 +488,7 @@
             border-radius: 12px;
         }
 
-        /* ── Dropdown panel ── */
+        
         .dl-dropdown-panel {
             width: 100%;
             max-height: 0;
@@ -552,9 +552,7 @@
             color: var(--vanguard-green);
         }
 
-        /* ═══════════════════════════════════════
-           FAQ SECTION
-        ═══════════════════════════════════════ */
+        
         .faq-section {
             padding: 100px 5%;
             max-width: 820px;
@@ -708,7 +706,7 @@
         }
         .faq-answer-inner a:hover { text-decoration: underline; }
 
-        /* ── Donate ── */
+        
         .donate-section {
             min-height: 70vh;
             display: flex; flex-direction: column;
@@ -829,7 +827,7 @@
         }
         .chai-btn svg { flex-shrink: 0; }
 
-        /* ── Footer ── */
+        
         footer {
             border-top: 1px solid var(--border-color);
             padding: 28px 5%;
@@ -840,7 +838,7 @@
         footer a { color: var(--vanguard-green); text-decoration: none; }
         footer a:hover { text-decoration: underline; }
 
-        /* ── Mobile nav ── */
+        
         .nav-mobile-toggle {
             display: none;
             flex-direction: column;
@@ -902,9 +900,7 @@
         }
         .nav-mobile-btn:hover { background: #3de020 !important; }
 
-        /* ═══════════════════════════════════════
-           FEATURES SECTION
-        ═══════════════════════════════════════ */
+        
         .features-section {
             padding: 100px 5%;
             text-align: center;
@@ -986,9 +982,7 @@
             color: var(--text-secondary);
             line-height: 1.65;
         }
-        /* ═══════════════════════════════════════
-           SCREENSHOTS SECTION
-        ═══════════════════════════════════════ */
+        
         .screenshots-section {
             padding: 100px 5%;
             text-align: center;
@@ -1020,7 +1014,7 @@
             margin: 0 auto 60px;
         }
 
-        /* ── Grid ── */
+        
         .screenshots-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -1030,7 +1024,7 @@
             margin: 0 auto;
         }
 
-        /* First screenshot spans full width */
+        
         .screenshot-card:first-child {
             grid-column: 1 / -1;
         }
@@ -1050,7 +1044,7 @@
             box-shadow: 0 24px 60px rgba(0,0,0,0.7), 0 0 40px rgba(79,248,40,0.07);
         }
 
-        /* The SVG mock screenshot */
+        
         .screenshot-img {
             display: block;
             width: 100%;
@@ -1062,7 +1056,7 @@
             transform: translateY(-8px) scale(1.02);
         }
 
-        /* Overlay that slides up on hover */
+        
         .screenshot-overlay {
             position: absolute;
             bottom: 0; left: 0; right: 0;
@@ -1103,7 +1097,7 @@
             line-height: 1.5;
         }
 
-        /* Permanent subtle bottom label (visible always) */
+        
         .screenshot-label {
             position: absolute;
             bottom: 0; left: 0; right: 0;
@@ -1132,7 +1126,7 @@
             font-weight: 500;
         }
 
-        /* Window chrome bar on top of each screenshot */
+        
         .screenshot-chrome {
             position: absolute;
             top: 0; left: 0; right: 0;
@@ -1153,7 +1147,7 @@
         .chrome-dot.amber { background: #febc2e; }
         .chrome-dot.green { background: #28c840; }
 
-        /* ── Screenshots responsive ── */
+        
         @media (max-width: 760px) {
             .screenshots-grid {
                 grid-template-columns: 1fr;
@@ -1162,7 +1156,7 @@
                 grid-column: 1;
             }
             .screenshots-section h2 { font-size: 30px; }
-            /* On touch devices, show overlay only at bottom, don't cover image */
+            
             .screenshot-overlay {
                 transform: translateY(0);
                 background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 50%, transparent 100%);
@@ -1171,45 +1165,41 @@
             .screenshot-overlay-title { font-size: 14px; }
             .screenshot-overlay-desc { font-size: 12px; }
             .screenshot-label { display: none; }
-            /* Prevent screenshot card hover transform on touch */
+            
             .screenshot-card:hover .screenshot-img {
                 transform: none;
             }
         }
 
-        /* ── Tablet: features 2-col, screenshots stack ── */
+        
         @media (max-width: 900px) {
             .features-grid { grid-template-columns: repeat(2, 1fr); }
         }
 
-        /* ── General responsive: hide desktop nav ── */
+        
         @media (max-width: 600px) {
             .nav-links { display: none; }
             .nav-mobile-toggle { display: flex; }
             .nav-btn { display: none; }
         }
 
-        /* ════════════════════════════════════════
-           COMPREHENSIVE MOBILE OPTIMIZATION
-        ════════════════════════════════════════ */
-        /* ════════════════════════════════════════
-           MOBILE — 768px and below
-        ════════════════════════════════════════ */
+        
+        
         @media (max-width: 768px) {
 
-            /* ── Global ── */
+            
             html, body { overflow-x: hidden; max-width: 100vw; }
             * { -webkit-tap-highlight-color: transparent; }
 
-            /* ── GitHub corner — shrink so it doesn't eat nav ── */
+            
             .github-corner svg { width: 52px; height: 52px; }
 
-            /* ── Nav ── */
+            
             nav { padding: 0 5%; height: 56px; }
             .nav-brand { font-size: 15px; gap: 8px; }
             .nav-logo-icon { width: 26px; height: 26px; }
 
-            /* ── Hero ── */
+            
             .hero {
                 padding: 86px 6% 56px;
                 min-height: auto;
@@ -1235,7 +1225,7 @@
                 justify-content: center;
             }
 
-            /* ── Download section ── */
+            
             .download-section {
                 padding: 72px 5%;
                 min-height: auto;
@@ -1250,19 +1240,19 @@
             }
             .dl-btn-wrap {
                 width: 100%;
-                max-width: 340px;
+                max-width: 360px;
             }
             .dl-btn-trigger {
-                font-size: 14px;
-                height: 52px;
-                padding: 0 18px;
-                border-radius: 12px;
+                font-size: 15px;
+                height: 58px;
+                padding: 0 24px;
+                border-radius: 14px;
             }
-            .dl-btn-trigger-text img { width: 18px; height: 18px; }
+            .dl-btn-trigger-text img { width: 20px; height: 20px; }
             .dl-dropdown-panel { border-radius: 0 0 12px 12px; }
             .dl-dropdown-item { font-size: 13px; padding: 14px 18px; }
 
-            /* ── Features section ── */
+            
             .features-section { padding: 72px 5%; }
             .features-section h2 { font-size: 28px; letter-spacing: -0.5px; }
             .features-section > p { font-size: 14.5px; margin-bottom: 40px; }
@@ -1275,7 +1265,7 @@
             .feature-title { font-size: 14px; }
             .feature-desc { font-size: 13px; line-height: 1.6; }
 
-            /* ── Screenshots section ── */
+            
             .screenshots-section { padding: 72px 5%; }
             .screenshots-section h2 { font-size: 28px; }
             .screenshots-section > p { font-size: 14.5px; margin-bottom: 36px; }
@@ -1284,7 +1274,7 @@
                 gap: 14px;
             }
             .screenshot-card { border-radius: 12px; }
-            /* Always show overlay at bottom on touch — no hover needed */
+            
             .screenshot-overlay {
                 transform: translateY(0) !important;
                 background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 55%, transparent 100%) !important;
@@ -1295,7 +1285,7 @@
             .screenshot-overlay-desc { font-size: 12px; line-height: 1.5; }
             .screenshot-label { display: none; }
 
-            /* ── FAQ section ── */
+            
             .faq-section { padding: 72px 5%; }
             .faq-section h2 { font-size: 28px; letter-spacing: -0.5px; }
             .faq-section > p { font-size: 14.5px; margin-bottom: 36px; }
@@ -1319,7 +1309,7 @@
             }
             .faq-category-header { font-size: 10px; padding: 20px 0 8px; gap: 6px; }
 
-            /* ── Donate section ── */
+            
             .donate-section {
                 padding: 64px 5% 80px;
                 min-height: auto;
@@ -1329,7 +1319,7 @@
             .donate-icon { width: 72px; height: 72px; }
             .chai-btn { font-size: 14px; padding: 13px 24px; width: 100%; max-width: 260px; justify-content: center; }
 
-            /* ── Footer ── */
+            
             footer {
                 padding: 20px 5%;
                 font-size: 12px;
@@ -1337,11 +1327,11 @@
                 line-height: 1.7;
             }
 
-            /* ── Section dividers ── */
+            
             .section-divider { max-width: 88%; }
         }
 
-        /* ── Small phones: 430px and below ── */
+        
         @media (max-width: 430px) {
             .hero-title {
                 font-size: clamp(26px, 8.5vw, 36px);
@@ -1349,8 +1339,8 @@
             }
             .hero-desc { font-size: 14px; }
             nav { padding: 0 4%; }
-            .nav-brand span { display: none; } /* hide text "Vanguard Player", show only logo icon */
-            .github-corner { display: none; } /* remove octocat — it overlaps badly at this size */
+            .nav-brand span { display: none; } 
+            .github-corner { display: none; } 
             .features-section { padding: 60px 4%; }
             .screenshots-section { padding: 60px 4%; }
             .faq-section { padding: 60px 4%; }
@@ -1361,7 +1351,7 @@
             .faq-answer-inner { font-size: 12.5px; padding: 0 14px 14px; }
         }
 
-        /* ── Very small: 360px and below ── */
+        
         @media (max-width: 360px) {
             .hero-title { font-size: clamp(24px, 8vw, 32px); }
             .features-section h2,
@@ -1385,7 +1375,7 @@
     <div class="music-pattern"></div>
     <div class="neon-blur-circle"></div>
 
-    <!-- ── Nav: Home → Features → Screenshots → FAQs → Donate → Download ── -->
+    
     <nav id="main-nav">
         <a href="#" class="nav-brand">
             <div class="nav-logo-icon">
@@ -1414,7 +1404,7 @@
         <a href="#download"     class="nav-mobile-link nav-mobile-btn">Download</a>
     </div>
 
-    <!-- ── Hero ── -->
+    
     <header class="hero">
         <div class="hero-content">
             <span class="hero-tag">ZERO ADS. ZERO TRACKING.</span>
@@ -1433,14 +1423,14 @@
         </div>
     </header>
 
-    <!-- ── Download ── -->
+    
     <section id="download" class="download-section">
         <h2 class="reveal-on-scroll">Choose your platform</h2>
         <p class="reveal-on-scroll delay-100">Vanguard Player is currently available for Windows and Linux architectures.</p>
 
         <div class="download-buttons reveal-on-scroll delay-200">
 
-            <!-- Windows direct download -->
+            
             <div class="dl-btn-wrap">
                 <a href="https://github.com/ishmweet/vanguard-music-player/releases/download/0.1.0/vanguard-player_0.1.0_amd64.exe" class="dl-btn-trigger dl-btn-direct">
                     <span class="dl-btn-trigger-text">
@@ -1450,7 +1440,7 @@
                 </a>
             </div>
 
-            <!-- Linux direct download -->
+            
             <div class="dl-btn-wrap">
                 <a href="https://github.com/ishmweet/vanguard-music-player/releases/download/0.1.0/vanguard-player_0.1.0_amd64.deb" class="dl-btn-trigger dl-btn-direct">
                     <span class="dl-btn-trigger-text">
@@ -1465,9 +1455,7 @@
 
     <div class="section-divider"></div>
 
-    <!-- ══════════════════════════════════════════
-         FEATURES SECTION
-    ══════════════════════════════════════════ -->
+    
     <section id="features" class="features-section">
         <span class="section-label reveal-on-scroll">What's Inside</span>
         <h2 class="reveal-on-scroll delay-100">Everything you need.<br>Nothing you don't.</h2>
@@ -1552,9 +1540,7 @@
 
     <div class="section-divider"></div>
 
-    <!-- ══════════════════════════════════════════
-         SCREENSHOTS SECTION
-    ══════════════════════════════════════════ -->
+    
     <section id="screenshots" class="screenshots-section">
         <span class="section-label reveal-on-scroll">Preview</span>
         <h2 class="reveal-on-scroll delay-100">See it in action</h2>
@@ -1562,7 +1548,7 @@
 
         <div class="screenshots-grid">
 
-            <!-- Screenshot 1 — Main player (full width) -->
+            
             <div class="screenshot-card reveal-on-scroll delay-100">
                 <div class="screenshot-chrome">
                     <div class="chrome-dot red"></div>
@@ -1577,65 +1563,65 @@
                         </linearGradient>
                     </defs>
 
-                    <!-- ── Left Sidebar (220px) ── -->
+                    
                     <rect x="0" y="0" width="220" height="620" fill="#0a0a0a"/>
                     <rect x="219" y="0" width="1" height="620" fill="#1a1a1a"/>
 
-                    <!-- Logo -->
+                    
                     <rect x="14" y="16" width="28" height="28" rx="7" fill="#4ff828"/>
                     <text x="20" y="35" font-family="Inter,sans-serif" font-size="16" fill="#000" font-weight="900">♪</text>
                     <text x="50" y="34" font-family="Inter,sans-serif" font-size="13" font-weight="800" fill="#4ff828" letter-spacing="0.5">VANGUARD</text>
 
-                    <!-- Sleep Timer row -->
+                    
                     <rect x="8" y="54" width="204" height="30" rx="7" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
                     <text x="28" y="73" font-family="Inter,sans-serif" font-size="12" fill="#444">Sleep Timer</text>
                     <text x="192" y="73" font-family="Inter,sans-serif" font-size="10" fill="#333">›</text>
 
-                    <!-- Nav: Home (active) -->
+                    
                     <rect x="8" y="90" width="204" height="32" rx="8" fill="rgba(79,248,40,0.1)" stroke="rgba(79,248,40,0.2)" stroke-width="1"/>
                     <circle cx="22" cy="106" r="5" fill="#4ff828"/>
                     <text x="34" y="111" font-family="Inter,sans-serif" font-size="13" fill="#4ff828" font-weight="600">Home</text>
 
-                    <!-- Nav: Offline -->
+                    
                     <circle cx="22" cy="142" r="5" fill="#2a2a2a"/>
                     <text x="34" y="147" font-family="Inter,sans-serif" font-size="13" fill="#555">Offline</text>
 
-                    <!-- Nav: Stats -->
+                    
                     <circle cx="22" cy="174" r="5" fill="#2a2a2a"/>
                     <text x="34" y="179" font-family="Inter,sans-serif" font-size="13" fill="#555">Stats</text>
 
-                    <!-- Nav: Settings -->
+                    
                     <circle cx="22" cy="206" r="5" fill="#2a2a2a"/>
                     <text x="34" y="211" font-family="Inter,sans-serif" font-size="13" fill="#555">Settings</text>
 
-                    <!-- Nav: Queue (active-ish) -->
+                    
                     <rect x="8" y="220" width="204" height="32" rx="8" fill="rgba(79,248,40,0.06)" stroke="rgba(79,248,40,0.15)" stroke-width="1"/>
                     <circle cx="22" cy="236" r="5" fill="#4ff828" opacity="0.5"/>
                     <text x="34" y="241" font-family="Inter,sans-serif" font-size="13" fill="#4ff828" font-weight="600">Queue</text>
 
-                    <!-- Playlists header -->
+                    
                     <text x="14" y="275" font-family="Inter,sans-serif" font-size="10" fill="#2e2e2e" letter-spacing="2">PLAYLISTS</text>
                     <rect x="8" y="282" width="204" height="1" fill="#1e1e1e"/>
 
-                    <!-- Liked Songs -->
+                    
                     <rect x="10" y="290" width="30" height="30" rx="6" fill="#1a2a1a"/>
                     <text x="22" y="310" font-family="Inter,sans-serif" font-size="13" fill="#4ff828" opacity="0.7">♥</text>
                     <text x="46" y="308" font-family="Inter,sans-serif" font-size="12" fill="#777">Liked Songs</text>
                     <text x="188" y="308" font-family="Inter,sans-serif" font-size="10" fill="#333">24</text>
 
-                    <!-- Late Night Drive -->
+                    
                     <rect x="10" y="326" width="30" height="30" rx="6" fill="#1a1a2a"/>
                     <text x="22" y="346" font-family="Inter,sans-serif" font-size="13" fill="#6688ff" opacity="0.5">♪</text>
                     <text x="46" y="344" font-family="Inter,sans-serif" font-size="12" fill="#555">Late Night Drive</text>
                     <text x="188" y="344" font-family="Inter,sans-serif" font-size="10" fill="#333">47</text>
 
-                    <!-- Chill Vibes -->
+                    
                     <rect x="10" y="362" width="30" height="30" rx="6" fill="#2a1a10"/>
                     <text x="22" y="382" font-family="Inter,sans-serif" font-size="13" fill="#ff8c00" opacity="0.5">♪</text>
                     <text x="46" y="380" font-family="Inter,sans-serif" font-size="12" fill="#555">Chill Vibes</text>
                     <text x="188" y="380" font-family="Inter,sans-serif" font-size="10" fill="#333">83</text>
 
-                    <!-- Import buttons -->
+                    
                     <rect x="8" y="538" width="204" height="32" rx="8" fill="rgba(29,185,84,0.12)" stroke="rgba(29,185,84,0.3)" stroke-width="1"/>
                     <circle cx="24" cy="554" r="7" fill="#1DB954"/>
                     <text x="36" y="558" font-family="Inter,sans-serif" font-size="11" fill="#1DB954" font-weight="600">Import from Spotify</text>
@@ -1644,10 +1630,10 @@
                     <circle cx="24" cy="592" r="7" fill="#ff0000"/>
                     <text x="36" y="596" font-family="Inter,sans-serif" font-size="11" fill="#ff5555" font-weight="600">Import from YouTube</text>
 
-                    <!-- ── Main content (220 → 970) ── -->
+                    
                     <rect x="220" y="0" width="750" height="620" fill="#0d0d0d"/>
 
-                    <!-- Top bar -->
+                    
                     <text x="236" y="22" font-family="Inter,sans-serif" font-size="10" fill="#2a2a2a" letter-spacing="1">HOME</text>
                     <rect x="236" y="30" width="680" height="36" rx="10" fill="#161616" stroke="#1e1e1e" stroke-width="1"/>
                     <circle cx="254" cy="48" r="5" fill="none" stroke="#333" stroke-width="1.5"/>
@@ -1656,108 +1642,108 @@
                     <rect x="870" y="32" width="44" height="32" rx="7" fill="#1a1a1a" stroke="#222" stroke-width="1"/>
                     <text x="881" y="52" font-family="Inter,sans-serif" font-size="11" fill="#555" font-weight="600">Search</text>
 
-                    <!-- Recently Played header -->
+                    
                     <rect x="232" y="76" width="4" height="18" rx="2" fill="#4ff828"/>
                     <text x="244" y="90" font-family="Inter,sans-serif" font-size="14" fill="#fff" font-weight="700">Recently Played</text>
                     <text x="870" y="90" font-family="Inter,sans-serif" font-size="11" fill="#333">Clear</text>
 
-                    <!-- Row 1 col 1: Blinding Lights (active/green) -->
+                    
                     <rect x="232" y="100" width="360" height="62" rx="10" fill="rgba(79,248,40,0.06)" stroke="rgba(79,248,40,0.2)" stroke-width="1"/>
                     <rect x="244" y="111" width="40" height="40" rx="7" fill="#1a2a1a"/>
                     <text x="258" y="137" font-family="Inter,sans-serif" font-size="18" fill="#4ff828" opacity="0.5">♪</text>
                     <text x="294" y="126" font-family="Inter,sans-serif" font-size="11" fill="#4ff828" font-weight="700">Blinding Lights</text>
                     <text x="294" y="143" font-family="Inter,sans-serif" font-size="10" fill="#444">The Weeknd</text>
 
-                    <!-- Row 1 col 2: As It Was -->
+                    
                     <rect x="606" y="100" width="360" height="62" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
                     <rect x="618" y="111" width="40" height="40" rx="7" fill="#1a1a2a"/>
                     <text x="632" y="137" font-family="Inter,sans-serif" font-size="18" fill="#6688ff" opacity="0.5">♪</text>
                     <text x="668" y="126" font-family="Inter,sans-serif" font-size="11" fill="#ccc" font-weight="600">As It Was</text>
                     <text x="668" y="143" font-family="Inter,sans-serif" font-size="10" fill="#444">Harry Styles</text>
 
-                    <!-- Row 2 col 1: Heat Waves -->
+                    
                     <rect x="232" y="170" width="360" height="62" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
                     <rect x="244" y="181" width="40" height="40" rx="7" fill="#2a1a10"/>
                     <text x="258" y="207" font-family="Inter,sans-serif" font-size="18" fill="#ff8c00" opacity="0.4">♪</text>
                     <text x="294" y="196" font-family="Inter,sans-serif" font-size="11" fill="#ccc" font-weight="600">Heat Waves</text>
                     <text x="294" y="213" font-family="Inter,sans-serif" font-size="10" fill="#444">Glass Animals</text>
 
-                    <!-- Row 2 col 2: Starboy -->
+                    
                     <rect x="606" y="170" width="360" height="62" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
                     <rect x="618" y="181" width="40" height="40" rx="7" fill="#10201a"/>
                     <text x="632" y="207" font-family="Inter,sans-serif" font-size="18" fill="#44ffaa" opacity="0.4">♪</text>
                     <text x="668" y="196" font-family="Inter,sans-serif" font-size="11" fill="#ccc" font-weight="600">Starboy</text>
                     <text x="668" y="213" font-family="Inter,sans-serif" font-size="10" fill="#444">The Weeknd</text>
 
-                    <!-- Row 3 col 1: Levitating -->
+                    
                     <rect x="232" y="240" width="360" height="62" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
                     <rect x="244" y="251" width="40" height="40" rx="7" fill="#201020"/>
                     <text x="258" y="277" font-family="Inter,sans-serif" font-size="18" fill="#cc44ff" opacity="0.4">♪</text>
                     <text x="294" y="266" font-family="Inter,sans-serif" font-size="11" fill="#ccc" font-weight="600">Levitating</text>
                     <text x="294" y="283" font-family="Inter,sans-serif" font-size="10" fill="#444">Dua Lipa</text>
 
-                    <!-- Row 3 col 2: Save Your Tears -->
+                    
                     <rect x="606" y="240" width="360" height="62" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
                     <rect x="618" y="251" width="40" height="40" rx="7" fill="#1a1a2a"/>
                     <text x="632" y="277" font-family="Inter,sans-serif" font-size="18" fill="#aa44ff" opacity="0.4">♪</text>
                     <text x="668" y="266" font-family="Inter,sans-serif" font-size="11" fill="#ccc" font-weight="600">Save Your Tears</text>
                     <text x="668" y="283" font-family="Inter,sans-serif" font-size="10" fill="#444">The Weeknd</text>
 
-                    <!-- Row 4 col 1: Anti-Hero -->
+                    
                     <rect x="232" y="310" width="360" height="62" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
                     <rect x="244" y="321" width="40" height="40" rx="7" fill="#10201a"/>
                     <text x="258" y="347" font-family="Inter,sans-serif" font-size="18" fill="#20d859" opacity="0.4">♪</text>
                     <text x="294" y="336" font-family="Inter,sans-serif" font-size="11" fill="#ccc" font-weight="600">Anti-Hero</text>
                     <text x="294" y="353" font-family="Inter,sans-serif" font-size="10" fill="#444">Taylor Swift</text>
 
-                    <!-- Row 4 col 2: Flowers -->
+                    
                     <rect x="606" y="310" width="360" height="62" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
                     <rect x="618" y="321" width="40" height="40" rx="7" fill="#201010"/>
                     <text x="632" y="347" font-family="Inter,sans-serif" font-size="18" fill="#ff6644" opacity="0.4">♪</text>
                     <text x="668" y="336" font-family="Inter,sans-serif" font-size="11" fill="#ccc" font-weight="600">Flowers</text>
                     <text x="668" y="353" font-family="Inter,sans-serif" font-size="10" fill="#444">Miley Cyrus</text>
 
-                    <!-- ── Right Queue panel (970 → 1200) ── -->
+                    
                     <rect x="970" y="0" width="230" height="620" fill="#0a0a0a"/>
                     <rect x="970" y="0" width="1" height="620" fill="#1a1a1a"/>
 
-                    <!-- Queue header -->
+                    
                     <text x="986" y="22" font-family="Inter,sans-serif" font-size="13" fill="#fff" font-weight="700">Queue</text>
 
-                    <!-- NOW PLAYING label -->
+                    
                     <text x="986" y="48" font-family="Inter,sans-serif" font-size="9" fill="#2a2a2a" letter-spacing="1.5">NOW PLAYING</text>
 
-                    <!-- Now playing card -->
+                    
                     <rect x="978" y="56" width="214" height="56" rx="8" fill="rgba(79,248,40,0.06)" stroke="rgba(79,248,40,0.15)" stroke-width="1"/>
                     <rect x="986" y="64" width="38" height="38" rx="6" fill="#1a2a1a"/>
                     <text x="999" y="88" font-family="Inter,sans-serif" font-size="16" fill="#4ff828" opacity="0.5">♪</text>
                     <text x="1032" y="78" font-family="Inter,sans-serif" font-size="10" fill="#4ff828" font-weight="600">Blinding Lights</text>
                     <text x="1032" y="93" font-family="Inter,sans-serif" font-size="10" fill="#444">The Weeknd</text>
 
-                    <!-- Queue empty -->
+                    
                     <text x="1085" y="340" font-family="Inter,sans-serif" font-size="11" fill="#2a2a2a" text-anchor="middle">Queue is empty</text>
 
-                    <!-- ── Bottom player bar ── -->
+                    
                     <rect x="220" y="566" width="750" height="54" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
-                    <!-- Album thumb -->
+                    
                     <rect x="230" y="574" width="36" height="36" rx="6" fill="#1a2a1a"/>
                     <text x="242" y="598" font-family="Inter,sans-serif" font-size="16" fill="#4ff828" opacity="0.5">♪</text>
-                    <!-- Track info -->
+                    
                     <text x="274" y="587" font-family="Inter,sans-serif" font-size="11" fill="#fff" font-weight="600">Blinding Lights</text>
                     <text x="274" y="601" font-family="Inter,sans-serif" font-size="10" fill="#444">The Weeknd</text>
-                    <!-- Playback controls -->
+                    
                     <text x="496" y="599" font-family="Inter,sans-serif" font-size="14" fill="#555">⇄</text>
                     <text x="528" y="600" font-family="Inter,sans-serif" font-size="18" fill="#888">⏮</text>
                     <circle cx="578" cy="591" r="17" fill="#fff"/>
                     <text x="570" y="598" font-family="Inter,sans-serif" font-size="16" fill="#000">▶</text>
                     <text x="602" y="600" font-family="Inter,sans-serif" font-size="18" fill="#888">⏭</text>
                     <text x="634" y="599" font-family="Inter,sans-serif" font-size="14" fill="#555">↻</text>
-                    <!-- Progress -->
+                    
                     <text x="664" y="597" font-family="Inter,sans-serif" font-size="9" fill="#333">0:00</text>
                     <rect x="686" y="589" width="190" height="3" rx="1.5" fill="#1e1e1e"/>
                     <rect x="686" y="589" width="0" height="3" rx="1.5" fill="#4ff828"/>
                     <text x="882" y="597" font-family="Inter,sans-serif" font-size="9" fill="#333">4:23</text>
-                    <!-- Volume -->
+                    
                     <text x="904" y="597" font-family="Inter,sans-serif" font-size="11" fill="#555">🔊</text>
                     <rect x="922" y="589" width="40" height="3" rx="1.5" fill="#1e1e1e"/>
                     <rect x="922" y="589" width="30" height="3" rx="1.5" fill="#4ff828" opacity="0.7"/>
@@ -1778,7 +1764,7 @@
                 </div>
             </div>
 
-            <!-- Screenshot 2 — Search -->
+            
             <div class="screenshot-card reveal-on-scroll delay-200">
                 <svg class="screenshot-img" viewBox="0 0 580 420" xmlns="http://www.w3.org/2000/svg" style="padding-top:32px;background:#0d0d0d;">
                     <defs>
@@ -1787,16 +1773,16 @@
                             <stop offset="100%" stop-color="#20d859"/>
                         </linearGradient>
                     </defs>
-                    <!-- Search bar active -->
+                    
                     <rect x="20" y="18" width="540" height="44" rx="12" fill="#161616" stroke="#4ff828" stroke-width="1.5" stroke-opacity="0.5"/>
                     <text x="54" y="45" font-family="Inter,sans-serif" font-size="15" fill="#fff" font-weight="500">midnight echoes</text>
                     <rect x="536" y="28" width="2" height="24" rx="1" fill="#4ff828" opacity="0.8">
                         <animate attributeName="opacity" values="0.8;0;0.8" dur="1.2s" repeatCount="indefinite"/>
                     </rect>
                     <text x="26" y="45" font-family="Inter,sans-serif" font-size="16" fill="#555">⌕</text>
-                    <!-- Search results label -->
+                    
                     <text x="20" y="86" font-family="Inter,sans-serif" font-size="11" fill="#444" letter-spacing="1.5">SEARCH RESULTS</text>
-                    <!-- Result rows -->
+                    
                     <rect x="20" y="96" width="540" height="56" rx="10" fill="rgba(79,248,40,0.06)" stroke="rgba(79,248,40,0.15)" stroke-width="1"/>
                     <rect x="34" y="108" width="38" height="38" rx="8" fill="#1a3020"/>
                     <text x="50" y="133" font-family="Inter,sans-serif" font-size="18" fill="#4ff828" opacity="0.6">♪</text>
@@ -1845,7 +1831,7 @@
                 </div>
             </div>
 
-            <!-- Screenshot 3 — Spotify import -->
+            
             <div class="screenshot-card reveal-on-scroll delay-300">
                 <svg class="screenshot-img" viewBox="0 0 580 420" xmlns="http://www.w3.org/2000/svg" style="padding-top:32px;background:#0d0d0d;">
                     <defs>
@@ -1854,39 +1840,39 @@
                             <stop offset="100%" stop-color="#20d859"/>
                         </linearGradient>
                     </defs>
-                    <!-- Header with Spotify icon -->
+                    
                     <rect x="20" y="18" width="28" height="28" rx="7" fill="#1DB954"/>
                     <text x="28" y="37" font-family="Inter,sans-serif" font-size="14" fill="#fff" font-weight="900">S</text>
                     <text x="56" y="36" font-family="Inter,sans-serif" font-size="16" fill="#fff" font-weight="800">Import Spotify Playlist</text>
-                    <!-- Step 1 -->
+                    
                     <circle cx="30" cy="72" r="9" fill="#4ff828"/>
                     <text x="27" y="76" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">1</text>
                     <text x="48" y="70" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Go to Exportify</text>
                     <text x="48" y="84" font-family="Inter,sans-serif" font-size="11" fill="#555">Open exportify.net in your browser</text>
-                    <!-- Step 2 -->
+                    
                     <circle cx="30" cy="112" r="9" fill="#4ff828"/>
                     <text x="27" y="116" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">2</text>
                     <text x="48" y="110" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Log in with Spotify</text>
                     <text x="48" y="124" font-family="Inter,sans-serif" font-size="11" fill="#555">Authorise Exportify to read your playlists</text>
-                    <!-- Step 3 -->
+                    
                     <circle cx="30" cy="152" r="9" fill="#4ff828"/>
                     <text x="27" y="156" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">3</text>
                     <text x="48" y="150" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Export your playlist</text>
                     <text x="48" y="164" font-family="Inter,sans-serif" font-size="11" fill="#555">Click the green Export button — a .csv file will download</text>
-                    <!-- Step 4 -->
+                    
                     <circle cx="30" cy="192" r="9" fill="#4ff828"/>
                     <text x="27" y="196" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">4</text>
                     <text x="48" y="190" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Upload the CSV here</text>
                     <text x="48" y="204" font-family="Inter,sans-serif" font-size="11" fill="#555">Click the button below and select the .csv file</text>
-                    <!-- Upload CSV button -->
+                    
                     <rect x="20" y="222" width="540" height="44" rx="11" fill="url(#pg3)"/>
                     <text x="185" y="249" font-family="Inter,sans-serif" font-size="14" fill="#000" font-weight="800">⬆  Upload Exportify CSV</text>
-                    <!-- Progress -->
+                    
                     <rect x="20" y="280" width="540" height="1" fill="#1e1e1e"/>
                     <text x="20" y="300" font-family="Inter,sans-serif" font-size="10" fill="#4ff828" letter-spacing="1.5">MATCHING · 18 / 24</text>
                     <rect x="20" y="308" width="540" height="4" rx="2" fill="#1e1e1e"/>
                     <rect x="20" y="308" width="405" height="4" rx="2" fill="url(#pg3)"/>
-                    <!-- Matched rows -->
+                    
                     <rect x="20" y="322" width="540" height="36" rx="7" fill="rgba(79,248,40,0.05)" stroke="rgba(79,248,40,0.12)" stroke-width="1"/>
                     <rect x="28" y="330" width="20" height="20" rx="4" fill="#1a2a1a"/>
                     <text x="58" y="344" font-family="Inter,sans-serif" font-size="12" fill="#ccc">Blinding Lights</text>
@@ -1919,15 +1905,13 @@
 
     <div class="section-divider"></div>
 
-    <!-- ══════════════════════════════════════════
-         FAQ SECTION
-    ══════════════════════════════════════════ -->
+    
     <section id="faqs" class="faq-section">
         <span class="faq-label reveal-on-scroll">Support</span>
         <h2 class="reveal-on-scroll delay-100">Frequently Asked Questions</h2>
         <p class="reveal-on-scroll delay-200">Everything you need to know about Vanguard Player.</p>
 
-        <!-- ── General & Features ── -->
+        
         <div class="faq-category reveal-on-scroll delay-100">
             <div class="faq-category-header">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -1982,7 +1966,7 @@
             </div>
         </div>
 
-        <!-- ── Installation & System Requirements ── -->
+        
         <div class="faq-category reveal-on-scroll delay-200">
             <div class="faq-category-header">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -2019,7 +2003,7 @@
             </div>
         </div>
 
-        <!-- ── Privacy & Technical ── -->
+        
         <div class="faq-category reveal-on-scroll delay-300">
             <div class="faq-category-header">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -2056,7 +2040,7 @@
             </div>
         </div>
 
-        <!-- ── Community & Support ── -->
+        
         <div class="faq-category reveal-on-scroll delay-100">
             <div class="faq-category-header">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -2088,7 +2072,7 @@
 
     <div class="section-divider"></div>
 
-    <!-- ── Donate ── -->
+    
     <section id="donate" class="donate-section">
         <img src="vanguard_player_icon.png" alt="Vanguard Player Icon" class="donate-icon reveal-on-scroll">
         <h2 class="reveal-on-scroll delay-100"><span class="vanguard-gradient donate-title-glow">Vanguard</span> Player</h2>
@@ -2114,7 +2098,7 @@
     </footer>
 
     <script>
-        // ── Scroll reveal ──
+        
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) entry.target.classList.add('is-visible');
@@ -2124,7 +2108,7 @@
 
         document.querySelectorAll('.reveal-on-scroll').forEach(el => observer.observe(el));
 
-        // ── Nav scroll class + progress bar ──
+        
         const nav = document.getElementById('main-nav');
         const progressBar = document.getElementById('scroll-progress');
         window.addEventListener('scroll', () => {
@@ -2134,14 +2118,14 @@
             progressBar.style.width = (scrollTop / docHeight * 100) + '%';
         }, { passive: true });
 
-        // ── Mobile nav toggle ──
+        
         const mobileToggle = document.getElementById('nav-mobile-toggle');
         const mobileMenu   = document.getElementById('nav-mobile-menu');
         mobileToggle.addEventListener('click', () => {
             const open = mobileMenu.classList.toggle('open');
             mobileToggle.classList.toggle('open', open);
         });
-        // Close menu when a link is clicked
+        
         document.querySelectorAll('.nav-mobile-link').forEach(link => {
             link.addEventListener('click', () => {
                 mobileMenu.classList.remove('open');
@@ -2149,44 +2133,44 @@
             });
         });
 
-        // ── Auto year ──
+        
         document.getElementById('footer-year').textContent = new Date().getFullYear();
 
-        // ── FAQ accordion ──
+        
         document.querySelectorAll('.faq-question').forEach(btn => {
             btn.addEventListener('click', () => {
                 const item = btn.closest('.faq-item');
                 const isOpen = item.classList.contains('open');
 
-                // Close all
+                
                 document.querySelectorAll('.faq-item.open').forEach(openItem => {
                     openItem.classList.remove('open');
                     openItem.querySelector('.faq-question').setAttribute('aria-expanded', 'false');
                 });
 
-                // Open clicked if it was closed
+                
                 if (!isOpen) {
                     item.classList.add('open');
                     btn.setAttribute('aria-expanded', 'true');
                 }
             });
         });
-        // ── Typewriter hero title ──
+        
         (function() {
             var tw = document.getElementById('typewriter');
 
-            // Safety fallback — if JS stalls for any reason, force title visible after 3s
+            
             var safetyTimer = setTimeout(function() {
                 tw.style.visibility = 'visible';
             }, 3000);
 
-            // Grab HTML immediately before any render — prevents flash
+            
             var sourceHTML = tw.innerHTML.trim();
-            tw.innerHTML = '';                    // clear NOW, not after delay
-            tw.style.visibility = 'visible';      // show immediately (empty, no flash)
+            tw.innerHTML = '';                    
+            tw.style.visibility = 'visible';      
 
             function setupTypewriter(el, html) {
-                // Inject cursor
+                
                 var cursor = document.createElement('span');
                 cursor.id = 'tw-cursor';
                 cursor.className = 'phase-one';
@@ -2201,7 +2185,7 @@
                 function type() {
                     var ch = html[pos];
 
-                    // ── Tag handling ──
+                    
                     if (ch === '<') {
                         writingTag = true;
                         tag = '<';
@@ -2229,7 +2213,7 @@
                         return;
                     }
 
-                    // ── Regular character ──
+                    
                     tempTypeSpeed = (ch === ' ')
                         ? 0
                         : Math.random() * typeSpeed + 50;
@@ -2243,15 +2227,15 @@
 
                     pos++;
                     if (pos < html.length) setTimeout(type, tempTypeSpeed);
-                    // else: finished — cursor stays and blinks
+                    
                 }
 
                 return { type: type };
             }
 
-            // Small delay just to let hero fade-in begin, then start typing
+            
             setTimeout(function() {
-                clearTimeout(safetyTimer); // typing started — cancel the fallback
+                clearTimeout(safetyTimer); 
                 var writer = setupTypewriter(tw, sourceHTML);
                 writer.type();
             }, 950);
