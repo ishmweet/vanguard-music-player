@@ -49,20 +49,36 @@ Vanguard Player is a desktop music application built with Tauri (Rust backend) a
 #### macOS
 
 **Step 1: Download**
-- Go to the [GitHub Releases](https://github.com/ishmweet/vanguard-player/releases) page
-- Download the latest `.dmg` file (e.g., `vanguard-player-0.1.0.dmg` for arm64 or x86_64)
+- Go to the [GitHub Releases](https://github.com/shubhushubhu99/vanguard-music-player/releases) page
+- Download the latest `.dmg` file (e.g., `vanguard-player_0.1.0_aarch64.dmg`)
 
 **Step 2: Install the App**
 1. Double-click the `.dmg` file to mount it
-2. Drag the **Vanguard Player** app icon to the **Applications** folder
-3. Eject the DMG file
-4. Open **Applications** and double-click **Vanguard Player**
+2. Drag the **vanguard-player** app icon to the **Applications** folder
+3. Eject the DMG file (click the eject icon next to it in Finder)
+4. **Open Applications folder** and find **vanguard-player.app**
 
-**Step 3: Grant Permissions**
-- Click **Open** when prompted by macOS security ("Vanguard Player cannot be opened because Apple cannot check it for malicious software")
-- This is normal for unsigned apps; the code is open-source and safe
+**Step 3: Fix "Damaged" Error (Important!)**
+When you first try to open the app, macOS may show:  
+> "vanguard-player" is damaged and can't be opened. You should move it to the Bin.
 
-**Step 4: Install Runtime Dependencies**
+This is normal for downloaded apps. Run this command in Terminal to fix it:
+
+```bash
+xattr -rd com.apple.quarantine /Applications/vanguard-player.app
+```
+
+Then double-click the app to launch it. ✅
+
+**Alternative: Use Spotlight**
+- Press `⌘ + Space` and type `vanguard`
+- Press Enter to launch
+
+**Step 4: Grant Permissions**
+- On first launch, click **Open** when prompted by macOS security
+- This is normal; the code is open-source and [available on GitHub](https://github.com/shubhushubhu99/vanguard-music-player)
+
+**Step 5: Install Runtime Dependencies**
 The app will check for required dependencies (`mpv`, `yt-dlp`, `ffmpeg`) on first launch.
 
 **Option A: Let the app auto-install (Recommended)**
@@ -80,7 +96,7 @@ The app will check for required dependencies (`mpv`, `yt-dlp`, `ffmpeg`) on firs
 brew install mpv ffmpeg yt-dlp
 ```
 
-**Done!** You can now search, stream, and download music.
+**Done!** You can now search, stream, and download music. 🎵
 
 ---
 
