@@ -289,14 +289,14 @@ User names the playlist → saved to localStorage
 ```
 vanguard-music-player/
 ├── src/
-│   └── App.tsx              # Entire React UI (~3,700 lines)
+│   └── App.tsx              # Entire React UI
 ├── src-tauri/
 │   ├── src/
-│   │   └── main.rs          # Rust backend (~1,800 lines)
-│   ├── build.rs             # Build script (Windows subsystem flags)
+│   │   └── main.rs          # Rust backend
+│   ├── build.rs             # Build script
 │   ├── Cargo.toml           # Rust dependencies
 │   ├── tauri.conf.json      # Tauri configuration
-│   ├── icons/               # App icons (all sizes)
+│   ├── icons/               # App icons
 │   └── binaries/            # Windows-only bundled executables
 ├── public/
 ├── index.html
