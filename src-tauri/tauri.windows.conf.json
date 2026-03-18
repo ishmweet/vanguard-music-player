@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "resources": {
+      "binaries/mpv-x86_64-pc-windows-msvc.exe": "mpv.exe",
+      "binaries/yt-dlp-x86_64-pc-windows-msvc.exe": "yt-dlp.exe",
+      "binaries/ffmpeg-x86_64-pc-windows-msvc.exe": "ffmpeg.exe",
+      "binaries/ffprobe-x86_64-pc-windows-msvc.exe": "ffprobe.exe"
+    }
+  }
+}

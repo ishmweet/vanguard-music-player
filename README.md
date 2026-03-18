@@ -17,8 +17,6 @@
 
 Vanguard Player is a native desktop music application that treats `mpv` as its audio engine and `yt-dlp` as its streaming backend, wrapped inside a Tauri v2 shell (Rust + React). The result is a player with near-zero resource overhead, full system integration on both Linux and Windows, and none of the baggage that comes with a web-based music service.
 
-The design language is deliberate: near-black backgrounds, neon green (`#39FF14`) as the sole accent colour, monospace typography for numbers and paths. Minimal. Terminal-inspired. Every interaction has a clear purpose.
-
 > No account required. No telemetry. No ads. No cloud dependency beyond YouTube itself.
 
 ---
@@ -162,7 +160,7 @@ The NSIS installer bundles all required binaries (`mpv`, `yt-dlp`, `ffmpeg`, `ff
 ### Linux — System Dependencies
 
 ```bash
-sudo apt install mpv yt-dlp ffmpeg \
+sudo apt install mpv yt-dlp ffmpeg libssl-dev pkg-config \
   libwebkit2gtk-4.1-dev libgtk-3-dev \
   libayatana-appindicator3-dev librsvg2-dev
 ```
@@ -295,7 +293,8 @@ vanguard-music-player/
 │   │   └── main.rs          # Rust backend
 │   ├── build.rs             # Build script
 │   ├── Cargo.toml           # Rust dependencies
-│   ├── tauri.conf.json      # Tauri configuration
+│   ├── tauri.conf.json      # Base Tauri configuration (Linux + shared)
+│   ├── tauri.windows.conf.json  # Windows-only overrides (bundled binaries)
 │   ├── icons/               # App icons
 │   └── binaries/            # Windows-only bundled executables
 ├── public/
@@ -339,7 +338,5 @@ cargo tauri dev
 MIT © [ishmweet](https://github.com/ishmweet)
 
 ---
-
-<div align="center">
 
 *Built with Rust, React, and a stubborn belief that music software shouldn't require an account.*
