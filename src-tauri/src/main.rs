@@ -1,4 +1,3 @@
-use std::fmt::Write as FmtWrite;
 use std::io::{Write, BufRead, BufReader};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -94,32 +93,91 @@ fn sanitize_file_path(path: &str) -> Result<std::path::PathBuf, String> {
     }
 }
 
-// [C1] write!() requires FmtWrite (std::fmt::Write) in scope.
-// The global `use std::io::Write` is a different trait and does NOT satisfy this.
-fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 8);
-    for ch in s.chars() {
-        match ch {
-            '"'  => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => { let _ = write!(out, "\\u{:04x}", c as u32); }
-            c => out.push(c),
-        }
-    }
-    out
-}
-
 fn safe_f64(v: f64) -> f64 {
     if v.is_finite() { v } else { 0.0 }
 }
 
-// ── Helper: Find command in PATH and common Homebrew paths ───────────────────
+// ── Helper: Get bundled binaries directory ───────────────────────────────────
+
+fn get_bundled_bin_dir() -> std::path::PathBuf {
+    use std::path::Path;
+    
+    // Development: look in src-tauri/binaries
+    let dev_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries");
+    if dev_path.exists() {
+        return dev_path;
+    }
+
+    // Production: binaries are bundled via resources in tauri.conf.json
+    // They'll be in the app bundle at: app.app/Contents/Resources/binaries (macOS)
+    // or app/resources/binaries (Windows/Linux)
+    
+    if let Ok(exe_path) = std::env::current_exe() {
+        #[cfg(target_os = "macos")]
+        {
+            // macOS app bundle: /path/to/app.app/Contents/MacOS/binary
+            if let Some(parent) = exe_path.parent() {
+                let resources = parent.parent().map(|p| p.join("Resources"));
+                if let Some(res) = resources {
+                    let bin_dir = res.join("binaries");
+                    if bin_dir.exists() {
+                        return bin_dir;
+                    }
+                }
+            }
+        }
+        
+        #[cfg(not(target_os = "macos"))]
+        {
+            // Windows/Linux: app is typically in program directory
+            if let Some(parent) = exe_path.parent() {
+                let bin_dir = parent.join("resources").join("binaries");
+                if bin_dir.exists() {
+                    return bin_dir;
+                }
+                let bin_dir2 = parent.join("binaries");
+                if bin_dir2.exists() {
+                    return bin_dir2;
+                }
+            }
+        }
+    }
+
+    // Fallback
+    Path::new("binaries").to_path_buf()
+}
+
+// ── Helper: Find command in bundled binaries, then PATH ────────────────────────
 
 fn find_command(cmd: &str) -> String {
-    // Try direct command first
+    let bin_dir = get_bundled_bin_dir();
+    
+    // Try bundled binary first
+    #[cfg(target_os = "macos")]
+    {
+        let bundled_path = bin_dir.join(cmd);
+        if bundled_path.exists() {
+            return bundled_path.to_string_lossy().to_string();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let bundled_path = bin_dir.join(format!("{}.exe", cmd));
+        if bundled_path.exists() {
+            return bundled_path.to_string_lossy().to_string();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let bundled_path = bin_dir.join(cmd);
+        if bundled_path.exists() {
+            return bundled_path.to_string_lossy().to_string();
+        }
+    }
+    
+    // Try direct command in PATH
     if Command::new("which").arg(cmd).output()
         .map(|o| o.status.success()).unwrap_or(false) {
         return cmd.to_string();

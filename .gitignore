@@ -44,3 +44,6 @@ Thumbs.db
 #binaries
 src-tauri/binaries/*
 src-tauri/binaries/*.exe
+
+# Generated files
+public/songs.json

@@ -1356,6 +1356,114 @@ const SpeedSelector = React.memo(({ speed, onChange }: { speed: number; onChange
   );
 });
 
+// ─── POPULAR SONGS FOR RECOMMENDATIONS ────────────────────────────────────────
+const POPULAR_SONGS = [
+  'Blinding Lights The Weeknd',
+  'Shape of You Ed Sheeran',
+  'Someone You Loved Lewis Capaldi',
+  'Heat Waves Glass Animals',
+  'Levitating Dua Lipa',
+  'Anti-Hero Taylor Swift',
+  'As It Was Harry Styles',
+  'Flowers Miley Cyrus',
+  'Watermelon Sugar Harry Styles',
+  'drivers license Olivia Rodrigo',
+  'good 4 u Olivia Rodrigo',
+  'Sunroof Post Malone',
+  'Endless Summer Vacation Miley Cyrus',
+  'despecha Rosalía',
+  'About Damn Time Lizzo',
+  'Murder on My Mind YBN Cordae',
+  'STAY The Kid LAROI Justin Bieber',
+  'Bohemian Rhapsody Queen',
+  'Imagine John Lennon',
+  'Hotel California Eagles',
+  'Stairway to Heaven Led Zeppelin',
+  'Like a Rolling Stone Bob Dylan',
+  'Yesterday The Beatles',
+  'Hey Jude The Beatles',
+  'Hallelujah Leonard Cohen',
+  'Wannabe Spice Girls',
+  'Smells Like Teen Spirit Nirvana',
+  'One U2',
+  'Born to Run Bruce Springsteen',
+  'Sweet Home Chicago Blues Brothers',
+  'Africa Toto',
+  'Don\'t Stop Believin Journey',
+  'Every Breath You Take The Police',
+  'Another One Bites the Dust Queen',
+  'Billie Jean Michael Jackson',
+  'Thriller Michael Jackson',
+  'Like a Virgin Madonna',
+  'Sweet Child O\' Mine Guns N\' Roses',
+  'Comfortably Numb Pink Floyd',
+  'Wish You Were Here Pink Floyd',
+  'Purple Haze Jimi Hendrix',
+  'All the Small Things blink-182',
+  'Under the Bridge Red Hot Chili Peppers',
+  'Creep Radiohead',
+  'No Scrubs TLC',
+  'Toxic Britney Spears',
+  'Bad Guy Billie Eilish',
+  'Uptown Funk Mark Ronson Bruno Mars',
+  'Save Your Tears The Weeknd',
+  'Starboy The Weeknd',
+  'Feels Drake',
+  'Beautiful People Ed Sheeran',
+  'Perfect Ed Sheeran',
+  'Thinking Out Loud Ed Sheeran',
+  'Love Yourself Justin Bieber',
+  'Sorry Justin Bieber',
+  'Count on Me Bruno Mars',
+  'When I Was Your Man Bruno Mars',
+  'Just the Way You Are Bruno Mars',
+  'Royals Lorde',
+  'Someone Like You Adele',
+  'Hello Adele',
+  'Rolling in the Deep Adele',
+  'Set Fire to the Rain Adele',
+  'Someone New Hozier',
+  'Cherry Wine Hozier',
+  'Take Me to Church Hozier',
+  'All These Things That I\'ve Done The Killers',
+  'Mr. Brightside The Killers',
+  'Sex on Fire Kings of Leon',
+  'Time to Pretend MGMT',
+  'Electric Feel MGMT',
+  'Tongue Tied Grouplove',
+  'These Streets Paolo Nutini',
+  'Let It Go Idina Menzel',
+  'The Day We Met Taylor Swift',
+  'Love Story Taylor Swift',
+  'Lover Taylor Swift',
+  'August Taylor Swift',
+  'Glamorous Fergie',
+  'Clarity Zedd Foxes',
+  'Clarity Zedd',
+  'Demons Imagine Dragons',
+  'Radioactive Imagine Dragons',
+  'Night Visions Imagine Dragons',
+  'Follow You Imagine Dragons',
+  'Whatever It Takes Imagine Dragons',
+  'Pumped Up Kicks Foster the People',
+  'The Man The Killers',
+  'Somebody Told Me The Killers',
+  'Midnight City M83',
+  'Electric Feel MGMT',
+  'Home Phillip Phillips',
+  'Best Day of My Life American Authors',
+  'Walking on Sunshine Katrina and the Waves',
+  'Good as Hell Lizzo',
+  'Juice Lizzo',
+  'Cuff It Beyoncé',
+  'Halo Beyoncé',
+  'Single Ladies Beyoncé',
+  'Formation Beyoncé',
+  'Frequency Jay-Z Rihanna',
+  'Umbrella Rihanna',
+  'Diamonds Rihanna'
+];
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function VanguardPlayer() {
 
@@ -1363,6 +1471,7 @@ export default function VanguardPlayer() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchHistory, setSearchHistory] = useState<string[]>(() => loadLS('vg_searchHistory', []));
+  const [searchRecommendations, setSearchRecommendations] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [, setHasSearched] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(() => loadLS('vg_currentTrack', null));
@@ -1549,6 +1658,31 @@ export default function VanguardPlayer() {
     };
   }, []);
   useEffect(() => { saveLS('vg_searchHistory', searchHistory); }, [searchHistory]);
+  useEffect(() => { 
+    // Generate search recommendations based on user input
+    const query = searchQuery.trim().toLowerCase();
+    
+    if (!query) {
+      setSearchRecommendations([]);
+      return;
+    }
+    
+    // Filter popular songs by partial match (case-insensitive)
+    const matchingSongs = POPULAR_SONGS.filter(song => 
+      song.toLowerCase().includes(query)
+    ).slice(0, 6);
+    
+    // Also include matching history items that aren't already in songs list
+    const matchingHistory = searchHistory
+      .filter(h => h.toLowerCase().includes(query) && !matchingSongs.includes(h))
+      .slice(0, 2);
+    
+    // Prioritize songs that start with query first (exact prefix matches)
+    const startsWith = matchingSongs.filter(s => s.toLowerCase().startsWith(query));
+    const partialMatches = matchingSongs.filter(s => !s.toLowerCase().startsWith(query));
+    
+    setSearchRecommendations([...startsWith, ...partialMatches, ...matchingHistory]);
+  }, [searchQuery, searchHistory]);
   useEffect(() => { saveLS('vg_dlQuality', downloadQuality); }, [downloadQuality]);
   useEffect(() => { saveLS('vg_dlPath', downloadPath); }, [downloadPath]);
   useEffect(() => { saveLS('vg_quickPicks', quickPicks); }, [quickPicks]);
@@ -2593,24 +2727,44 @@ export default function VanguardPlayer() {
                       placeholder="Search YouTube... (Ctrl+F)"
                       value={searchQuery} readOnly={isSearching}
                       onChange={e => setSearchQuery(e.target.value)}
-                      onFocus={() => !isSearching && setShowHistory(searchHistory.length > 0)}
-                      onKeyDown={e => { if (e.key === 'Enter') { setShowHistory(false); searchMusic(); } if (e.key === 'Escape') setShowHistory(false); }}
+                      onFocus={() => !isSearching && setShowHistory(true)}
+                      onBlur={() => setTimeout(() => setShowHistory(false), 150)}
+                      onKeyDown={e => { if (e.key === 'Enter') { setShowHistory(false); searchMusic(); } if (e.key === 'Escape') { setShowHistory(false); } }}
                       className={`w-full bg-[#111] border text-white rounded-xl py-3 pl-11 pr-4 focus:outline-none transition-all duration-200 placeholder-neutral-600 font-medium text-sm
                         ${isSearching ? 'border-[#39FF14]/40 ring-1 ring-[#39FF14]/30 opacity-60 cursor-not-allowed' : 'border-neutral-800 focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] focus:shadow-[0_0_20px_rgba(57,255,20,0.1)]'}`} />
-                    {showHistory && (
-                      <div className="absolute top-full left-0 right-0 mt-2 bg-[#0e0e0e] border border-neutral-800/80 rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.6)] z-[100]">
-                        <div className="flex items-center justify-between px-4 py-2.5 border-b border-neutral-800/50">
-                          <span className="text-[11px] font-semibold uppercase tracking-widest text-neutral-600">Recent searches</span>
-                          <button onClick={e => { e.stopPropagation(); setSearchHistory([]); setShowHistory(false); }} className="text-[11px] text-neutral-600 hover:text-red-400 transition-colors px-1">Clear</button>
-                        </div>
-                        {searchHistory.map((h, i) => (
-                          <button key={i} onClick={e => { e.stopPropagation(); setSearchQuery(h); setShowHistory(false); searchMusic(h); }}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.04] transition-colors text-left">
-                            <Clock size={13} className="text-neutral-600 shrink-0" />
-                            <span className="text-sm text-neutral-300 truncate flex-1">{h}</span>
-                            <ChevronRight size={12} className="text-neutral-700 shrink-0" />
-                          </button>
-                        ))}
+                    {showHistory && (searchRecommendations.length > 0 || searchHistory.length > 0) && (
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-[#0e0e0e] border border-neutral-800/80 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] z-[1000] animate-in fade-in slide-in-from-top-2 duration-150 max-h-[500px] overflow-y-auto custom-scrollbar">
+                        {searchRecommendations.length > 0 && (
+                          <>
+                            <div className="flex items-center justify-between px-4 py-2.5 border-b border-neutral-800/50 sticky top-0 bg-[#0e0e0e]/95 backdrop-blur-sm">
+                              <span className="text-[11px] font-semibold uppercase tracking-widest text-neutral-600">Suggestions</span>
+                            </div>
+                            {searchRecommendations.map((rec, i) => (
+                              <button key={`rec-${i}`} onMouseDown={e => { e.preventDefault(); setSearchQuery(rec); searchMusic(rec); setShowHistory(false); }}
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#39FF14]/[0.08] transition-colors duration-150 text-left group active:bg-[#39FF14]/[0.12]">
+                                <Search size={13} className="text-[#39FF14]/60 shrink-0 group-hover:text-[#39FF14]/80" />
+                                <span className="text-sm text-neutral-300 truncate flex-1">{rec}</span>
+                                <ChevronRight size={12} className="text-neutral-700 shrink-0" />
+                              </button>
+                            ))}
+                          </>
+                        )}
+                        {searchHistory.length > 0 && (
+                          <>
+                            <div className="flex items-center justify-between px-4 py-2.5 border-t border-neutral-800/50 sticky top-0 bg-[#0e0e0e]/95 backdrop-blur-sm">
+                              <span className="text-[11px] font-semibold uppercase tracking-widest text-neutral-600">Recent searches</span>
+                              <button onMouseDown={e => { e.preventDefault(); setSearchHistory([]); setShowHistory(false); }} className="text-[11px] text-neutral-600 hover:text-red-400 transition-colors px-1">Clear</button>
+                            </div>
+                            {searchHistory.map((h, i) => (
+                              <button key={`hist-${i}`} onMouseDown={e => { e.preventDefault(); setSearchQuery(h); searchMusic(h); setShowHistory(false); }}
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#39FF14]/[0.06] transition-colors duration-150 text-left group active:bg-[#39FF14]/[0.10]">
+                                <Clock size={13} className="text-neutral-600 shrink-0 group-hover:text-neutral-500" />
+                                <span className="text-sm text-neutral-300 truncate flex-1">{h}</span>
+                                <ChevronRight size={12} className="text-neutral-700 shrink-0 group-hover:text-neutral-600" />
+                              </button>
+                            ))}
+                          </>
+                        )}
                       </div>
                     )}
                   </div>

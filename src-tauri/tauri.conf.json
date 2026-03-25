@@ -34,14 +34,12 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "linux": {
-      "deb": {
-        "depends": [
-          "mpv",
-          "yt-dlp | python3-yt-dlp",
-          "ffmpeg"
-        ]
-      }
+    "resources": [
+      "binaries"
+    ],
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.13"
     },
     "windows": {
       "nsis": {
