@@ -553,6 +553,80 @@
         }
 
         
+        .dl-stats-bar {
+            margin-top: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            flex-wrap: wrap;
+            background: transparent;
+            border: none;
+            border-radius: 16px;
+            padding: 20px 32px;
+            max-width: 640px;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+        .dl-stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            flex: 1;
+            min-width: 110px;
+        }
+        .dl-stat-divider {
+            width: 1px;
+            height: 36px;
+            background: rgba(255,255,255,0.06);
+            flex-shrink: 0;
+            margin: 0 8px;
+        }
+        .dl-stat-value {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--vanguard-green);
+            letter-spacing: -0.5px;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+        .dl-stat-value.loading {
+            color: var(--text-secondary);
+            font-size: 16px;
+            font-weight: 400;
+        }
+        .dl-stat-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            white-space: nowrap;
+        }
+        .dl-stat-live-dot {
+            display: inline-block;
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--vanguard-green);
+            margin-right: 5px;
+            animation: pulse-dot 2s ease-in-out infinite;
+            vertical-align: middle;
+            position: relative;
+            top: -1px;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(79,248,40,0.5); opacity: 1; }
+            50% { box-shadow: 0 0 0 5px rgba(79,248,40,0); opacity: 0.8; }
+        }
+        @media (max-width: 520px) {
+            .dl-stats-bar { padding: 16px 20px; gap: 0; }
+            .dl-stat-value { font-size: 18px; }
+            .dl-stat-divider { margin: 0 4px; }
+        }
+
+        
         .faq-section {
             padding: 100px 5%;
             max-width: 820px;
@@ -1451,6 +1525,15 @@
             </div>
 
         </div>
+
+        
+        <div class="dl-stats-bar reveal-on-scroll delay-300" id="dl-stats-bar">
+            <div class="dl-stat-item">
+                <span class="dl-stat-value loading" id="dl-total">—</span>
+                <span class="dl-stat-label"><span class="dl-stat-live-dot" id="dl-live-dot" style="display:none;"></span>Total Downloads</span>
+            </div>
+        </div>
+
     </section>
 
     <div class="section-divider"></div>
@@ -2156,6 +2239,51 @@
             });
         });
         
+
+        // Live download counter via shields.io (no rate limiting)
+        (function fetchDownloadStats() {
+            const SHIELDS_API = 'https://img.shields.io/github/downloads/ishmweet/vanguard-music-player/total.json';
+            const elTotal = document.getElementById('dl-total');
+            const elDot   = document.getElementById('dl-live-dot');
+
+            function fmt(n) {
+                if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+                if (n >= 1000)    return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+                return n.toString();
+            }
+
+            function animateCount(el, target) {
+                const start = parseInt(el.dataset.current || '0');
+                if (start === target) return;
+                const duration = 900;
+                const startTime = performance.now();
+                function step(now) {
+                    const progress = Math.min((now - startTime) / duration, 1);
+                    const ease = 1 - Math.pow(1 - progress, 3);
+                    const cur = Math.round(start + (target - start) * ease);
+                    el.textContent = fmt(cur);
+                    el.dataset.current = cur;
+                    if (progress < 1) requestAnimationFrame(step);
+                    else el.dataset.current = target;
+                }
+                requestAnimationFrame(step);
+            }
+
+            fetch(SHIELDS_API)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var match = (data.value || '').replace(/,/g, '').match(/\d+/);
+                    if (match) {
+                        elTotal.classList.remove('loading');
+                        animateCount(elTotal, parseInt(match[0]));
+                        elDot.style.display = 'inline-block';
+                    }
+                })
+                .catch(function() {
+                    elTotal.textContent = '—';
+                });
+        })();
+
         (function() {
             var tw = document.getElementById('typewriter');
 
