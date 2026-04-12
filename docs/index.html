@@ -13,14 +13,14 @@
     
     <meta property="og:type"        content="website">
     <meta property="og:url"         content="https://ishmweet.github.io/vanguard-music-player/">
-    <meta property="og:title"       content="Vanguard Player — Open Source Music Player">
+    <meta property="og:title"       content="Vanguard Player, Open Source Music Player">
     <meta property="og:description" content="Ad-free, open-source music player for Windows and Linux. Zero tracking, zero paywalls. Just your music.">
     <meta property="og:site_name"   content="Vanguard Player">
 
     
     <meta name="twitter:card"        content="summary">
     <meta name="twitter:url"         content="https://ishmweet.github.io/vanguard-music-player/">
-    <meta name="twitter:title"       content="Vanguard Player — Open Source Music Player">
+    <meta name="twitter:title"       content="Vanguard Player, Open Source Music Player">
     <meta name="twitter:description" content="Ad-free, open-source music player for Windows and Linux. Zero tracking, zero paywalls. Just your music.">
 
     
@@ -626,6 +626,178 @@
             .dl-stat-divider { margin: 0 4px; }
         }
 
+
+
+        /* ── Community section ── */
+        .community-section {
+            padding: 100px 5%;
+            max-width: 820px;
+            margin: 0 auto;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+        }
+        .community-card {
+            margin-top: 48px;
+            background: #0e0e0e;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 48px 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        .community-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            background: radial-gradient(ellipse at 50% 0%, rgba(88,101,242,0.07) 0%, transparent 65%);
+            pointer-events: none;
+        }
+        .community-card:hover {
+            border-color: rgba(88,101,242,0.35);
+            box-shadow: 0 0 40px rgba(88,101,242,0.08);
+        }
+        .community-discord-icon {
+            width: 56px; height: 56px;
+            background: rgba(88,101,242,0.12);
+            border: 1px solid rgba(88,101,242,0.25);
+            border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            color: #8892f0;
+        }
+        .community-card h3 {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin: 0;
+        }
+        .community-card p {
+            font-size: 15px;
+            color: var(--text-secondary);
+            max-width: 480px;
+            line-height: 1.7;
+            margin: 0;
+        }
+        .community-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        .community-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 50px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border-color);
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+        .community-pill-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--vanguard-green);
+        }
+        .discord-join-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: #5865F2;
+            color: #fff;
+            text-decoration: none;
+            padding: 13px 28px;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 15px;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 6px 20px rgba(88,101,242,0.3);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+        .discord-join-btn:hover {
+            transform: translateY(-2px);
+            background: #6875f5;
+            box-shadow: 0 10px 28px rgba(88,101,242,0.45);
+        }
+        @media (max-width: 600px) {
+            .community-card { padding: 36px 24px; }
+            .community-card h3 { font-size: 18px; }
+        }
+
+        /* ── Trust badges row ── */
+        .trust-badges {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 28px;
+        }
+
+        .trust-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            border: 1px solid var(--border-color);
+            background: rgba(255,255,255,0.03);
+            color: var(--text-secondary);
+            transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+            white-space: nowrap;
+        }
+        .trust-badge:hover {
+            background: rgba(255,255,255,0.06);
+            color: var(--text-main);
+            border-color: rgba(255,255,255,0.15);
+        }
+        .trust-badge.badge-green {
+            border-color: rgba(79,248,40,0.25);
+            color: #4ff828;
+            background: rgba(79,248,40,0.05);
+        }
+        .trust-badge.badge-green:hover {
+            border-color: rgba(79,248,40,0.5);
+            background: rgba(79,248,40,0.10);
+        }
+        .trust-badge.badge-discord {
+            border-color: rgba(88,101,242,0.35);
+            color: #8892f0;
+            background: rgba(88,101,242,0.06);
+        }
+        .trust-badge.badge-discord:hover {
+            border-color: rgba(88,101,242,0.6);
+            background: rgba(88,101,242,0.12);
+            color: #aab2f8;
+        }
+        .trust-badge svg { flex-shrink: 0; }
+        .trust-badge-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: #4ff828;
+            flex-shrink: 0;
+        }
+        #version-badge-text { font-variant-numeric: tabular-nums; }
+
+        @media (max-width: 520px) {
+            .trust-badges { gap: 8px; }
+            .trust-badge { font-size: 11px; padding: 6px 11px; }
+        }
+
         
         .faq-section {
             padding: 100px 5%;
@@ -645,7 +817,8 @@
             opacity: 0.8;
         }
 
-        .faq-section h2 {
+        .faq-section h2,
+        .community-section h2 {
             font-size: 42px;
             font-weight: 800;
             letter-spacing: -1px;
@@ -692,8 +865,8 @@
         }
 
         .faq-item {
-            background: linear-gradient(145deg, #0f0f0f, #0a0a0a);
-            border: 1px solid var(--border-color);
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.05);
             border-radius: 14px;
             overflow: hidden;
             transition: border-color 0.3s ease, box-shadow 0.3s ease;
@@ -980,6 +1153,17 @@
             text-align: center;
             position: relative;
         }
+        .section-label {
+            display: inline-block;
+            color: var(--vanguard-green);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 14px;
+            opacity: 0.8;
+        }
+
         .features-section .section-label {
             display: inline-block;
             color: var(--vanguard-green);
@@ -1010,8 +1194,8 @@
             margin: 0 auto;
         }
         .feature-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.05);
             border-radius: 16px;
             padding: 28px 26px;
             text-align: left;
@@ -1029,9 +1213,9 @@
             transition: opacity 0.3s ease;
         }
         .feature-card:hover {
-            border-color: rgba(79, 248, 40, 0.25);
-            box-shadow: 0 16px 48px rgba(0,0,0,0.6), 0 0 30px rgba(79,248,40,0.05);
-            background: var(--bg-card-hover);
+            border-color: rgba(79, 248, 40, 0.2);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 20px rgba(79,248,40,0.04);
+            background: rgba(255,255,255,0.02);
         }
         .feature-card:hover::before { opacity: 1; }
         .feature-icon {
@@ -1433,7 +1617,198 @@
             .faq-section h2,
             .download-section h2 { font-size: 24px; }
         }
+
+
+        /* ── Page load fade-in ── */
+        body { opacity: 0; transition: opacity 0.5s ease; }
+        body.page-ready { opacity: 1; }
+
+        /* ── Scroll margin so nav doesn't cover headings ── */
+        #download, #features, #screenshots, #faqs, #community, #donate {
+            scroll-margin-top: 80px;
+        }
+
+        /* ── Active nav link ── */
+        .nav-link.nav-active {
+            color: var(--text-main);
+            background: rgba(79,248,40,0.08);
+        }
+
+        /* ── Skeleton loader for download count ── */
+        .dl-stat-value.loading {
+            position: relative;
+            overflow: hidden;
+            color: transparent !important;
+            background: rgba(255,255,255,0.06);
+            border-radius: 6px;
+            min-width: 48px;
+            display: inline-block;
+        }
+        .dl-stat-value.loading::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%);
+            background-size: 200% 100%;
+            animation: skeleton-sweep 1.4s ease-in-out infinite;
+        }
+        @keyframes skeleton-sweep {
+            0%   { background-position: -200% 0; }
+            100% { background-position:  200% 0; }
+        }
+
+        /* ── Button ripple ── */
+        .dl-btn-trigger { overflow: hidden; }
+        .ripple {
+            position: absolute;
+            border-radius: 50%;
+            transform: scale(0);
+            animation: ripple-anim 0.55s linear;
+            background: rgba(0,0,0,0.18);
+            pointer-events: none;
+        }
+        @keyframes ripple-anim {
+            to { transform: scale(4); opacity: 0; }
+        }
+
+        /* ── Scroll-to-top button ── */
+        #scroll-top-btn {
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
+            width: 42px; height: 42px;
+            background: rgba(10,10,10,0.85);
+            border: 1px solid rgba(79,248,40,0.3);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            z-index: 999;
+            opacity: 0;
+            transform: translateY(12px);
+            transition: opacity 0.3s ease, transform 0.3s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            pointer-events: none;
+            backdrop-filter: blur(12px);
+        }
+        #scroll-top-btn.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        #scroll-top-btn:hover {
+            border-color: rgba(79,248,40,0.7);
+            box-shadow: 0 0 16px rgba(79,248,40,0.2);
+        }
+        #scroll-top-btn svg {
+            stroke: var(--vanguard-green);
+        }
+        @media (max-width: 600px) {
+            #scroll-top-btn { bottom: 20px; right: 20px; width: 38px; height: 38px; }
+        }
+
+        /* ── Comparison Table ── */
+        .compare-section {
+            padding: 100px 5%;
+            max-width: 860px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        .compare-section h2 {
+            font-size: 42px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 14px;
+        }
+        .compare-section > p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            margin-bottom: 48px;
+            max-width: 480px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .compare-wrap {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.06);
+            background: transparent;
+        }
+        .compare-tbl {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .compare-tbl thead tr {
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .compare-tbl th {
+            padding: 20px 24px;
+            font-size: 14px;
+            font-weight: 700;
+            text-align: center;
+            color: rgba(255,255,255,0.75);
+        }
+        .compare-tbl th:first-child {
+            text-align: left;
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            width: 25%;
+        }
+        .compare-tbl th.cth-v { color: var(--vanguard-green); }
+        .compare-tbl tbody tr {
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            transition: background 0.15s;
+        }
+        .compare-tbl tbody tr:last-child { border-bottom: none; }
+        .compare-tbl tbody tr:hover { background: rgba(255,255,255,0.025); }
+        .compare-tbl td {
+            padding: 18px 24px;
+            text-align: center;
+            font-size: 14px;
+            color: rgba(255,255,255,0.45);
+            vertical-align: middle;
+        }
+        .compare-tbl td:first-child {
+            text-align: left;
+            color: rgba(255,255,255,0.75);
+            font-weight: 500;
+        }
+        .cv { color: var(--vanguard-green); font-weight: 600; }
+        .cn { color: rgba(255,255,255,0.3); }
+        .cp { color: #f59e0b; font-weight: 500; }
+        @media (max-width: 600px) {
+            .compare-tbl th, .compare-tbl td { padding: 14px 12px; font-size: 12px; }
+        }
+
+
     </style>
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Vanguard Player",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Windows 10+, Linux",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "description": "Free, open-source, ad-free music player for Windows and Linux. High-fidelity playback, YouTube streaming, offline downloads, zero tracking.",
+        "url": "https://ishmweet.github.io/vanguard-music-player/",
+        "downloadUrl": "https://github.com/ishmweet/vanguard-music-player/releases",
+        "softwareVersion": "0.1.0",
+        "license": "https://github.com/ishmweet/vanguard-music-player/blob/main/LICENSE",
+        "author": {
+            "@type": "Person",
+            "name": "ishmweet"
+        }
+    }
+    </script>
 </head>
 <body>
 
@@ -1445,7 +1820,12 @@
         </svg>
     </a>
 
-    <div id="scroll-progress"></div>
+<div id="scroll-progress"></div>
+    <button id="scroll-top-btn" aria-label="Scroll to top">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"/>
+        </svg>
+    </button>
     <div class="music-pattern"></div>
     <div class="neon-blur-circle"></div>
 
@@ -1459,9 +1839,11 @@
         </a>
         <div class="nav-links">
             <a href="#"             class="nav-link">Home</a>
-            <a href="#features"     class="nav-link">Features</a>
+            <a href="#compare"      class="nav-link">Compare</a>
             <a href="#screenshots"  class="nav-link">Screenshots</a>
+            <a href="#features"     class="nav-link">Features</a>
             <a href="#faqs"         class="nav-link">FAQs</a>
+            <a href="#community"   class="nav-link">Community</a>
             <a href="#donate"       class="nav-link">Donate</a>
             <a href="#download"     class="nav-btn">Download</a>
         </div>
@@ -1471,9 +1853,11 @@
     </nav>
     <div class="nav-mobile-menu" id="nav-mobile-menu">
         <a href="#"             class="nav-mobile-link">Home</a>
-        <a href="#features"     class="nav-mobile-link">Features</a>
+        <a href="#compare"      class="nav-mobile-link">Compare</a>
         <a href="#screenshots"  class="nav-mobile-link">Screenshots</a>
+        <a href="#features"     class="nav-mobile-link">Features</a>
         <a href="#faqs"         class="nav-mobile-link">FAQs</a>
+        <a href="#community"   class="nav-mobile-link">Community</a>
         <a href="#donate"       class="nav-mobile-link">Donate</a>
         <a href="#download"     class="nav-mobile-link nav-mobile-btn">Download</a>
     </div>
@@ -1482,9 +1866,9 @@
     <header class="hero">
         <div class="hero-content">
             <span class="hero-tag">ZERO ADS. ZERO TRACKING.</span>
-            <h1 class="hero-title" id="typewriter" style="visibility:hidden;">Your music, <span>uninterrupted.</span></h1>
+<h1 class="hero-title" id="typewriter" style="visibility:hidden;">Your music, <span>uninterrupted.</span></h1>
             <p class="hero-desc">
-                Experience the ultimate ad-free music player designed for true audio enthusiasts. <strong>Vanguard Player</strong> is meticulously built from the ground up to deliver pure, high-fidelity playback, seamless library management, and a strikingly sleek interface—completely free of distracting clutter, tracking, or paywalls. Fully open-source, community-driven, and completely yours.
+                Your music deserves better than ads, paywalls, and spyware. <strong>Vanguard Player</strong> delivers pure, high-fidelity playback with a beautifully clean interface that simply stays out of your way. No tracking, no subscriptions, no compromises, ever. Just you, your music, and nothing else. Free forever, open-source, and built with obsessive care by people who actually love music.
             </p>
             <a href="#download" class="hero-btn">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1502,26 +1886,35 @@
         <h2 class="reveal-on-scroll">Choose your platform</h2>
         <p class="reveal-on-scroll delay-100">Vanguard Player is currently available for Windows and Linux architectures.</p>
 
+        <!-- Version badge above download buttons -->
+        <p class="reveal-on-scroll delay-100" style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4ff828" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px;position:relative;top:-1px;"><polyline points="20 6 9 17 4 12"/></svg><span id="version-badge-text" style="color:#4ff828;font-weight:600;">v0.1.0</span> &nbsp;Latest Release
+        </p>
+
         <div class="download-buttons reveal-on-scroll delay-200">
 
             
-            <div class="dl-btn-wrap">
+            <div class="dl-btn-wrap" style="display:flex;flex-direction:column;align-items:center;gap:10px;">
                 <a href="https://github.com/ishmweet/vanguard-music-player/releases/download/0.1.0/vanguard-player_0.1.0_x64-setup.exe" class="dl-btn-trigger dl-btn-direct">
                     <span class="dl-btn-trigger-text">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/8/87/Windows_logo_-_2021.svg" alt="Windows" />
                         Download for Windows (.exe)
                     </span>
                 </a>
+                <p style="font-size:12px;color:rgba(255,255,255,0.38);max-width:280px;line-height:1.6;margin:0;text-align:center;">
+                    ⚠️ Windows may flag this as unsafe. That's a false positive, it's an unsigned indie app. <a href="https://www.virustotal.com/gui/file/33911097afba34930e089d7173421a5235f48dc5025c667e3259fbc376d3cf1e" target="_blank" rel="noopener noreferrer" style="color:rgba(79,248,40,0.7);text-decoration:underline;text-underline-offset:3px;">VirusTotal scan</a> shows 0 threats.
+                </p>
             </div>
 
             
-            <div class="dl-btn-wrap">
+            <div class="dl-btn-wrap" style="display:flex;flex-direction:column;align-items:center;gap:10px;">
                 <a href="https://github.com/ishmweet/vanguard-music-player/releases/download/0.1.0/vanguard-player_0.1.0_amd64.deb" class="dl-btn-trigger dl-btn-direct">
                     <span class="dl-btn-trigger-text">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/3/35/Tux.svg" alt="Linux" />
                         Download for Linux (.deb)
                     </span>
                 </a>
+<a href="https://www.virustotal.com/gui/file/d5fc55e151e458b705ff3656a4b49d4217fd431f6be9460eae6c6ecdf78f6eff" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:rgba(79,248,40,0.7);text-decoration:underline;text-underline-offset:3px;">VirusTotal scan</a>
             </div>
 
         </div>
@@ -1532,92 +1925,78 @@
                 <span class="dl-stat-value loading" id="dl-total">—</span>
                 <span class="dl-stat-label"><span class="dl-stat-live-dot" id="dl-live-dot" style="display:none;"></span>Total Downloads</span>
             </div>
-        </div>
 
     </section>
 
+
     <div class="section-divider"></div>
 
-    
-    <section id="features" class="features-section">
-        <span class="section-label reveal-on-scroll">What's Inside</span>
-        <h2 class="reveal-on-scroll delay-100">Everything you need.<br>Nothing you don't.</h2>
-        <p class="reveal-on-scroll delay-200">Built for music lovers who want power without clutter — zero ads, zero tracking, just pure listening.</p>
+    <section id="compare" class="compare-section">
+        <span class="section-label reveal-on-scroll">Compare</span>
+        <h2 class="reveal-on-scroll delay-100">Why Vanguard?</h2>
+        <p class="reveal-on-scroll delay-200">See how Vanguard stacks up against the streaming giants.</p>
 
-        <div class="features-grid">
-
-            <div class="feature-card reveal-on-scroll delay-100">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
-                </div>
-                <div class="feature-title">YouTube Audio Streaming</div>
-                <div class="feature-desc">Search and stream any track directly from YouTube — no account, no API key, no ads. Pure audio, bypassing all video overhead via yt-dlp.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-200">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                </div>
-                <div class="feature-title">Local Music Library</div>
-                <div class="feature-desc">Import and manage your local MP3, FLAC, and audio files. Vanguard reads metadata tags and organises your collection automatically.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-300">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                </div>
-                <div class="feature-title">Offline Downloads</div>
-                <div class="feature-desc">Save any track as a high-quality MP3. Choose High (320kbps+), Medium (~128kbps), or Low quality. Listen anywhere — even without internet.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-100">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 17 21 12 16 7"/><polyline points="8 7 3 12 8 17"/></svg>
-                </div>
-                <div class="feature-title">Playlist Import</div>
-                <div class="feature-desc">Import from Spotify via Exportify CSV or paste any YouTube/YouTube Music playlist URL — Vanguard auto-matches every track. No login or API keys needed.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-200">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                </div>
-                <div class="feature-title">Playlists &amp; Queue</div>
-                <div class="feature-desc">Create, edit, and reorder unlimited playlists. Full queue management with shuffle and repeat support.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-300">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                </div>
-                <div class="feature-title">Precision Playback Controls</div>
-                <div class="feature-desc">Shuffle, repeat, seek, volume, and variable playback speed — with smooth progress tracking and animated now-playing indicators.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-100">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                </div>
-                <div class="feature-title">Sleep Timer</div>
-                <div class="feature-desc">Set an auto-pause timer from quick presets (5m – 90m) or a custom duration. Perfect for falling asleep to music without leaving it running all night.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-200">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                </div>
-                <div class="feature-title">Zero Telemetry. Zero Tracking.</div>
-                <div class="feature-desc">No analytics, no crash reporters, no data collection of any kind. Everything — playlists, history, settings — stays on your machine.</div>
-            </div>
-
-            <div class="feature-card reveal-on-scroll delay-300">
-                <div class="feature-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-                </div>
-                <div class="feature-title">Backup &amp; Restore</div>
-                <div class="feature-desc">Export your entire library — playlists, liked songs, and settings — as a portable JSON file. Restore it on any machine and pick up exactly where you left off.</div>
-            </div>
-
+        <div class="compare-wrap reveal-on-scroll delay-300">
+            <table class="compare-tbl">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th class="cth-v">Vanguard</th>
+                        <th>Spotify</th>
+                        <th>YouTube Music</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Price</td>
+                        <td><span class="cv">Free forever</span></td>
+                        <td><span class="cn">Free with ads / $11.99 mo</span></td>
+                        <td><span class="cn">Free with ads / $10.99 mo</span></td>
+                    </tr>
+                    <tr>
+                        <td>Ads</td>
+                        <td><span class="cv">None, ever</span></td>
+                        <td><span class="cn">Free tier</span></td>
+                        <td><span class="cn">Free tier</span></td>
+                    </tr>
+                    <tr>
+                        <td>Data tracking</td>
+                        <td><span class="cv">Zero</span></td>
+                        <td><span class="cn">Listening habits, device info</span></td>
+                        <td><span class="cn">Google account data</span></td>
+                    </tr>
+                    <tr>
+                        <td>Offline playback</td>
+                        <td><span class="cv">Full, always free</span></td>
+                        <td><span class="cp">Premium only</span></td>
+                        <td><span class="cp">Premium only</span></td>
+                    </tr>
+                    <tr>
+                        <td>Local music files</td>
+                        <td><span class="cv">MP3, FLAC, full library</span></td>
+                        <td><span class="cp">Very limited</span></td>
+                        <td><span class="cn">Not supported</span></td>
+                    </tr>
+                    <tr>
+                        <td>Open source</td>
+                        <td><span class="cv">Fully open</span></td>
+                        <td><span class="cn">Proprietary</span></td>
+                        <td><span class="cn">Proprietary</span></td>
+                    </tr>
+                    <tr>
+                        <td>Works without internet</td>
+                        <td><span class="cv">Yes</span></td>
+                        <td><span class="cn">No</span></td>
+                        <td><span class="cn">No</span></td>
+                    </tr>
+                    <tr>
+                        <td>Download tracks</td>
+                        <td><span class="cv">Free, any track</span></td>
+                        <td><span class="cp">Premium only</span></td>
+                        <td><span class="cp">Premium only</span></td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </section>
 
@@ -1843,7 +2222,7 @@
                 <div class="screenshot-overlay">
                     <div class="screenshot-overlay-tag">Now Playing</div>
                     <div class="screenshot-overlay-title">Clean, distraction-free player UI</div>
-                    <div class="screenshot-overlay-desc">Full playback controls, queue management, and smart recommendations — all in one view.</div>
+                    <div class="screenshot-overlay-desc">Full playback controls, queue management, and smart recommendations, all in one view.</div>
                 </div>
             </div>
 
@@ -1895,7 +2274,7 @@
                     <rect x="20" y="344" width="540" height="56" rx="10" fill="#111" stroke="#1e1e1e" stroke-width="1"/>
                     <rect x="34" y="356" width="38" height="38" rx="8" fill="#2a2010"/>
                     <text x="50" y="381" font-family="Inter,sans-serif" font-size="18" fill="#ffaa22" opacity="0.5">♪</text>
-                    <text x="84" y="370" font-family="Inter,sans-serif" font-size="14" fill="#ccc" font-weight="600">The Midnight — Echoes</text>
+                    <text x="84" y="370" font-family="Inter,sans-serif" font-size="14" fill="#ccc" font-weight="600">The Midnight, Echoes</text>
                     <text x="84" y="388" font-family="Inter,sans-serif" font-size="12" fill="#555">The Midnight · 4:47</text>
                 </svg>
                 <div class="screenshot-chrome">
@@ -1910,7 +2289,7 @@
                 <div class="screenshot-overlay">
                     <div class="screenshot-overlay-tag">Search</div>
                     <div class="screenshot-overlay-title">Instant YouTube audio search</div>
-                    <div class="screenshot-overlay-desc">Find any track in milliseconds — no account or API key needed.</div>
+                    <div class="screenshot-overlay-desc">Find any track in milliseconds, no account or API key needed.</div>
                 </div>
             </div>
 
@@ -1941,7 +2320,7 @@
                     <circle cx="30" cy="152" r="9" fill="#4ff828"/>
                     <text x="27" y="156" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">3</text>
                     <text x="48" y="150" font-family="Inter,sans-serif" font-size="12" fill="#fff" font-weight="600">Export your playlist</text>
-                    <text x="48" y="164" font-family="Inter,sans-serif" font-size="11" fill="#555">Click the green Export button — a .csv file will download</text>
+                    <text x="48" y="164" font-family="Inter,sans-serif" font-size="11" fill="#555">Click the green Export button, a .csv file will download</text>
                     
                     <circle cx="30" cy="192" r="9" fill="#4ff828"/>
                     <text x="27" y="196" font-family="Inter,sans-serif" font-size="10" fill="#000" font-weight="800">4</text>
@@ -1979,8 +2358,96 @@
                 <div class="screenshot-overlay">
                     <div class="screenshot-overlay-tag">Import</div>
                     <div class="screenshot-overlay-title">Bring your Spotify playlists over</div>
-                    <div class="screenshot-overlay-desc">Export via Exportify, upload the CSV — Vanguard matches every track automatically.</div>
+                    <div class="screenshot-overlay-desc">Export via Exportify, upload the CSV, Vanguard matches every track automatically.</div>
                 </div>
+            </div>
+
+        </div>
+    </section>
+
+    <div class="section-divider"></div>
+
+
+    <div class="section-divider"></div>
+
+    
+    <section id="features" class="features-section">
+        <span class="section-label reveal-on-scroll">What's Inside</span>
+        <h2 class="reveal-on-scroll delay-100">Everything you need.<br>Nothing you don't.</h2>
+        <p class="reveal-on-scroll delay-200">Built for music lovers who want power without clutter, zero ads, zero tracking, just pure listening.</p>
+
+        <div class="features-grid">
+
+            <div class="feature-card reveal-on-scroll delay-100">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
+                </div>
+                <div class="feature-title">YouTube Audio Streaming</div>
+                <div class="feature-desc">Search and stream any track directly from YouTube, no account, no API key, no ads. Pure audio, bypassing all video overhead via yt-dlp.</div>
+            </div>
+
+            <div class="feature-card reveal-on-scroll delay-200">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                </div>
+                <div class="feature-title">Local Music Library</div>
+                <div class="feature-desc">Import and manage your local MP3, FLAC, and audio files. Vanguard reads metadata tags and organises your collection automatically.</div>
+            </div>
+
+            <div class="feature-card reveal-on-scroll delay-300">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </div>
+                <div class="feature-title">Offline Downloads</div>
+                <div class="feature-desc">Save any track as a high-quality MP3. Choose High (320kbps+), Medium (~128kbps), or Low quality. Listen anywhere, even without internet.</div>
+            </div>
+
+            <div class="feature-card reveal-on-scroll delay-100">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 17 21 12 16 7"/><polyline points="8 7 3 12 8 17"/></svg>
+                </div>
+                <div class="feature-title">Playlist Import</div>
+                <div class="feature-desc">Import from Spotify via Exportify CSV or paste any YouTube/YouTube Music playlist URL, Vanguard auto-matches every track. No login or API keys needed.</div>
+            </div>
+
+            <div class="feature-card reveal-on-scroll delay-200">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                </div>
+                <div class="feature-title">Playlists &amp; Queue</div>
+                <div class="feature-desc">Create, edit, and reorder unlimited playlists. Full queue management with shuffle and repeat support.</div>
+            </div>
+
+            <div class="feature-card reveal-on-scroll delay-300">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                </div>
+                <div class="feature-title">Precision Playback Controls</div>
+                <div class="feature-desc">Shuffle, repeat, seek, volume, and variable playback speed, with smooth progress tracking and animated now-playing indicators.</div>
+            </div>
+
+            <div class="feature-card reveal-on-scroll delay-100">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </div>
+                <div class="feature-title">Sleep Timer</div>
+                <div class="feature-desc">Set an auto-pause timer from quick presets (5m – 90m) or a custom duration. Perfect for falling asleep to music without leaving it running all night.</div>
+            </div>
+
+            <div class="feature-card reveal-on-scroll delay-200">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div class="feature-title">Zero Telemetry. Zero Tracking.</div>
+                <div class="feature-desc">No analytics, no crash reporters, no data collection of any kind. Everything: playlists, history, settings, stays on your machine.</div>
+            </div>
+
+            <div class="feature-card reveal-on-scroll delay-300">
+                <div class="feature-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                </div>
+                <div class="feature-title">Backup &amp; Restore</div>
+                <div class="feature-desc">Export your entire library: playlists, liked songs, and settings, as a portable JSON file. Restore it on any machine and pick up exactly where you left off.</div>
             </div>
 
         </div>
@@ -2007,7 +2474,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">Yes! Vanguard Player is 100% free and open-source. There are absolutely no paywalls, premium tiers, or hidden fees — and never will be.</div>
+                        <div class="faq-answer-inner">Yes! Vanguard Player is 100% free and open-source. There are absolutely no paywalls, premium tiers, or hidden fees, and never will be.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2016,7 +2483,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">Vanguard streams audio directly from YouTube using <strong style="color:#fff">yt-dlp</strong> under the hood. It extracts only the audio stream — no video is ever downloaded or rendered — giving you a clean, high-fidelity playback with minimal bandwidth usage. You can also play your own local files (MP3, FLAC, etc.) from the Offline section.</div>
+                        <div class="faq-answer-inner">Vanguard streams audio directly from YouTube using <strong style="color:#fff">yt-dlp</strong> under the hood. It extracts only the audio stream, no video is ever downloaded or rendered, giving you a clean, high-fidelity playback with minimal bandwidth usage. You can also play your own local files (MP3, FLAC, etc.) from the Offline section.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2025,7 +2492,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">No. Vanguard uses <strong style="color:#fff">yt-dlp</strong> directly — no YouTube account, no API key, and no Premium subscription needed. Everything works out of the box.</div>
+                        <div class="faq-answer-inner">No. Vanguard uses <strong style="color:#fff">yt-dlp</strong> directly, no YouTube account, no API key, and no Premium subscription needed. Everything works out of the box.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2034,7 +2501,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">Yes! Any track can be downloaded as an MP3 directly to your local storage via the built-in yt-dlp extractor. You can choose download quality — <strong style="color:#fff">High</strong> (best available, 320kbps+), <strong style="color:#fff">Medium</strong> (~128kbps), or <strong style="color:#fff">Low</strong> (smallest file size) — and set your preferred download folder in Settings. Downloaded tracks appear in the <strong style="color:#fff">Offline</strong> section and play without any internet connection.</div>
+                        <div class="faq-answer-inner">Yes! Any track can be downloaded as an MP3 directly to your local storage via the built-in yt-dlp extractor. You can choose download quality, <strong style="color:#fff">High</strong> (best available, 320kbps+), <strong style="color:#fff">Medium</strong> (~128kbps), or <strong style="color:#fff">Low</strong> (smallest file size), and set your preferred download folder in Settings. Downloaded tracks appear in the <strong style="color:#fff">Offline</strong> section and play without any internet connection.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2043,7 +2510,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">Yes! Export your Spotify playlist as a CSV using <a href="https://exportify.net" target="_blank" rel="noopener" style="color:var(--vanguard-green);">Exportify</a> (free, no extra software), then upload the CSV inside Vanguard. It runs up to 12 parallel YouTube searches to auto-match every track and rebuild your playlist — no Spotify login inside the app, no API keys required. You can also import any public <strong style="color:#fff">YouTube or YouTube Music playlist</strong> directly by pasting its URL — tracks are imported instantly with no matching step needed.</div>
+                        <div class="faq-answer-inner">Yes! Export your Spotify playlist as a CSV using <a href="https://exportify.net" target="_blank" rel="noopener" style="color:var(--vanguard-green);">Exportify</a> (free, no extra software), then upload the CSV inside Vanguard. It runs up to 12 parallel YouTube searches to auto-match every track and rebuild your playlist, no Spotify login inside the app, no API keys required. You can also import any public <strong style="color:#fff">YouTube or YouTube Music playlist</strong> directly by pasting its URL, tracks are imported instantly with no matching step needed.</div>
                     </div>
                 </div>
             </div>
@@ -2062,7 +2529,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">Currently, Vanguard Player is fully supported on <strong style="color:#fff">Windows</strong> (NSIS installer, <strong style="color:#fff">.exe</strong>) and <strong style="color:#fff">Linux</strong> (<strong style="color:#fff">.deb</strong> for Debian/Ubuntu) — all x64.</div>
+                        <div class="faq-answer-inner">Currently, Vanguard Player is fully supported on <strong style="color:#fff">Windows</strong> (NSIS installer, <strong style="color:#fff">.exe</strong>) and <strong style="color:#fff">Linux</strong> (<strong style="color:#fff">.deb</strong> for Debian/Ubuntu), all x64.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2071,7 +2538,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">On <strong style="color:#fff">Linux</strong>, all required dependencies (<strong style="color:#fff">mpv</strong>, <strong style="color:#fff">yt-dlp</strong>, <strong style="color:#fff">ffmpeg</strong>) are declared as package dependencies in the <strong style="color:#fff">.deb</strong> — <code style="color:#4ff828;font-size:12px;">apt</code> installs them automatically alongside the app, nothing manual needed. On <strong style="color:#fff">Windows</strong>, all required binaries are bundled inside the installer — no extra setup required.</div>
+                        <div class="faq-answer-inner">On <strong style="color:#fff">Linux</strong>, all required dependencies (<strong style="color:#fff">mpv</strong>, <strong style="color:#fff">yt-dlp</strong>, <strong style="color:#fff">ffmpeg</strong>) are declared as package dependencies in the <strong style="color:#fff">.deb</strong>, <code style="color:#4ff828;font-size:12px;">apt</code> installs them automatically alongside the app, nothing manual needed. On <strong style="color:#fff">Windows</strong>, all required binaries are bundled inside the installer, no extra setup required.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2080,7 +2547,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">An internet connection is needed to search and stream music from YouTube. However, any track you've downloaded via the built-in extractor is saved locally and available anytime through the <strong style="color:#fff">Offline</strong> section — fully playable without any internet. Your local music files also work completely offline.</div>
+                        <div class="faq-answer-inner">An internet connection is needed to search and stream music from YouTube. However, any track you've downloaded via the built-in extractor is saved locally and available anytime through the <strong style="color:#fff">Offline</strong> section, fully playable without any internet. Your local music files also work completely offline.</div>
                     </div>
                 </div>
             </div>
@@ -2099,7 +2566,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner">No. There is zero telemetry, zero analytics, and zero data collection of any kind. The only stats Vanguard tracks are your <strong style="color:#fff">total listening time</strong> — stored entirely on your local machine, never sent anywhere. Your playlists, history, and settings never leave your device.</div>
+                        <div class="faq-answer-inner">No. There is zero telemetry, zero analytics, and zero data collection of any kind. The only stats Vanguard tracks are your <strong style="color:#fff">total listening time</strong>, stored entirely on your local machine, never sent anywhere. Your playlists, history, and settings never leave your device.</div>
                     </div>
                 </div>
                 <div class="faq-item">
@@ -2117,7 +2584,7 @@
                         <span class="faq-icon"><svg viewBox="0 0 12 12" fill="none" stroke-width="2" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></span>
                     </button>
                     <div class="faq-answer" role="region">
-                        <div class="faq-answer-inner"><strong style="color:#fff">yt-dlp</strong> handles audio extraction and YouTube streaming with up to 12 concurrent searches for playlist imports. <strong style="color:#fff">mpv</strong> is the audio engine, controlled via a Unix IPC socket (<code style="color:#4ff828;font-size:12px;">/tmp/mpvsocket</code>) on Linux and a named pipe (<code style="color:#4ff828;font-size:12px;">\\.\pipe\mpvsocket</code>) on Windows. <strong style="color:#fff">ffprobe</strong> powers the Audio Info panel (codec, bitrate, sample rate, channels). Vanguard also exposes variable playback speed and loudness normalisation — all piped directly into mpv's audio filter chain.</div>
+                        <div class="faq-answer-inner"><strong style="color:#fff">yt-dlp</strong> handles audio extraction and YouTube streaming with up to 12 concurrent searches for playlist imports. <strong style="color:#fff">mpv</strong> is the audio engine, controlled via a Unix IPC socket (<code style="color:#4ff828;font-size:12px;">/tmp/mpvsocket</code>) on Linux and a named pipe (<code style="color:#4ff828;font-size:12px;">\\.\pipe\mpvsocket</code>) on Windows. <strong style="color:#fff">ffprobe</strong> powers the Audio Info panel (codec, bitrate, sample rate, channels). Vanguard also exposes variable playback speed and loudness normalisation, all piped directly into mpv's audio filter chain.</div>
                     </div>
                 </div>
             </div>
@@ -2155,6 +2622,25 @@
 
     <div class="section-divider"></div>
 
+    <!-- Community Section -->
+    <section id="community" class="community-section">
+        <span class="section-label reveal-on-scroll">Community</span>
+        <h2 class="reveal-on-scroll delay-100">Come hang out</h2>
+        <p class="reveal-on-scroll delay-200" style="color:var(--text-secondary);font-size:17px;margin-bottom:14px;max-width:520px;line-height:1.7;">
+            Vanguard has a growing community of music lovers, tinkerers, and open-source fans. Whether you found a bug, have a feature idea, or just want to talk music, you're welcome here.
+        </p>
+        <p class="reveal-on-scroll delay-300" style="color:var(--text-secondary);font-size:15px;opacity:0.65;margin-bottom:32px;max-width:460px;line-height:1.7;">
+            Feedback from the Discord directly shapes what gets built next.
+        </p>
+
+        <a href="https://discord.gg/k2kvtBa7AF" target="_blank" rel="noopener noreferrer" class="discord-join-btn reveal-on-scroll delay-400">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.003.02.014.04.03.052a19.9 19.9 0 0 0 5.993 3.03.077.077 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+            Join the Discord
+        </a>
+    </section>
+
+    <div class="section-divider"></div>
+
     
     <section id="donate" class="donate-section">
         <img src="vanguard_player_icon.png" alt="Vanguard Player Icon" class="donate-icon reveal-on-scroll">
@@ -2175,6 +2661,7 @@
             </a>
         </div>
     </section>
+
 
     <footer>
         <p>© <span id="footer-year"></span> Vanguard Player · Open source, always · <a href="https://github.com/ishmweet" target="_blank" rel="noopener">GitHub</a></p>
@@ -2239,6 +2726,19 @@
             });
         });
         
+
+        // Auto-update version badge from GitHub latest release
+        (function fetchLatestVersion() {
+            fetch('https://api.github.com/repos/ishmweet/vanguard-music-player/releases/latest')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.tag_name) {
+                        var tag = data.tag_name.startsWith('v') ? data.tag_name : 'v' + data.tag_name;
+                        document.getElementById('version-badge-text').textContent = tag;
+                    }
+                })
+                .catch(function() {}); // silently fail, fallback text stays
+        })();
 
         // Live download counter via shields.io (no rate limiting)
         (function fetchDownloadStats() {
@@ -2368,6 +2868,64 @@
                 writer.type();
             }, 950);
         })();
+
+    
+
+
+
+        // 1. Page load fade-in
+        window.addEventListener('load', function() {
+            document.body.classList.add('page-ready');
+        });
+
+        // 2. Active nav link on scroll
+        (function() {
+            var sections = ['download','compare','screenshots','features','faqs','community','donate'];
+            var navLinks = {};
+            sections.forEach(function(id) {
+                var el = document.querySelector('.nav-links a[href="#' + id + '"]');
+                if (el) navLinks[id] = el;
+            });
+
+            function onScroll() {
+                var scrollY = window.scrollY + 120;
+                var active = null;
+                sections.forEach(function(id) {
+                    var sec = document.getElementById(id);
+                    if (sec && sec.offsetTop <= scrollY) active = id;
+                });
+                Object.keys(navLinks).forEach(function(id) {
+                    navLinks[id].classList.toggle('nav-active', id === active);
+                });
+            }
+            window.addEventListener('scroll', onScroll, { passive: true });
+            onScroll();
+        })();
+
+        // 3. Button ripple effect
+        document.querySelectorAll('.dl-btn-trigger').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                var rect = btn.getBoundingClientRect();
+                var size = Math.max(rect.width, rect.height) * 2;
+                var ripple = document.createElement('span');
+                ripple.className = 'ripple';
+                ripple.style.cssText = 'width:' + size + 'px;height:' + size + 'px;left:' + (e.clientX - rect.left - size/2) + 'px;top:' + (e.clientY - rect.top - size/2) + 'px;';
+                btn.appendChild(ripple);
+                setTimeout(function() { ripple.remove(); }, 600);
+            });
+        });
+
+        // 4. Scroll-to-top button
+        (function() {
+            var btn = document.getElementById('scroll-top-btn');
+            window.addEventListener('scroll', function() {
+                btn.classList.toggle('visible', window.scrollY > 400);
+            }, { passive: true });
+            btn.addEventListener('click', function() {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        })();
+
 
     </script>
 
