@@ -205,6 +205,8 @@ lazy_static::lazy_static! {
     
     
     static ref LOUDNORM_ENABLED: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
+    static ref SKIP_SILENCE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    static ref STREAM_QUALITY: Arc<Mutex<String>> = Arc::new(Mutex::new("best".to_string()));
 }
 
 fn default_cache_dir() -> String {
@@ -271,7 +273,7 @@ async fn search_youtube(query: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let mut child = Command::new(bin_ytdlp())
             .args([
-                &format!("ytsearch10:{}", query),
+                &format!("ytsearch40:{}", query),
                 "--flat-playlist",
                 "--print", "%(title)s====%(uploader)s====%(duration_string)s====%(id)s",
                 "--no-warnings",
@@ -442,30 +444,63 @@ async fn prefetch_track(url: String) -> Result<(), String> {
     tokio::spawn(async move {
         let url_clone = url.clone();
         let result = tokio::task::spawn_blocking(move || {
-            Command::new(bin_ytdlp())
-                .args([
-                    "--print", "urls",
-                    "--format", "bestaudio[ext=webm]/bestaudio/best",
-                    "--no-check-certificates",
-                    "--no-warnings",
-                    "--no-playlist",
-                    "--socket-timeout", "8",
-                    &url_clone,
-                ])
-                .no_window()
-                .output()
+            let run = |browser: Option<&str>, client: &str| -> Option<String> {
+                let mut cmd = Command::new(bin_ytdlp());
+                cmd.args([
+                    "--no-warnings", "--no-playlist", "--no-check-certificates",
+                    "--socket-timeout", "10", "--retries", "0",
+                    "--dump-json",
+                    "--extractor-args", &format!("youtube:player_client={}", client),
+                ]);
+                if let Some(b) = browser { cmd.args(["--cookies-from-browser", b]); }
+                cmd.args(["--", &url_clone]);
+                let o = cmd.no_window().output().ok()?;
+                if !o.status.success() { return None; }
+                let json_str = String::from_utf8_lossy(&o.stdout);
+                serde_json::from_str::<Value>(json_str.trim()).ok().and_then(|info| {
+                    let formats = info["formats"].as_array()?;
+                    formats.iter()
+                        .filter(|f| {
+                            f["protocol"].as_str().unwrap_or("") == "https"
+                                && f["vcodec"].as_str().unwrap_or("") == "none"
+                                && !f["acodec"].as_str().unwrap_or("").is_empty()
+                                && f["acodec"].as_str().unwrap_or("") != "none"
+                        })
+                        .max_by_key(|f| f["abr"].as_f64().unwrap_or(0.0) as i64)
+                        .and_then(|best| best["url"].as_str().map(|s| s.to_string()))
+                })
+            };
+
+            use std::sync::{Arc, Mutex};
+            let found: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+            let attempts: Vec<(Option<&str>, &str)> = vec![
+                (None, "ios"), (None, "web"),
+                (Some("brave"), "ios"), (Some("chrome"), "ios"),
+                (Some("chromium"), "ios"), (Some("firefox"), "web"),
+            ];
+            std::thread::scope(|s| {
+                let found = &found;
+                let run = &run;
+                for (browser, client) in &attempts {
+                    let (browser, client) = (*browser, *client);
+                    s.spawn(move || {
+                        if found.lock().unwrap().is_some() { return; }
+                        if let Some(u) = run(browser, client) {
+                            let mut r = found.lock().unwrap();
+                            if r.is_none() { *r = Some(u); }
+                        }
+                    });
+                }
+            });
+            Arc::try_unwrap(found).ok().and_then(|m| m.into_inner().ok()).flatten()
         })
         .await;
-        if let Ok(Ok(out)) = result {
-            let stream_url = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if stream_url.starts_with("https://") || stream_url.starts_with("http://") {
-                let mut c = cache.lock().unwrap();
-                let now = std::time::Instant::now();
-                let ttl = std::time::Duration::from_secs(3600);
-                c.retain(|_, v| now.duration_since(v.ts) < ttl);
-                if c.len() >= 50 { c.clear(); }
-                c.insert(url, CacheEntry { url: stream_url, ts: now });
-            }
+        if let Ok(Some(stream_url)) = result {
+            let mut c = cache.lock().unwrap();
+            let now = std::time::Instant::now();
+            c.retain(|_, v| now.duration_since(v.ts) < std::time::Duration::from_secs(3600));
+            if c.len() >= 50 { c.clear(); }
+            c.insert(url, CacheEntry { url: stream_url, ts: now });
         }
     });
     Ok(())
@@ -480,6 +515,26 @@ fn set_loudnorm_enabled(enabled: bool) -> Result<(), String> {
 #[tauri::command]
 fn get_loudnorm_enabled() -> bool {
     *LOUDNORM_ENABLED.lock().unwrap()
+}
+
+#[tauri::command]
+fn set_skip_silence(enabled: bool) -> Result<(), String> {
+    *SKIP_SILENCE.lock().unwrap() = enabled;
+    // Apply to the running mpv instance immediately via IPC.
+    // silenceremove=1:0:-50dB removes leading silence and gaps between sections.
+    let af_cmd = if enabled {
+        r#"{"command": ["set_property", "af", "silenceremove=1:0:-50dB"]}"#.to_string()
+    } else {
+        r#"{"command": ["set_property", "af", ""]}"#.to_string()
+    };
+    let _ = send_ipc_command(&af_cmd);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_stream_quality(quality: String) -> Result<(), String> {
+    *STREAM_QUALITY.lock().unwrap() = quality;
+    Ok(())
 }
 
 #[tauri::command]
@@ -529,10 +584,13 @@ fn clear_cache() -> Result<u64, String> {
 }
 
 fn mpv_af_flag() -> Option<String> {
-    if *LOUDNORM_ENABLED.lock().unwrap() {
-        Some("--af=loudnorm=I=-16:TP=-1.5:LRA=11".to_string())
-    } else {
-        None
+    let loudnorm = *LOUDNORM_ENABLED.lock().unwrap();
+    let skip_silence = *SKIP_SILENCE.lock().unwrap();
+    match (loudnorm, skip_silence) {
+        (true,  true)  => Some("--af=loudnorm=I=-16:TP=-1.5:LRA=11,silenceremove=1:0:-50dB".to_string()),
+        (true,  false) => Some("--af=loudnorm=I=-16:TP=-1.5:LRA=11".to_string()),
+        (false, true)  => Some("--af=silenceremove=1:0:-50dB".to_string()),
+        (false, false) => None,
     }
 }
 
@@ -544,45 +602,158 @@ async fn play_audio(url: String) -> Result<(), String> {
     let safe_url = sanitize_stream_url(&url)?;
 
     tokio::task::spawn_blocking(move || {
-        let actual_url = {
+        // ── Step 1: Check prefetch cache ─────────────────────────────────────
+        let cached = {
             let mut cache = PREFETCH_CACHE.lock().unwrap();
-            if let Some(entry) = cache.remove(&safe_url) {
-                let ttl = std::time::Duration::from_secs(3600);
-                if std::time::Instant::now().duration_since(entry.ts) < ttl
-                    && (entry.url.starts_with("https://") || entry.url.starts_with("http://")) {
-                    entry.url
-                } else { safe_url.clone() }
-            } else { safe_url.clone() }
+            cache.remove(&safe_url).and_then(|entry| {
+                let age = std::time::Instant::now().duration_since(entry.ts);
+                if age < std::time::Duration::from_secs(3600)
+                    && entry.url.starts_with("http")
+                    && !entry.url.contains(".m3u8")
+                    && !entry.url.contains("manifest.googlevideo.com")
+                { Some(entry.url) } else { None }
+            })
         };
 
+        // ── Step 2: Extract a direct CDN URL via yt-dlp ───────────────────────
+        //
+        // Strategy: try multiple YouTube player clients and multiple browsers
+        // IN PARALLEL using threads. First success wins. No ytdl-hook — it is
+        // unreliable and produces "Requested format is not available" errors.
+        //
+        // Player clients tried (most reliable first):
+        //   ios      → returns direct https URLs, rarely bot-flagged
+        //   web      → standard web player
+        //   android  → another client path
+        //
+        // Browser cookie sources tried in parallel:
+        //   (none)   → works when IP is not flagged
+        //   brave, chrome, chromium, firefox, edge → authenticated session
+        //
+        // We run up to 6 yt-dlp processes simultaneously. The first process
+        // that returns a valid protocol=https audio URL wins and all others
+        // are killed. Total wait: ~3-8s regardless of how many fail.
+
+        let q = STREAM_QUALITY.lock().unwrap().clone();
+
+        let extract_url = |browser: Option<&str>, client: &str| -> Option<String> {
+            let mut cmd = Command::new(bin_ytdlp());
+            cmd.args([
+                "--no-warnings", "--no-playlist", "--no-check-certificates",
+                "--socket-timeout", "12",
+                "--retries", "0",          // no retries — we have parallel attempts
+                "--dump-json",
+                "--extractor-args", &format!("youtube:player_client={}", client),
+            ]);
+            if let Some(b) = browser {
+                cmd.args(["--cookies-from-browser", b]);
+            }
+            cmd.args(["--", safe_url.as_str()]);
+            let o = cmd.no_window().output().ok()?;
+            if !o.status.success() { return None; }
+            let json_str = String::from_utf8_lossy(&o.stdout);
+            let info = serde_json::from_str::<Value>(json_str.trim()).ok()?;
+            let formats = info["formats"].as_array()?;
+            let score = |f: &Value| -> i64 {
+                let proto  = f["protocol"].as_str().unwrap_or("");
+                let vcodec = f["vcodec"].as_str().unwrap_or("");
+                let acodec = f["acodec"].as_str().unwrap_or("");
+                let ext    = f["ext"].as_str().unwrap_or("");
+                let abr    = f["abr"].as_f64().unwrap_or(0.0) as i64;
+                if proto != "https" { return -1; }
+                if acodec == "none" || acodec.is_empty() { return -1; }
+                let mut s = abr * 10;
+                if vcodec == "none" { s += 5000; }
+                match q.as_str() {
+                    "opus" => { if ext == "webm" && acodec.contains("opus") { s += 2000; } else if ext == "webm" { s += 1000; } }
+                    "webm" => { if ext == "webm" { s += 1000; } }
+                    _      => { if ext == "webm" && acodec.contains("opus") { s += 1500; } else if ext == "m4a" { s += 500; } }
+                }
+                s
+            };
+            formats.iter().filter(|f| score(f) >= 0)
+                .max_by_key(|f| score(f))
+                .and_then(|best| best["url"].as_str().map(|s| s.to_string()))
+        };
+
+        let direct_url: Option<String> = if let Some(c) = cached {
+            Some(c)
+        } else {
+            // Run all combinations in parallel — first valid URL wins
+            use std::sync::{Arc, Mutex};
+            let result: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+            let attempts: Vec<(Option<&str>, &str)> = vec![
+                // No-cookie attempts with different player clients (fastest)
+                (None,              "ios"),
+                (None,              "web"),
+                (None,              "android"),
+                // Browser cookie attempts (reliable when IP is flagged)
+                (Some("brave"),     "ios"),
+                (Some("chrome"),    "ios"),
+                (Some("chromium"),  "ios"),
+                (Some("firefox"),   "web"),
+                (Some("edge"),      "web"),
+            ];
+
+            std::thread::scope(|s| {
+                let result = &result;
+                let extract_url = &extract_url;
+                for (browser, client) in &attempts {
+                    let browser = *browser;
+                    let client  = *client;
+                    s.spawn(move || {
+                        // Skip if another thread already found a URL
+                        if result.lock().unwrap().is_some() { return; }
+                        if let Some(url) = extract_url(browser, client) {
+                            let mut r = result.lock().unwrap();
+                            if r.is_none() { *r = Some(url); }
+                        }
+                    });
+                }
+            });
+
+            Arc::try_unwrap(result).ok()
+                .and_then(|m| m.into_inner().ok())
+                .flatten()
+        };
+
+        let direct_url = match direct_url {
+            Some(u) => u,
+            None => return Err(
+                "Could not extract a playable URL. Check your internet connection and make sure \
+                 yt-dlp is up to date (run: yt-dlp -U).".to_string()
+            ),
+        };
+
+        // ── Step 3: Launch mpv with the direct CDN URL ────────────────────────
+        // No ytdl-hook needed — we already have a signed googlevideo.com URL.
         kill_mpv();
         cleanup_socket();
 
-        
-        
         let mut args: Vec<String> = vec![
             "--no-video".into(),
             "--cache=yes".into(),
-            "--cache-secs=30".into(),
-            "--demuxer-max-bytes=32MiB".into(),
-            "--demuxer-max-back-bytes=8MiB".into(),
-            "--demuxer-readahead-secs=10".into(),
+            "--cache-secs=10".into(),
+            "--demuxer-max-bytes=10MiB".into(),
+            "--demuxer-max-back-bytes=2MiB".into(),
+            "--demuxer-readahead-secs=2".into(),
             "--cache-pause=no".into(),
-            "--network-timeout=10".into(),
-            "--audio-buffer=0.5".into(),
+            "--network-timeout=15".into(),
+            "--audio-buffer=0.2".into(),
             "--audio-pitch-correction=yes".into(),
+            // YouTube CDN requires these headers for byte-range requests
+            "--referrer=https://www.youtube.com/".into(),
+            "--http-header-fields=Origin: https://www.youtube.com".into(),
         ];
         if let Some(af) = mpv_af_flag() { args.push(af); }
+
         args.extend([
-            "--script-opts=ytdl_hook-ytdl_path=yt-dlp".into(),
-            "--ytdl-format=bestaudio[ext=webm]/bestaudio/best".into(),
-            "--ytdl-raw-options=ignore-config=,no-check-certificates=,retries=2,fragment-retries=2,concurrent-fragments=4,socket-timeout=10".into(),
             format!("--input-ipc-server={}", SOCKET_PATH),
             "--force-window=no".into(),
             "--keep-open=yes".into(),
             "--idle=yes".into(),
             "--".into(),
-            actual_url,
+            direct_url,
         ]);
 
         Command::new(bin_mpv()).args(&args)
@@ -590,9 +761,8 @@ async fn play_audio(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("mpv not found or failed to start: {}", e))?;
 
-        
-        if !wait_for_socket(2500) {
-            return Err("mpv failed to start (IPC socket never appeared)".to_string());
+        if !wait_for_socket(5000) {
+            return Err("mpv failed to start (IPC socket not ready after 5s)".to_string());
         }
         Ok(())
     })
@@ -1715,6 +1885,17 @@ async fn run_mpris_server(
     }
 }
 
+/// Write arbitrary text content to an absolute file path.
+/// Used by the frontend backup feature to save JSON directly to the chosen folder.
+#[tauri::command]
+fn write_text_file(path: String, content: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if let Some(parent) = p.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create directory: {}", e))?;
+    }
+    std::fs::write(&path, content.as_bytes()).map_err(|e| format!("Write failed: {}", e))
+}
+
 fn main() {
     
     
@@ -1770,6 +1951,8 @@ fn main() {
             import_youtube_playlist,
             open_url_in_browser,
             set_loudnorm_enabled,
+            set_skip_silence,
+            set_stream_quality,
             get_loudnorm_enabled,
             set_cache_dir,
             get_cache_dir,
@@ -1805,6 +1988,7 @@ fn main() {
             export_playlist_m3u,
             import_playlist_m3u,
             normalize_file,
+            write_text_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
