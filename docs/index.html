@@ -1783,45 +1783,99 @@
         .cv { color: var(--vanguard-green); font-weight: 600; }
         .cn { color: rgba(255,255,255,0.3); }
         .cp { color: #f59e0b; font-weight: 500; }
-        @media (max-width: 600px) {
-            .compare-tbl th, .compare-tbl td { padding: 14px 12px; font-size: 12px; }
+
+        /* ── Mobile comparison: card-per-feature layout ── */
+        @media (max-width: 640px) {
+            .compare-section { padding: 72px 5%; }
+            .compare-section h2 { font-size: 28px; letter-spacing: -0.5px; }
+            .compare-section > p { font-size: 14.5px; margin-bottom: 32px; }
+
+            .compare-wrap {
+                border: none;
+                border-radius: 0;
+                background: transparent;
+                overflow-x: visible;
+            }
+
+            /* Hide the real table entirely on mobile */
+            .compare-tbl { display: none; }
+
+            /* Show the mobile cards grid instead */
+            .compare-mobile-cards {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            /* Column header pills */
+            .compare-col-headers {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 8px;
+                margin-bottom: 6px;
+                padding: 0 2px;
+            }
+            .compare-col-header {
+                text-align: center;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.5px;
+                padding: 7px 6px;
+                border-radius: 8px;
+                color: rgba(255,255,255,0.5);
+                background: rgba(255,255,255,0.04);
+                border: 1px solid rgba(255,255,255,0.06);
+            }
+            .compare-col-header.is-vanguard {
+                color: var(--vanguard-green);
+                background: rgba(79,248,40,0.08);
+                border-color: rgba(79,248,40,0.25);
+            }
+
+            /* Each feature row as a card */
+            .compare-card {
+                background: rgba(255,255,255,0.02);
+                border: 1px solid rgba(255,255,255,0.06);
+                border-radius: 14px;
+                padding: 14px 16px;
+            }
+            .compare-card-label {
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 1.2px;
+                color: var(--text-secondary);
+                margin-bottom: 10px;
+            }
+            .compare-card-values {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 8px;
+            }
+            .compare-card-val {
+                text-align: center;
+                font-size: 12px;
+                font-weight: 500;
+                padding: 8px 6px;
+                border-radius: 8px;
+                background: rgba(255,255,255,0.03);
+                color: rgba(255,255,255,0.35);
+                line-height: 1.4;
+            }
+            .compare-card-val.is-vanguard {
+                background: rgba(79,248,40,0.08);
+                color: var(--vanguard-green);
+                font-weight: 700;
+                border: 1px solid rgba(79,248,40,0.2);
+            }
+            .compare-card-val.is-paid {
+                color: #f59e0b;
+            }
         }
 
-
-
-        @media (max-width: 600px) {
-            .compare-tbl thead { display: none; }
-            .compare-tbl, .compare-tbl tbody, .compare-tbl tr, .compare-tbl td { display: block; width: 100%; }
-            .compare-tbl tbody tr {
-                border-bottom: 1px solid rgba(255,255,255,0.07);
-                padding: 14px 0;
-            }
-            .compare-tbl tbody tr:last-child { border-bottom: none; }
-            .compare-tbl td {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 6px 18px;
-                text-align: right;
-                font-size: 13px;
-            }
-            .compare-tbl td:first-child {
-                font-weight: 700;
-                color: rgba(255,255,255,0.85);
-                font-size: 13.5px;
-                padding-bottom: 8px;
-                justify-content: flex-start;
-            }
-            .compare-tbl td::before {
-                content: attr(data-label);
-                font-size: 11px;
-                color: var(--text-secondary);
-                font-weight: 500;
-                text-align: left;
-                flex-shrink: 0;
-                margin-right: 12px;
-            }
-            .compare-tbl td:first-child::before { display: none; }
+        /* On desktop, hide the mobile cards */
+        @media (min-width: 641px) {
+            .compare-mobile-cards { display: none; }
         }
     </style>
 
@@ -2042,6 +2096,88 @@
                     </tr>
                 </tbody>
             </table>
+
+            <!-- Mobile-only card layout -->
+            <div class="compare-mobile-cards">
+                <div class="compare-col-headers">
+                    <div class="compare-col-header is-vanguard">Vanguard</div>
+                    <div class="compare-col-header">Spotify</div>
+                    <div class="compare-col-header">YT Music</div>
+                </div>
+
+                <div class="compare-card">
+                    <div class="compare-card-label">Price</div>
+                    <div class="compare-card-values">
+                        <div class="compare-card-val is-vanguard">Free forever</div>
+                        <div class="compare-card-val">Free w/ ads / $11.99/mo</div>
+                        <div class="compare-card-val">Free w/ ads / $10.99/mo</div>
+                    </div>
+                </div>
+
+                <div class="compare-card">
+                    <div class="compare-card-label">Ads</div>
+                    <div class="compare-card-values">
+                        <div class="compare-card-val is-vanguard">None, ever</div>
+                        <div class="compare-card-val">Free tier</div>
+                        <div class="compare-card-val">Free tier</div>
+                    </div>
+                </div>
+
+                <div class="compare-card">
+                    <div class="compare-card-label">Data Tracking</div>
+                    <div class="compare-card-values">
+                        <div class="compare-card-val is-vanguard">Zero</div>
+                        <div class="compare-card-val">Listening habits, device info</div>
+                        <div class="compare-card-val">Google account data</div>
+                    </div>
+                </div>
+
+                <div class="compare-card">
+                    <div class="compare-card-label">Offline Playback</div>
+                    <div class="compare-card-values">
+                        <div class="compare-card-val is-vanguard">Full, always free</div>
+                        <div class="compare-card-val is-paid">Premium only</div>
+                        <div class="compare-card-val is-paid">Premium only</div>
+                    </div>
+                </div>
+
+                <div class="compare-card">
+                    <div class="compare-card-label">Local Music Files</div>
+                    <div class="compare-card-values">
+                        <div class="compare-card-val is-vanguard">MP3, FLAC, full library</div>
+                        <div class="compare-card-val is-paid">Very limited</div>
+                        <div class="compare-card-val">Not supported</div>
+                    </div>
+                </div>
+
+                <div class="compare-card">
+                    <div class="compare-card-label">Open Source</div>
+                    <div class="compare-card-values">
+                        <div class="compare-card-val is-vanguard">Fully open</div>
+                        <div class="compare-card-val">Proprietary</div>
+                        <div class="compare-card-val">Proprietary</div>
+                    </div>
+                </div>
+
+                <div class="compare-card">
+                    <div class="compare-card-label">Works Without Internet</div>
+                    <div class="compare-card-values">
+                        <div class="compare-card-val is-vanguard">Yes</div>
+                        <div class="compare-card-val">No</div>
+                        <div class="compare-card-val">No</div>
+                    </div>
+                </div>
+
+                <div class="compare-card">
+                    <div class="compare-card-label">Download Tracks</div>
+                    <div class="compare-card-values">
+                        <div class="compare-card-val is-vanguard">Free, any track</div>
+                        <div class="compare-card-val is-paid">Premium only</div>
+                        <div class="compare-card-val is-paid">Premium only</div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </section>
 
