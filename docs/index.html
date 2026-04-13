@@ -1709,10 +1709,13 @@
             #scroll-top-btn { bottom: 20px; right: 20px; width: 38px; height: 38px; }
         }
 
-        /* ── Comparison Table ── */
+        /* ══════════════════════════════════════════
+           COMPARISON TABLE  –  all breakpoints
+        ══════════════════════════════════════════ */
+
         .compare-section {
             padding: 100px 5%;
-            max-width: 860px;
+            max-width: 900px;
             margin: 0 auto;
             text-align: center;
         }
@@ -1730,23 +1733,26 @@
             margin-left: auto;
             margin-right: auto;
         }
+
+        /* ── Desktop table ── */
         .compare-wrap {
             width: 100%;
             overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
             border-radius: 20px;
             border: 1px solid rgba(255,255,255,0.06);
-            background: transparent;
         }
         .compare-tbl {
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
+            min-width: 480px; /* prevents table squishing on tablet */
         }
         .compare-tbl thead tr {
             border-bottom: 1px solid rgba(255,255,255,0.08);
         }
         .compare-tbl th {
-            padding: 20px 24px;
+            padding: 20px 20px;
             font-size: 14px;
             font-weight: 700;
             text-align: center;
@@ -1759,21 +1765,29 @@
             font-size: 12px;
             text-transform: uppercase;
             letter-spacing: 1px;
-            width: 25%;
+            width: 28%;
         }
-        .compare-tbl th.cth-v { color: var(--vanguard-green); }
+        .compare-tbl th.cth-v {
+            color: var(--vanguard-green);
+        }
+        /* subtle green column highlight */
+        .compare-tbl td:nth-child(2),
+        .compare-tbl th:nth-child(2) {
+            background: rgba(79,248,40,0.03);
+        }
         .compare-tbl tbody tr {
             border-bottom: 1px solid rgba(255,255,255,0.05);
             transition: background 0.15s;
         }
         .compare-tbl tbody tr:last-child { border-bottom: none; }
-        .compare-tbl tbody tr:hover { background: rgba(255,255,255,0.025); }
+        .compare-tbl tbody tr:hover { background: rgba(255,255,255,0.03); }
         .compare-tbl td {
-            padding: 18px 24px;
+            padding: 16px 20px;
             text-align: center;
             font-size: 14px;
-            color: rgba(255,255,255,0.45);
+            color: rgba(255,255,255,0.4);
             vertical-align: middle;
+            line-height: 1.45;
         }
         .compare-tbl td:first-child {
             text-align: left;
@@ -1781,101 +1795,133 @@
             font-weight: 500;
         }
         .cv { color: var(--vanguard-green); font-weight: 600; }
-        .cn { color: rgba(255,255,255,0.3); }
+        .cn { color: rgba(255,255,255,0.28); }
         .cp { color: #f59e0b; font-weight: 500; }
 
-        /* ── Mobile comparison: card-per-feature layout ── */
+        /* ── Mobile cards (hidden on desktop) ── */
+        .compare-mobile-cards { display: none; }
+
+        /* ── Tablet  641–900px: table scrolls, tighter padding ── */
+        @media (max-width: 900px) {
+            .compare-section { padding: 80px 4%; }
+            .compare-section h2 { font-size: 34px; }
+            .compare-section > p { font-size: 15px; }
+            .compare-tbl th,
+            .compare-tbl td { padding: 14px 14px; font-size: 13px; }
+        }
+
+        /* ── Mobile  ≤640px: swap to card layout ── */
         @media (max-width: 640px) {
-            .compare-section { padding: 72px 5%; }
-            .compare-section h2 { font-size: 28px; letter-spacing: -0.5px; }
-            .compare-section > p { font-size: 14.5px; margin-bottom: 32px; }
+            .compare-section { padding: 64px 4%; }
+            .compare-section h2 { font-size: 26px; letter-spacing: -0.4px; }
+            .compare-section > p  { font-size: 14px; margin-bottom: 28px; }
 
-            .compare-wrap {
-                border: none;
-                border-radius: 0;
-                background: transparent;
-                overflow-x: visible;
-            }
+            /* kill table, kill wrapper chrome */
+            .compare-wrap  { border: none; border-radius: 0; background: transparent; overflow-x: visible; }
+            .compare-tbl   { display: none; }
 
-            /* Hide the real table entirely on mobile */
-            .compare-tbl { display: none; }
-
-            /* Show the mobile cards grid instead */
+            /* card grid on */
             .compare-mobile-cards {
                 display: flex;
                 flex-direction: column;
-                gap: 10px;
+                gap: 8px;
             }
 
-            /* Column header pills */
+            /* sticky column-header bar */
             .compare-col-headers {
+                position: sticky;
+                top: 56px; /* clears nav */
+                z-index: 10;
                 display: grid;
                 grid-template-columns: 1fr 1fr 1fr;
-                gap: 8px;
-                margin-bottom: 6px;
-                padding: 0 2px;
+                gap: 6px;
+                margin-bottom: 10px;
+                padding: 10px 0 4px;
+                background: var(--bg-base); /* match page bg so it covers scrolled cards */
             }
             .compare-col-header {
                 text-align: center;
-                font-size: 11px;
+                font-size: clamp(10px, 2.8vw, 12px);
                 font-weight: 700;
-                letter-spacing: 0.5px;
-                padding: 7px 6px;
-                border-radius: 8px;
-                color: rgba(255,255,255,0.5);
+                letter-spacing: 0.3px;
+                padding: 8px 4px;
+                border-radius: 10px;
+                color: rgba(255,255,255,0.45);
                 background: rgba(255,255,255,0.04);
-                border: 1px solid rgba(255,255,255,0.06);
+                border: 1px solid rgba(255,255,255,0.07);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
             .compare-col-header.is-vanguard {
                 color: var(--vanguard-green);
-                background: rgba(79,248,40,0.08);
-                border-color: rgba(79,248,40,0.25);
+                background: rgba(79,248,40,0.09);
+                border-color: rgba(79,248,40,0.28);
             }
 
-            /* Each feature row as a card */
+            /* feature card */
             .compare-card {
-                background: rgba(255,255,255,0.02);
-                border: 1px solid rgba(255,255,255,0.06);
+                background: rgba(255,255,255,0.025);
+                border: 1px solid rgba(255,255,255,0.07);
                 border-radius: 14px;
-                padding: 14px 16px;
+                padding: 12px 14px 14px;
+                transition: border-color 0.2s;
             }
+            .compare-card:hover { border-color: rgba(79,248,40,0.18); }
+
             .compare-card-label {
-                font-size: 11px;
-                font-weight: 600;
+                font-size: clamp(9px, 2.5vw, 11px);
+                font-weight: 700;
                 text-transform: uppercase;
-                letter-spacing: 1.2px;
+                letter-spacing: 1.3px;
                 color: var(--text-secondary);
-                margin-bottom: 10px;
+                margin-bottom: 9px;
+                padding-bottom: 8px;
+                border-bottom: 1px solid rgba(255,255,255,0.05);
             }
+
             .compare-card-values {
                 display: grid;
                 grid-template-columns: 1fr 1fr 1fr;
-                gap: 8px;
+                gap: 6px;
             }
+
             .compare-card-val {
+                display: flex;
+                align-items: center;
+                justify-content: center;
                 text-align: center;
-                font-size: 12px;
+                font-size: clamp(11px, 3vw, 13px);
                 font-weight: 500;
-                padding: 8px 6px;
-                border-radius: 8px;
+                padding: 9px 6px;
+                border-radius: 9px;
                 background: rgba(255,255,255,0.03);
-                color: rgba(255,255,255,0.35);
-                line-height: 1.4;
+                color: rgba(255,255,255,0.32);
+                line-height: 1.35;
+                min-height: 44px; /* touch target */
+                word-break: break-word;
+                hyphens: auto;
             }
             .compare-card-val.is-vanguard {
-                background: rgba(79,248,40,0.08);
+                background: rgba(79,248,40,0.09);
                 color: var(--vanguard-green);
                 font-weight: 700;
-                border: 1px solid rgba(79,248,40,0.2);
+                border: 1px solid rgba(79,248,40,0.22);
             }
             .compare-card-val.is-paid {
                 color: #f59e0b;
+                font-weight: 500;
             }
         }
 
-        /* On desktop, hide the mobile cards */
-        @media (min-width: 641px) {
-            .compare-mobile-cards { display: none; }
+        /* ── Very small  ≤380px: loosen a touch so text breathes ── */
+        @media (max-width: 380px) {
+            .compare-section { padding: 56px 3.5%; }
+            .compare-col-headers { gap: 4px; }
+            .compare-card-values  { gap: 4px; }
+            .compare-card { padding: 10px 10px 12px; border-radius: 12px; }
+            .compare-card-val { padding: 8px 4px; border-radius: 7px; font-size: 11px; }
+            .compare-col-header  { font-size: 10px; padding: 7px 3px; border-radius: 8px; }
         }
     </style>
 
@@ -2097,7 +2143,7 @@
                 </tbody>
             </table>
 
-            <!-- Mobile-only card layout -->
+            <!-- Mobile-only card layout (hidden on desktop via CSS) -->
             <div class="compare-mobile-cards">
                 <div class="compare-col-headers">
                     <div class="compare-col-header is-vanguard">Vanguard</div>
@@ -2109,8 +2155,8 @@
                     <div class="compare-card-label">Price</div>
                     <div class="compare-card-values">
                         <div class="compare-card-val is-vanguard">Free forever</div>
-                        <div class="compare-card-val">Free w/ ads / $11.99/mo</div>
-                        <div class="compare-card-val">Free w/ ads / $10.99/mo</div>
+                        <div class="compare-card-val">Free w/ ads<br>$11.99/mo</div>
+                        <div class="compare-card-val">Free w/ ads<br>$10.99/mo</div>
                     </div>
                 </div>
 
@@ -2127,7 +2173,7 @@
                     <div class="compare-card-label">Data Tracking</div>
                     <div class="compare-card-values">
                         <div class="compare-card-val is-vanguard">Zero</div>
-                        <div class="compare-card-val">Listening habits, device info</div>
+                        <div class="compare-card-val">Habits &amp; device info</div>
                         <div class="compare-card-val">Google account data</div>
                     </div>
                 </div>
@@ -2144,7 +2190,7 @@
                 <div class="compare-card">
                     <div class="compare-card-label">Local Music Files</div>
                     <div class="compare-card-values">
-                        <div class="compare-card-val is-vanguard">MP3, FLAC, full library</div>
+                        <div class="compare-card-val is-vanguard">MP3, FLAC &amp; more</div>
                         <div class="compare-card-val is-paid">Very limited</div>
                         <div class="compare-card-val">Not supported</div>
                     </div>
@@ -2160,7 +2206,7 @@
                 </div>
 
                 <div class="compare-card">
-                    <div class="compare-card-label">Works Without Internet</div>
+                    <div class="compare-card-label">Works Offline</div>
                     <div class="compare-card-values">
                         <div class="compare-card-val is-vanguard">Yes</div>
                         <div class="compare-card-val">No</div>
