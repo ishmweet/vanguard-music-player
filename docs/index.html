@@ -11,11 +11,15 @@
     <link rel="canonical" href="https://ishmweet.github.io/vanguard-music-player/">
 
     
+    <meta name="theme-color" content="#000000">
+
     <meta property="og:type"        content="website">
     <meta property="og:url"         content="https://ishmweet.github.io/vanguard-music-player/">
     <meta property="og:title"       content="Vanguard Player, Open Source Music Player">
     <meta property="og:description" content="Ad-free, open-source music player for Windows and Linux. Zero tracking, zero paywalls. Just your music.">
     <meta property="og:site_name"   content="Vanguard Player">
+    <meta property="og:image"       content="https://ishmweet.github.io/vanguard-music-player/vanguard_player_icon.png">
+    <meta property="og:image:alt"   content="Vanguard Player — free, open-source music player">
 
     
     <meta name="twitter:card"        content="summary">
@@ -621,7 +625,7 @@
             50% { box-shadow: 0 0 0 5px rgba(79,248,40,0); opacity: 0.8; }
         }
         @media (max-width: 520px) {
-            .dl-stats-bar { padding: 16px 20px; gap: 0; }
+            .dl-stats-bar { padding: 16px 20px 20px; gap: 0; }
             .dl-stat-value { font-size: 18px; }
             .dl-stat-divider { margin: 0 4px; }
         }
@@ -1628,8 +1632,13 @@
         body.page-ready { opacity: 1; }
 
         /* ── Scroll margin so nav doesn't cover headings ── */
-        #download, #features, #screenshots, #faqs, #community, #donate {
+        #download, #compare, #features, #screenshots, #faqs, #community, #donate {
             scroll-margin-top: 80px;
+        }
+        @media (max-width: 768px) {
+            #download, #compare, #features, #screenshots, #faqs, #community, #donate {
+                scroll-margin-top: 64px;
+            }
         }
 
         /* ── Active nav link ── */
@@ -1972,7 +1981,7 @@
     <nav id="main-nav">
         <a href="#" class="nav-brand">
             <div class="nav-logo-icon">
-                <img src="vanguard_player_icon.png" alt="Icon">
+                <img src="vanguard_player_icon.png" alt="Vanguard Player logo">
             </div>
             <span><span class="vanguard-gradient">Vanguard</span> Player</span>
         </a>
@@ -2068,8 +2077,14 @@
         <div class="dl-stats-bar reveal-on-scroll delay-300" id="dl-stats-bar">
             <div class="dl-stat-item">
                 <span class="dl-stat-value loading" id="dl-total">—</span>
-                <span class="dl-stat-label"><span class="dl-stat-live-dot" id="dl-live-dot" style="display:none;"></span>Total Downloads</span>
+                <span class="dl-stat-label">Total Downloads</span>
             </div>
+            <div class="dl-stat-divider"></div>
+            <div class="dl-stat-item">
+                <span class="dl-stat-value loading" id="dl-stars">—</span>
+                <span class="dl-stat-label">GitHub Stars</span>
+            </div>
+        </div>
 
     </section>
 
@@ -2971,7 +2986,6 @@
         (function fetchDownloadStats() {
             const SHIELDS_API = 'https://img.shields.io/github/downloads/ishmweet/vanguard-music-player/total.json';
             const elTotal = document.getElementById('dl-total');
-            const elDot   = document.getElementById('dl-live-dot');
 
             function fmt(n) {
                 if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -3003,12 +3017,26 @@
                     if (match) {
                         elTotal.classList.remove('loading');
                         animateCount(elTotal, parseInt(match[0]));
-                        elDot.style.display = 'inline-block';
                     }
                 })
                 .catch(function() {
                     elTotal.textContent = '—';
                 });
+        })();
+
+        // GitHub Stars counter via shields.io (no rate limit)
+        (function fetchStars() {
+            var elStars = document.getElementById('dl-stars');
+            fetch('https://img.shields.io/github/stars/ishmweet/vanguard-music-player.json')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var match = (data.value || '').replace(/,/g, '').match(/[\d.]+[KkMm]?/);
+                    if (match) {
+                        elStars.classList.remove('loading');
+                        elStars.textContent = match[0];
+                    }
+                })
+                .catch(function() { elStars.textContent = '—'; });
         })();
 
         (function() {
