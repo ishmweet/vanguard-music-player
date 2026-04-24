@@ -16,7 +16,7 @@ import {
   Zap, BarChart2, FileOutput,
   CheckCircle, Database, Upload, ArchiveRestore,
   ChevronDown,
-  Loader2, CheckCircle2, XCircle, ArrowUpCircle, Image
+  Loader2, CheckCircle2, XCircle, ArrowUpCircle, Image, Mic2
 } from 'lucide-react';
 
 const __APP_VERSION__ = '0.1.0';
@@ -59,7 +59,7 @@ type CtxMenu = {
 type AudioInfo = { codec: string; bitrate: number; samplerate: number; channels: string; format: string; url: string };
 type DiskInfo = { used_bytes: number; track_count: number };
 type BatchProgress = { index: number; total: number; title: string; success: boolean; error?: string };
-type SettingsTab = 'updates' | 'downloads' | 'playback' | 'storage';
+type SettingsTab = 'updates' | 'downloads' | 'playback' | 'storage' | 'appearance';
 
 function parseDurationToSeconds(d: string): number {
   const p = d.split(':').map(Number);
@@ -445,10 +445,14 @@ function CsvImportModal({
   onClose,
   onSavePlaylist,
   showToast,
+  onProgress,
+  onMatchingDone,
 }: {
   onClose: () => void;
   onSavePlaylist: (name: string, desc: string, tracks: Track[]) => void;
   showToast: (m: string) => void;
+  onProgress?: (matched: number, total: number, label: string) => void;
+  onMatchingDone?: (tracks: Track[], matched: number, failed: number) => void;
 }) {
   const [phase, setPhase] = useState<'instructions' | 'matching' | 'saving' | 'done'>('instructions');
   const [results, setResults] = useState<{ title: string; artist: string; status: 'pending' | 'fetching' | 'matched' | 'failed'; url?: string; cover?: string }[]>([]);
@@ -487,25 +491,68 @@ function CsvImportModal({
     setPhase('matching');
     abortRef.current = false;
 
-    
-    const CONCURRENCY = 12; 
+    // 12 true concurrent tasks with a semaphore (not chunked — starts new task
+    // immediately when any slot frees). Uses ytsearch5 (5 results) with a
+    // title+artist scoring pass to pick the best match, not just the first result.
+    const CONCURRENCY = 12;
     const total = initial.length;
     let completed = 0;
     const matched: Track[] = [];
     let failed = 0;
 
-    const processTrack = async (track: typeof initial[0], i: number) => {
+    // Match cache — skip re-searching identical title+artist within session
+    const matchCache = new Map<string, string | null>();
+
+    // Scoring: prefer results whose title contains both artist and track name.
+    // Returns the video ID of the best result, or null if none found.
+    const pickBestMatch = (lines: string[], title: string, artist: string): string | null => {
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+      const tNorm = norm(title);
+      const aNorm = norm(artist);
+      let bestId: string | null = null;
+      let bestScore = -1;
+      for (const line of lines) {
+        const parts = line.split('====');
+        const rTitle = norm(parts[0] || '');
+        const rArtist = norm(parts[1] || '');
+        const id = parts[3]?.trim();
+        if (!id) continue;
+        let score = 0;
+        if (rTitle.includes(tNorm) || tNorm.includes(rTitle)) score += 3;
+        if (rArtist.includes(aNorm) || aNorm.includes(rArtist)) score += 2;
+        // bonus for "official" / "audio" / "lyrics"
+        if (rTitle.includes('official') || rTitle.includes('audio') || rTitle.includes('lyric')) score += 1;
+        if (score > bestScore) { bestScore = score; bestId = id; }
+      }
+      // Fall back to first result if nothing scored
+      if (!bestId) {
+        const id = lines[0]?.split('====')[3]?.trim();
+        bestId = id || null;
+      }
+      return bestId;
+    };
+
+    const processTrack = async (track: typeof initial[0], i: number): Promise<void> => {
       if (abortRef.current) return;
       setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: 'fetching' } : r));
       try {
-        const q = `${track.title} ${track.artist} audio`;
-        const res: string = await invoke('search_youtube', { query: q });
-        const firstLine = res.trim().split('\n')[0];
-        const parts = firstLine?.split('====') || [];
-        const cleanId = parts[3]?.trim();
+        const cacheKey = `${track.title}|||${track.artist}`.toLowerCase();
+        let cleanId: string | null | undefined = matchCache.get(cacheKey);
+
+        if (cleanId === undefined) {
+          const q = `${track.title} ${track.artist} audio`;
+          const res: string = await invoke('search_youtube', { query: q });
+          const lines = res.trim().split('\n').filter(Boolean).slice(0, 5);
+          cleanId = pickBestMatch(lines, track.title, track.artist);
+          matchCache.set(cacheKey, cleanId);
+        }
+
         if (cleanId) {
-          const t: Track = { id: i, title: track.title, artist: track.artist, duration: parts[2]?.trim() || '0:00',
-            url: `https://youtube.com/watch?v=${cleanId}`, cover: `https://i.ytimg.com/vi/${cleanId}/mqdefault.jpg` };
+          const t: Track = {
+            id: i, title: track.title, artist: track.artist,
+            duration: '0:00', url: `https://youtube.com/watch?v=${cleanId}`,
+            cover: `https://i.ytimg.com/vi/${cleanId}/mqdefault.jpg`,
+          };
           matched.push(t);
           setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: 'matched', url: t.url, cover: t.cover } : r));
         } else {
@@ -518,19 +565,34 @@ function CsvImportModal({
       }
       completed++;
       setStatusMsg(`Matching ${completed} / ${total}...`);
+      onProgress?.(matched.length, total, `${completed}/${total} matched`);
       if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
     };
 
-    
-    for (let start = 0; start < initial.length; start += CONCURRENCY) {
-      if (abortRef.current) break;
-      const chunk = initial.slice(start, start + CONCURRENCY);
-      await Promise.all(chunk.map((track, bi) => processTrack(track, start + bi)));
-    }
+    // Semaphore: allow at most CONCURRENCY tasks running at once
+    // (unlike chunking, new tasks start immediately when one finishes)
+    const semaphore = {
+      running: 0,
+      queue: [] as (() => void)[],
+      acquire() { return new Promise<void>(r => { if (this.running < CONCURRENCY) { this.running++; r(); } else { this.queue.push(r); } }); },
+      release() { this.running--; const next = this.queue.shift(); if (next) { this.running++; next(); } },
+    };
+
+    await Promise.all(initial.map(async (track, i) => {
+      await semaphore.acquire();
+      try { await processTrack(track, i); }
+      finally { semaphore.release(); }
+    }));
 
     setMatchedTracks(matched);
     setFailedCount(failed);
-    setPhase('saving');
+    onProgress?.(matched.length, total, 'Done!');
+    if (onMatchingDone) {
+      // Notify parent — parent will show name popup even if we were minimized
+      onMatchingDone(matched, matched.length, failed);
+    } else {
+      setPhase('saving');
+    }
     setStatusMsg('');
   };
 
@@ -540,7 +602,7 @@ function CsvImportModal({
 
   return (
     <>
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-md" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-md" onClick={phase === 'matching' ? undefined : onClose}>
       <div className="w-[740px] max-h-[88vh] flex flex-col rounded-2xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.95)]"
         style={{ background: '#0e0e0e', border: '1px solid rgba(57,255,20,0.15)' }}
         onClick={e => e.stopPropagation()}>
@@ -553,9 +615,17 @@ function CsvImportModal({
             </div>
             <h2 className="text-base font-bold text-white">Import Spotify Playlist</h2>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-neutral-500 hover:text-white hover:bg-white/[0.06] transition-all">
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            {phase === 'matching' && (
+              <button onClick={onClose} title="Minimize — import continues in background"
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-neutral-400 hover:text-[#39FF14] hover:bg-[#39FF14]/10 transition-all text-xs font-bold border border-neutral-800">
+                —
+              </button>
+            )}
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-neutral-500 hover:text-white hover:bg-white/[0.06] transition-all">
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {}
@@ -780,6 +850,36 @@ function YtImportModal({
   );
 }
 
+// ── Settings Validation Layer ─────────────────────────────────────────────────
+// Detects conflicting settings before applying them. Returns a warning string
+// if a conflict exists, or null if safe to apply.
+function validateSettingsChange(
+  key: string,
+  newVal: unknown,
+  current: {
+    loudnormEnabled: boolean; skipSilence: boolean;
+    eq: { bass: number; mid: number; treble: number };
+    streamQuality: string;
+  }
+): string | null {
+  const { loudnormEnabled, skipSilence, eq } = current;
+  const hasEq = eq.bass !== 0 || eq.mid !== 0 || eq.treble !== 0;
+
+  if (key === 'loudnormEnabled' && newVal === true && skipSilence) {
+    return 'Loudnorm + Skip Silence together can cause audio distortion on short tracks. Consider disabling one.';
+  }
+  if (key === 'skipSilence' && newVal === true && loudnormEnabled) {
+    return 'Loudnorm + Skip Silence together can cause audio distortion on short tracks. Consider disabling one.';
+  }
+  if (key === 'loudnormEnabled' && newVal === true && hasEq) {
+    const extreme = Math.max(Math.abs(eq.bass), Math.abs(eq.mid), Math.abs(eq.treble));
+    if (extreme >= 10) {
+      return `Loudnorm with high EQ values (${extreme}dB) may clip audio. Reduce EQ or disable Loudnorm.`;
+    }
+  }
+  return null; // no conflict
+}
+
 function SettingsPanel({
   downloadQuality, setDownloadQuality, downloadPath, handleSelectDirectory,
   downloadFormat, setDownloadFormat,
@@ -787,12 +887,15 @@ function SettingsPanel({
   duplicateDetect, setDuplicateDetect,
   onBackup, onRestore, onReset,
   backupPath, setBackupPath,
-  cachePath, setCachePath,
   loudnormEnabled, setLoudnormEnabled,
   streamQuality, setStreamQuality,
   skipSilence, setSkipSilence,
+  eq, setEq,
   showToast,
   updateAvailable,
+  lyricsSource, setLyricsSource,
+  trayEnabled, setTrayEnabled,
+  audioDevices, setAudioDevices,
 }: {
   downloadQuality: string; setDownloadQuality: (q: string) => void;
   downloadPath: string; handleSelectDirectory: () => void;
@@ -801,32 +904,32 @@ function SettingsPanel({
   duplicateDetect: boolean; setDuplicateDetect: (v: boolean) => void;
   onBackup: () => void; onRestore: () => void; onReset: () => void;
   backupPath: string; setBackupPath: (p: string) => void;
-  cachePath: string; setCachePath: (p: string) => void;
   loudnormEnabled: boolean; setLoudnormEnabled: (e: boolean) => void;
   streamQuality: string; setStreamQuality: (v: string) => void;
   skipSilence: boolean; setSkipSilence: (v: boolean) => void;
+  eq: { bass: number; mid: number; treble: number }; setEq: (v: { bass: number; mid: number; treble: number }) => void;
   showToast: (m: string) => void;
   updateAvailable: string | null;
   onNavigateToUpdates?: () => void;
+  lyricsSource: string; setLyricsSource: (v: string) => void;
+  trayEnabled: boolean; setTrayEnabled: (v: boolean) => void;
+  audioDevices: { id: string; name: string; form: string; is_default: boolean }[];
+  setAudioDevices: React.Dispatch<React.SetStateAction<{ id: string; name: string; form: string; is_default: boolean }[]>>;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('updates');
   const [diskInfo, setDiskInfo] = useState<DiskInfo | null>(null);
-  const [cacheSize, setCacheSize] = useState<number>(0);
+  const [switchingDevice, setSwitchingDevice] = useState(false);
 
   useEffect(() => {
     invoke<DiskInfo>('get_disk_usage', { path: downloadPath }).then(setDiskInfo).catch(() => {});
   }, [downloadPath]);
-  useEffect(() => {
-    invoke<number>('get_cache_size').then(setCacheSize).catch(() => {});
-  }, [cachePath]);
-
-  const fmtBytes = (b: number) => b < 1024 * 1024 ? `${(b/1024).toFixed(1)} KB` : b < 1024**3 ? `${(b/1024**2).toFixed(1)} MB` : `${(b/1024**3).toFixed(2)} GB`;
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'updates',   label: 'Updates',   icon: <ArrowUpCircle size={15} /> },
-    { id: 'downloads', label: 'Downloads', icon: <FolderDown size={15} /> },
-    { id: 'playback',  label: 'Playback',  icon: <Zap size={15} /> },
-    { id: 'storage',   label: 'Storage',   icon: <Database size={15} /> },
+    { id: 'updates',    label: 'Updates',    icon: <ArrowUpCircle size={15} /> },
+    { id: 'downloads',  label: 'Downloads',  icon: <FolderDown size={15} /> },
+    { id: 'playback',   label: 'Playback',   icon: <Zap size={15} /> },
+    { id: 'storage',    label: 'Storage',    icon: <Database size={15} /> },
+    { id: 'appearance', label: 'Appearance', icon: <Moon size={15} /> },
   ];
 
   return (
@@ -1010,7 +1113,12 @@ function SettingsPanel({
                   <p className="text-sm font-medium text-white">Loudnorm (EBU R128)</p>
                   <p className="text-xs text-neutral-600 mt-1">{loudnormEnabled ? 'Active — consistent volume across tracks' : 'Disabled — faster start, raw volume'}</p>
                 </div>
-                <button onClick={() => setLoudnormEnabled(!loudnormEnabled)}
+                <button onClick={() => {
+                  const next = !loudnormEnabled;
+                  const warn = validateSettingsChange('loudnormEnabled', next, { loudnormEnabled, skipSilence, eq, streamQuality });
+                  if (warn) { showToast(`⚠ ${warn}`); }
+                  setLoudnormEnabled(next);
+                }}
                   className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${loudnormEnabled ? 'bg-[#39FF14]/80 shadow-[0_0_10px_rgba(57,255,20,0.3)]' : 'bg-neutral-700'}`}>
                   <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${loudnormEnabled ? 'left-5' : 'left-0.5'}`} />
                 </button>
@@ -1050,10 +1158,143 @@ function SettingsPanel({
                   <p className="text-sm font-medium text-white">Skip Silence</p>
                   <p className="text-xs text-neutral-600 mt-1">{skipSilence ? 'Auto-skips silent parts between tracks' : 'Play all audio including silence'}</p>
                 </div>
-                <button onClick={() => setSkipSilence(!skipSilence)}
+                <button onClick={() => {
+                  const next = !skipSilence;
+                  const warn = validateSettingsChange('skipSilence', next, { loudnormEnabled, skipSilence, eq, streamQuality });
+                  if (warn) { showToast(`⚠ ${warn}`); }
+                  setSkipSilence(next);
+                }}
                   className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${skipSilence ? 'bg-[#39FF14]/80 shadow-[0_0_10px_rgba(57,255,20,0.3)]' : 'bg-neutral-700'}`}>
                   <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${skipSilence ? 'left-5' : 'left-0.5'}`} />
                 </button>
+              </div>
+            </div>
+
+            {/* Audio Output */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Volume2 size={14} className="text-[#39FF14]" /> Audio Output</h3>
+                  <p className="text-xs text-neutral-600 mt-0.5">Select output device. Switches instantly without restarting playback.</p>
+                </div>
+                <button onClick={() => invoke<{ id: string; name: string; form: string; is_default: boolean }[]>('list_audio_devices').then(setAudioDevices).catch(() => {})}
+                  className="p-1.5 text-neutral-600 hover:text-[#39FF14] transition-colors rounded-lg" title="Refresh">
+                  <RefreshCw size={13} />
+                </button>
+              </div>
+              <div className="flex flex-col divide-y divide-neutral-800/40">
+                {audioDevices.length === 0 ? (
+                  <div className="px-5 py-4 text-sm text-neutral-600">No devices found</div>
+                ) : audioDevices.map(dev => {
+                  const isDefault = dev.is_default;
+                  return (
+                    <button key={dev.id} disabled={switchingDevice}
+                      onClick={async () => {
+                        if (isDefault) return;
+                        setSwitchingDevice(true);
+                        try {
+                          await invoke('set_audio_device', { id: dev.id });
+                          setAudioDevices(prev => prev.map(d => ({ ...d, is_default: d.id === dev.id })));
+                          showToast(`Output: ${dev.name}`);
+                        } catch (e) { showToast(`Switch failed: ${e}`); }
+                        finally { setSwitchingDevice(false); }
+                      }}
+                      className={`flex items-center gap-3 px-5 py-3.5 text-left transition-colors w-full
+                        ${isDefault ? 'bg-[#39FF14]/[0.04]' : 'hover:bg-white/[0.03] cursor-pointer'}
+                        ${switchingDevice && !isDefault ? 'opacity-40' : ''}`}>
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border
+                        ${isDefault ? 'bg-[#39FF14]/15 border-[#39FF14]/30' : 'bg-neutral-900 border-neutral-800'}`}>
+                        {dev.form === 'headphones'
+                          ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={isDefault ? '#39FF14' : '#666'} strokeWidth="2" strokeLinecap="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+                          : <Volume2 size={13} className={isDefault ? 'text-[#39FF14]' : 'text-neutral-600'} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${isDefault ? 'text-white' : 'text-neutral-400'}`}>{dev.name}</p>
+                        {dev.form && <p className="text-xs text-neutral-600 capitalize mt-0.5">{dev.form}</p>}
+                      </div>
+                      {isDefault && <span className="text-[10px] font-bold text-[#39FF14] shrink-0">ACTIVE</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Lyrics Source */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-visible">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Mic2 size={14} className="text-[#39FF14]" /> Lyrics Source</h3>
+                <p className="text-xs text-neutral-600 mt-0.5">Primary source for synced lyrics. Falls back to lrclib → lyrics.ovh automatically.</p>
+              </div>
+              <div className="flex items-center justify-between px-5 py-5">
+                <div>
+                  <p className="text-sm font-medium text-white">Primary source</p>
+                  <p className="text-xs text-neutral-600 mt-1">
+                    {lyricsSource === 'musixmatch' ? 'Musixmatch — word-level richsync when available'
+                      : lyricsSource === 'netease' ? 'NetEase — strong for C-pop / K-pop'
+                      : 'lrclib — open, fast, no rate limits'}
+                  </p>
+                </div>
+                <ThemedSelect value={lyricsSource} onChange={setLyricsSource} options={[
+                  { value: 'lrclib', label: 'lrclib', desc: 'Open source, fast' },
+                  { value: 'musixmatch', label: 'Musixmatch', desc: 'Word-level sync' },
+                  { value: 'netease', label: 'NetEase', desc: 'Best for C/K-pop' },
+                ]} />
+              </div>
+            </div>
+
+            {/* Equalizer */}
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2"><BarChart2 size={14} className="text-[#39FF14]" /> Equalizer</h3>
+                  <p className="text-xs text-neutral-600 mt-0.5">Adjust bass, mid, and treble. Applied in real-time via mpv.</p>
+                </div>
+                <button onClick={() => { setEq({ bass: 0, mid: 0, treble: 0 }); invoke('set_equalizer', { bass: 0, mid: 0, treble: 0 }).catch(() => {}); }}
+                  className="text-xs text-neutral-600 hover:text-neutral-300 transition-colors px-2 py-1 rounded border border-neutral-800 hover:border-neutral-700">
+                  Reset
+                </button>
+              </div>
+              <div className="px-5 py-5 flex flex-col gap-5">
+                {([
+                  { label: 'Bass', key: 'bass' as const, desc: 'Low frequencies (60–250Hz)' },
+                  { label: 'Mid', key: 'mid' as const, desc: 'Mids (500Hz–2kHz)' },
+                  { label: 'Treble', key: 'treble' as const, desc: 'High frequencies (4–16kHz)' },
+                ] as { label: string; key: 'bass' | 'mid' | 'treble'; desc: string }[]).map(({ label, key, desc }) => (
+                  <div key={key}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="text-sm font-medium text-white">{label}</span>
+                        <span className="text-xs text-neutral-600 ml-2">{desc}</span>
+                      </div>
+                      <span className={`text-xs font-bold tabular-nums w-12 text-right ${eq[key] > 0 ? 'text-[#39FF14]' : eq[key] < 0 ? 'text-red-400' : 'text-neutral-500'}`}>
+                        {eq[key] > 0 ? `+${eq[key]}` : eq[key]}dB
+                      </span>
+                    </div>
+                    <div className="relative h-2 bg-neutral-800 rounded-full">
+                      {/* center tick */}
+                      <div className="absolute top-0 left-1/2 w-px h-full bg-neutral-600 rounded-full pointer-events-none" />
+                      <input type="range" min="-12" max="12" step="1" value={eq[key]}
+                        onChange={e => {
+                          const v = parseInt(e.target.value);
+                          const next = { ...eq, [key]: v };
+                          setEq(next);
+                          invoke('set_equalizer', { bass: next.bass, mid: next.mid, treble: next.treble }).catch(() => {});
+                        }}
+                        className="absolute inset-0 w-full opacity-0 cursor-pointer h-full"
+                      />
+                      {/* filled track */}
+                      <div className="absolute top-0 h-full rounded-full pointer-events-none transition-all"
+                        style={{
+                          left: eq[key] >= 0 ? '50%' : `${((eq[key] + 12) / 24) * 100}%`,
+                          width: `${(Math.abs(eq[key]) / 24) * 100}%`,
+                          background: eq[key] >= 0 ? '#39FF14' : '#f87171',
+                        }} />
+                      {/* thumb */}
+                      <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white bg-[#0a0a0a] shadow pointer-events-none transition-all"
+                        style={{ left: `calc(${((eq[key] + 12) / 24) * 100}% - 8px)` }} />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1067,41 +1308,6 @@ function SettingsPanel({
             <div>
               <h2 className="text-xl font-bold text-white mb-1">Storage</h2>
               <p className="text-sm text-neutral-500">Backup and restore your playlists, queue, settings, and history.</p>
-            </div>
-
-            {}
-            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
-                <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Zap size={14} className="text-[#39FF14]" /> Stream Cache</h3>
-                <p className="text-xs text-neutral-600 mt-0.5">Audio chunks cached to disk for instant replay and faster loading. Default: Documents/VanguardCache</p>
-              </div>
-              <div className="flex items-center justify-between px-5 py-4 cursor-pointer group hover:bg-white/[0.02] transition-colors"
-                onClick={async () => {
-                  try {
-                    const sel = await (await import('@tauri-apps/plugin-dialog')).open({ directory: true, multiple: false, defaultPath: cachePath });
-                    if (sel) setCachePath(sel as string);
-                  } catch {}
-                }}>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-mono text-neutral-300 truncate">{cachePath || 'Documents/VanguardCache'}</p>
-                  <p className="text-xs text-neutral-600 mt-1">Cache size: <span className="text-neutral-400">{fmtBytes(cacheSize)}</span></p>
-                </div>
-                <button className="p-2 ml-4 text-neutral-600 group-hover:text-[#39FF14] transition-colors shrink-0 rounded-lg"><FolderOpen size={17} /></button>
-              </div>
-              <div className="px-5 py-3 border-t border-neutral-800/40 flex items-center justify-between">
-                <p className="text-xs text-neutral-600">Clear to free disk space</p>
-                <button
-                  onClick={async () => {
-                    try {
-                      const freed = await invoke<number>('clear_cache');
-                      setCacheSize(0);
-                      showToast(`Cache cleared, freed ${fmtBytes(freed)}`);
-                    } catch (e) { showToast(`Failed: ${e}`); }
-                  }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors">
-                  Clear Cache
-                </button>
-              </div>
             </div>
 
             {}
@@ -1158,6 +1364,34 @@ function SettingsPanel({
                 </div>
                 <button className="p-2 text-neutral-700 group-hover:text-red-400 transition-colors rounded-lg ml-4 shrink-0">
                   <Trash2 size={17} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'appearance' && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-xl font-bold text-white mb-1">Appearance</h2>
+              <p className="text-sm text-neutral-500">Tray icon and window behaviour.</p>
+            </div>
+            <div className="border border-neutral-800/60 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-neutral-800/40 bg-neutral-900/20">
+                <h3 className="text-sm font-semibold text-white">System Tray</h3>
+                <p className="text-xs text-neutral-600 mt-0.5">Left-click icon toggles window. Tray menu: play/pause, next, prev, quit.</p>
+              </div>
+              <div className="flex items-center justify-between px-5 py-4">
+                <div>
+                  <p className="text-sm font-medium text-white">Enable Tray Icon</p>
+                  <p className="text-xs text-neutral-600 mt-1">{trayEnabled ? 'Active — close button hides to tray' : 'Disabled — close exits app'}</p>
+                </div>
+                <button onClick={async () => {
+                  const next = !trayEnabled;
+                  try { await invoke('tray_set', { enabled: next }); setTrayEnabled(next); }
+                  catch (e) { showToast(`Tray unavailable: ${e}`); }
+                }} className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${trayEnabled ? 'bg-[#39FF14]/80 shadow-[0_0_10px_rgba(57,255,20,0.3)]' : 'bg-neutral-700'}`}>
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${trayEnabled ? 'left-5' : 'left-0.5'}`} />
                 </button>
               </div>
             </div>
@@ -1464,6 +1698,39 @@ const SpeedSelector = React.memo(({ speed, onChange }: { speed: number; onChange
   );
 });
 
+function LyricsAudioDropdown({ devices, switching, onSwitch }: {
+  devices: { id: string; name: string; form: string; is_default: boolean }[];
+  switching: boolean;
+  onSwitch: (id: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const active = devices.find(d => d.is_default) ?? devices[0];
+  return (
+    <div className="w-full relative">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left transition-all"
+        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <Volume2 size={12} className="text-[#39FF14] shrink-0" />
+        <span className="text-xs truncate flex-1" style={{ color: 'rgba(255,255,255,0.7)' }}>{active?.name ?? 'No device'}</span>
+        <ChevronDown size={12} style={{ color: 'rgba(255,255,255,0.3)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} className="shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 right-0 mb-1 rounded-xl overflow-hidden z-20"
+          style={{ background: 'rgba(12,12,16,0.95)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' }}>
+          {devices.map(dev => (
+            <button key={dev.id} disabled={switching}
+              onClick={() => { if (!dev.is_default) onSwitch(dev.id); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.05]">
+              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dev.is_default ? '#39FF14' : 'rgba(255,255,255,0.2)' }} />
+              <span className="text-xs truncate" style={{ color: dev.is_default ? '#fff' : 'rgba(255,255,255,0.5)' }}>{dev.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function VanguardPlayer() {
 
   
@@ -1489,21 +1756,21 @@ export default function VanguardPlayer() {
   const [isLoadingTrack, setIsLoadingTrack] = useState(false);
   const [activeNav, setActiveNav] = useState('home');
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
-  const [, setNavHistory] = useState<string[]>([]);
+  const [_navHistory, setNavHistory] = useState<string[]>([]);
 
-  
   const navigateTo = useCallback((nav: string) => {
     setNavHistory(prev => [...prev.slice(-20), activeNav]);
     setActiveNav(nav);
   }, [activeNav]);
 
-  
-  
   const navigateBack = useCallback(() => {
-    setActiveNav('home');
-    setNavHistory([]);
+    setNavHistory(prev => {
+      const next = [...prev];
+      const dest = next.pop() ?? 'home';
+      setActiveNav(dest);
+      return next;
+    });
   }, []);
-
   const [trackDurationSeconds, setTrackDurationSeconds] = useState(0);
   const trackDurationRef = useRef(0);
   const [progressSeconds, setProgressSeconds] = useState(0);
@@ -1563,6 +1830,7 @@ export default function VanguardPlayer() {
   const [playlistSearchQ, setPlaylistSearchQ] = useState('');
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
   const [renamingPlaylist, setRenamingPlaylist] = useState<Playlist | null>(null);
@@ -1574,6 +1842,16 @@ export default function VanguardPlayer() {
   const [renameDescVal, setRenameDescVal] = useState('');
   const [addToPlaylistTrack, setAddToPlaylistTrack] = useState<Track | null>(null);
   const [sidebarPlaylistsExpanded, setSidebarPlaylistsExpanded] = useState(true);
+  // Background Spotify import progress pill
+  const [bgImport, setBgImport] = useState<{ matched: number; total: number; label: string } | null>(null);
+  // Pending spotify save — survives modal minimize so name popup appears when done
+  const [pendingSpotifyImport, setPendingSpotifyImport] = useState<{ tracks: Track[]; matchedCount: number; failedCount: number } | null>(null);
+  // Lyrics state
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [lyricsData, setLyricsData] = useState<{ lines: {time:number;text:string}[]; title: string; artist: string } | null>(null);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
+  // Artist thumbnail cache for Stats page
+  const [artistThumbs, setArtistThumbs] = useState<Record<string, string>>({});
 
   
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
@@ -1591,17 +1869,20 @@ export default function VanguardPlayer() {
   const [downloadPath, setDownloadPath] = useState<string>(() => loadLS('vg_dlPath', '~/Downloads'));
   const [backupPath, setBackupPathState] = useState<string>(() => loadLS('vg_backupPath', ''));
   const setBackupPath = useCallback((p: string) => { setBackupPathState(p); saveLS('vg_backupPath', p); }, []);
-  const [cachePath, setCachePathState] = useState<string>(() => loadLS('vg_cachePath', ''));
-  const setCachePath = useCallback((p: string) => {
-    setCachePathState(p);
-    saveLS('vg_cachePath', p);
-    invoke('set_cache_dir', { path: p }).catch(() => {});
-  }, []);
   const [playbackSpeed, setPlaybackSpeedState] = useState<number>(() => loadLS('vg_speed', 1));
   const [crossfadeSeconds] = useState<number>(() => loadLS('vg_crossfade', 0));
   const [loudnormEnabled, setLoudnormEnabledState] = useState<boolean>(() => loadLS('vg_loudnorm', true));
   const [streamQuality, setStreamQualityState] = useState<string>(() => loadLS('vg_streamQuality', 'best'));
   const [skipSilence, setSkipSilenceState] = useState<boolean>(() => loadLS('vg_skipSilence', false));
+  const [lyricsSource, setLyricsSource] = useState<string>(() => loadLS('vg_lyricsSource', 'lrclib'));
+  const [trayEnabled, setTrayEnabled] = useState<boolean>(() => loadLS('vg_trayEnabled', false));
+  const [audioDevices, setAudioDevices] = useState<{ id: string; name: string; form: string; is_default: boolean }[]>([]);
+  const [switchingDevice, setSwitchingDevice] = useState(false);
+
+  useEffect(() => {
+    invoke<{ id: string; name: string; form: string; is_default: boolean }[]>('list_audio_devices')
+      .then(setAudioDevices).catch(() => {});
+  }, []);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const bookmarksRef = useRef<Record<string, number>>(loadLS('vg_bookmarks', {}));
   const [abLoop, setAbLoop] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
@@ -1645,14 +1926,6 @@ export default function VanguardPlayer() {
   useEffect(() => { saveLS('vg_repeatMode', repeatMode); }, [repeatMode]);
   useEffect(() => { saveLS('vg_volume', volume); }, [volume]);
   
-  useEffect(() => {
-    const saved = loadLS('vg_cachePath', '');
-    if (saved) {
-      invoke('set_cache_dir', { path: saved }).catch(() => {});
-    } else {
-      invoke<string>('get_cache_dir').then(d => { setCachePathState(d); saveLS('vg_cachePath', d); }).catch(() => {});
-    }
-  }, []);
   useEffect(() => { saveLS('vg_currentTrack', currentTrack); }, [currentTrack]);
 
   useEffect(() => {
@@ -1685,6 +1958,24 @@ export default function VanguardPlayer() {
   useEffect(() => { saveLS('vg_streamQuality', streamQuality); invoke('set_stream_quality', { quality: streamQuality }).catch(() => {}); }, [streamQuality]);
   useEffect(() => { saveLS('vg_skipSilence', skipSilence); invoke('set_skip_silence', { enabled: skipSilence }).catch(() => {}); }, [skipSilence]);
   useEffect(() => { saveLS('vg_eq', eq); }, [eq]);
+  useEffect(() => { saveLS('vg_lyricsSource', lyricsSource); }, [lyricsSource]);
+  useEffect(() => { saveLS('vg_trayEnabled', trayEnabled); }, [trayEnabled]);
+
+  // Restore tray on startup
+  useEffect(() => {
+    if (trayEnabled) invoke('tray_set', { enabled: true }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Tray events — wire to same refs as MPRIS
+  useEffect(() => {
+    const unsubs = [
+      listen('tray_play_pause', () => mprisToggleRef.current()),
+      listen('tray_next', () => mprisNextRef.current()),
+      listen('tray_prev', () => mprisPrevRef.current()),
+    ];
+    return () => { unsubs.forEach(p => p.then(fn => fn())); };
+  }, []);
 
   
   const showToast = useCallback((msg: string) => {
@@ -1738,12 +2029,52 @@ export default function VanguardPlayer() {
     listen('mpris_play_pause', () => mprisToggleRef.current()).then(fn => unlisteners.push(fn));
     listen('mpris_next',       () => mprisNextRef.current()).then(fn => unlisteners.push(fn));
     listen('mpris_prev',       () => mprisPrevRef.current()).then(fn => unlisteners.push(fn));
+
     return () => unlisteners.forEach(fn => fn());
   }, []);
+
+
 
   useEffect(() => {
     invoke<string | null>('check_for_update').then(v => setUpdateAvailable(v ?? null)).catch(() => {});
   }, []);
+
+  // Fetch artist thumbnails when stats page opens
+  useEffect(() => {
+    if (activeNav !== 'stats') return;
+    const artistCounts: Record<string, number> = {};
+    Object.entries(playCounts).forEach(([url, count]) => {
+      const artist = [...quickPicks, ...playHistory].find(t => t.url === url)?.artist;
+      if (artist?.trim()) artistCounts[artist] = (artistCounts[artist] || 0) + (count as number);
+    });
+    const top5 = Object.entries(artistCounts).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([a])=>a);
+    top5.forEach(async (artist) => {
+      if (artistThumbs[artist]) return;
+      try {
+        const res: string = await invoke('search_yt_music', { query: artist, searchType: 'artist' });
+        const items = JSON.parse(res);
+        const thumb = items[0]?.thumbnail;
+        if (thumb) setArtistThumbs(prev => ({ ...prev, [artist]: thumb }));
+      } catch {}
+    });
+  }, [activeNav]);
+  useEffect(() => {
+    if (!showLyrics || !currentTrack) return;
+    const title = currentTrack.title;
+    const artist = currentTrack.artist;
+    if (!title || !artist) return;
+    setLyricsLoading(true);
+    setLyricsData(null);
+    invoke<string>('fetch_lyrics', { title, artist, album: '', duration: trackDurationSeconds || 0, source: lyricsSource })
+      .then(raw => {
+        try {
+          const lines: {time:number;text:string}[] = JSON.parse(raw);
+          setLyricsData({ lines, title, artist });
+        } catch { setLyricsData({ lines: [], title, artist }); }
+      })
+      .catch(() => setLyricsData({ lines: [], title, artist }))
+      .finally(() => setLyricsLoading(false));
+  }, [showLyrics, currentTrack?.url]);
 
   useEffect(() => {
     if (!isPlaying || !currentTrack || isLoadingTrack) return;
@@ -1798,65 +2129,88 @@ export default function VanguardPlayer() {
   const handleBackup = useCallback(async () => {
     try {
       const data = {
-        playlists, queue, playHistory, shuffle, repeatMode, volume,
-        downloadQuality, downloadPath, backupPath, playbackSpeed, eq,
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        playlists, queue, playHistory, playCounts, listenSecs, dailyPlays, firstSeen,
+        shuffle, repeatMode, volume, playbackSpeed, eq,
+        downloadQuality, downloadFormat, downloadPath, backupPath,
+        embedThumbnail, duplicateDetect,
+        loudnormEnabled, streamQuality, skipSilence,
         searchHistory, quickPicks, currentTrack,
-        version: 1, exportedAt: new Date().toISOString(),
       };
       const json = JSON.stringify(data, null, 2);
-
-      // Resolve the destination path
       const sep = navigator.platform.includes('Win') ? '\\' : '/';
       const resolvedBase = backupPath || downloadPath || '';
-
       if (resolvedBase) {
-        // Write directly to the chosen folder via Tauri
         const filePath = resolvedBase.replace(/[/\\]$/, '') + sep + 'vanguard_backup.json';
         await invoke('write_text_file', { path: filePath, content: json });
         showToast(`Backup saved to ${filePath}`);
       } else {
-        // No path set — fall back to browser download
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = 'vanguard_backup.json'; a.click();
         URL.revokeObjectURL(url);
-        showToast('Backup downloaded — set a Backup Location in Storage settings to choose the folder');
+        showToast('Backup saved — set a Backup Location in Storage settings to choose a folder');
       }
     } catch (e) { showToast(`Backup failed: ${e}`); }
-  }, [playlists, queue, playHistory, shuffle, repeatMode, volume, downloadQuality, downloadPath, backupPath, playbackSpeed, eq, searchHistory, quickPicks, currentTrack, showToast]);
+  }, [playlists, queue, playHistory, playCounts, listenSecs, dailyPlays, firstSeen,
+      shuffle, repeatMode, volume, playbackSpeed, eq,
+      downloadQuality, downloadFormat, downloadPath, backupPath,
+      embedThumbnail, duplicateDetect, loudnormEnabled, streamQuality, skipSilence,
+      searchHistory, quickPicks, currentTrack, showToast]);
 
-  const handleRestore = useCallback(async () => {
-    try {
-      const input = document.createElement('input');
-      input.type = 'file'; input.accept = '.json';
-      input.onchange = async (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (!file) return;
+  // Must be synchronous so the file picker works in Tauri (async breaks gesture context)
+  const handleRestore = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.onchange = async (e) => {
+      document.body.removeChild(input);
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
         const text = await file.text();
-        try {
-          const data = JSON.parse(text);
-          if (data.version !== 1) { showToast('Invalid backup file'); return; }
-          if (data.playlists) setPlaylists(data.playlists);
-          if (data.queue) setQueue(data.queue);
-          if (data.playHistory) setPlayHistory(data.playHistory);
-          if (data.shuffle !== undefined) setShuffle(data.shuffle);
-          if (data.repeatMode) setRepeatMode(data.repeatMode);
-          if (data.volume !== undefined) setVolume(data.volume);
-          if (data.downloadQuality) setDownloadQuality(data.downloadQuality);
-          if (data.downloadPath) setDownloadPath(data.downloadPath);
-          if (data.backupPath) setBackupPath(data.backupPath);
-          if (data.playbackSpeed) setPlaybackSpeedState(data.playbackSpeed);
-          if (data.eq) setEqState(data.eq);
-          if (data.searchHistory) setSearchHistory(data.searchHistory);
-          if (data.quickPicks) setQuickPicks(data.quickPicks);
-          if (data.currentTrack) setCurrentTrack(data.currentTrack);
-          showToast('Backup restored successfully');
-        } catch { showToast('Failed to parse backup file'); }
-      };
-      input.click();
-    } catch (e) { showToast(`Restore failed: ${e}`); }
-  }, [showToast]);
+        const data = JSON.parse(text);
+        if (data.version !== 1) { showToast('Invalid or incompatible backup file'); return; }
+
+        // Restore every field and persist each to localStorage immediately
+        const ls = <T,>(key: string, val: T): T => { saveLS(key, val); return val; };
+
+        if (data.playlists)       setPlaylists(ls('vg_playlists', data.playlists));
+        if (data.queue)           setQueue(ls('vg_queue', data.queue));
+        if (data.playHistory)     setPlayHistory(ls('vg_playHistory', data.playHistory));
+        if (data.playCounts)      setPlayCounts(ls('vg_playCounts', data.playCounts));
+        if (data.listenSecs)      setListenSecs(ls('vg_listenSecs', data.listenSecs));
+        if (data.dailyPlays)      setDailyPlays(ls('vg_dailyPlays', data.dailyPlays));
+        if (data.firstSeen)       setFirstSeen(ls('vg_firstSeen', data.firstSeen));
+        if (data.shuffle !== undefined) setShuffle(ls('vg_shuffle', data.shuffle));
+        if (data.repeatMode)      setRepeatMode(ls('vg_repeat', data.repeatMode));
+        if (data.volume !== undefined)  { setVolume(ls('vg_volume', data.volume)); invoke('set_volume', { volume: data.volume }).catch(() => {}); }
+        if (data.playbackSpeed)   setPlaybackSpeedState(ls('vg_speed', data.playbackSpeed));
+        if (data.eq)              setEqState(ls('vg_eq', data.eq));
+        if (data.downloadQuality) setDownloadQuality(ls('vg_dlQuality', data.downloadQuality));
+        if (data.downloadFormat)  setDownloadFormatState(ls('vg_dlFormat', data.downloadFormat));
+        if (data.downloadPath)    setDownloadPath(ls('vg_dlPath', data.downloadPath));
+        if (data.backupPath)      setBackupPath(ls('vg_backupPath', data.backupPath));
+        if (data.embedThumbnail !== undefined) setEmbedThumbnailState(ls('vg_embedThumb', data.embedThumbnail));
+        if (data.duplicateDetect !== undefined) setDuplicateDetectState(ls('vg_dupDetect', data.duplicateDetect));
+        if (data.loudnormEnabled !== undefined) { setLoudnormEnabledState(ls('vg_loudnorm', data.loudnormEnabled)); invoke('set_loudnorm_enabled', { enabled: data.loudnormEnabled }).catch(() => {}); }
+        if (data.streamQuality)   { setStreamQualityState(ls('vg_streamQuality', data.streamQuality)); invoke('set_stream_quality', { quality: data.streamQuality }).catch(() => {}); }
+        if (data.skipSilence !== undefined) { setSkipSilenceState(ls('vg_skipSilence', data.skipSilence)); invoke('set_skip_silence', { enabled: data.skipSilence }).catch(() => {}); }
+        if (data.searchHistory)   setSearchHistory(ls('vg_searchHistory', data.searchHistory));
+        if (data.quickPicks)      setQuickPicks(ls('vg_quickPicks', data.quickPicks));
+        if (data.currentTrack)    { setCurrentTrack(data.currentTrack); currentTrackRef.current = data.currentTrack; }
+
+        showToast('Backup restored — all data loaded');
+      } catch (err) {
+        showToast(`Restore failed: could not read file (${err})`);
+      }
+    };
+    input.click();
+  }, [showToast, setBackupPath]);
 
   
   const handlePlayTrack = useCallback(async (track: Track, fromQueue = false) => {
@@ -1868,14 +2222,16 @@ export default function VanguardPlayer() {
     setProgressSeconds(0); progressSecondsRef.current = 0;
     setTrackDurationSeconds(0); trackDurationRef.current = 0;
     setWaveformData([]); setAudioInfo(null);
+    setLyricsData(null); // clear stale lyrics on every new track
+
+    // Always track play counts and daily plays, even for autoplay/queue
+    setPlayCounts(prev => { const n = { ...prev, [track.url]: (prev[track.url] || 0) + 1 }; saveLS('vg_playCounts', n); return n; });
+    const today = new Date().toISOString().slice(0, 10);
+    setDailyPlays(prev => { const n = { ...prev, [today]: (prev[today] || 0) + 1 }; saveLS('vg_dailyPlays', n); return n; });
+    setFirstSeen(prev => { if (prev[track.url]) return prev; const n = { ...prev, [track.url]: new Date().toISOString() }; saveLS('vg_firstSeen', n); return n; });
 
     if (!fromQueue) {
       setPlayHistory(prev => [track, ...prev].slice(0, 50));
-      
-      setPlayCounts(prev => ({ ...prev, [track.url]: (prev[track.url] || 0) + 1 }));
-      const today = new Date().toISOString().slice(0, 10);
-      setDailyPlays(prev => ({ ...prev, [today]: (prev[today] || 0) + 1 }));
-      setFirstSeen(prev => prev[track.url] ? prev : { ...prev, [track.url]: new Date().toISOString() });
       
       if (playlistContextRef.current) {
         const idx = playlistContextRef.current.tracks.findIndex(t => t.url === track.url);
@@ -1891,47 +2247,45 @@ export default function VanguardPlayer() {
       await invoke('set_playback_speed', { speed: playbackSpeed });
       await invoke('set_equalizer', { bass: eq.bass, mid: eq.mid, treble: eq.treble });
 
-      // Phase 1: wait until mpv has opened the file and is playing
-      // (position advancing OR duration known OR playing flag set)
+      // With persistent mpv + loadfile replace, play_audio returns fast (~200ms).
+      // Poll until mpv reports duration > 0 (file opened and demuxed), then explicitly unpause.
       let waited = 0;
       await new Promise<void>(resolve => {
         const t = setInterval(async () => {
-          waited += 250;
+          waited += 200;
           try {
-            const s: { position: number; duration: number; playing: boolean } = await invoke('get_playback_state');
-            if (s.position > 0 || s.duration > 0 || s.playing) {
+            const s: { position: number; duration: number; playing: boolean; paused: boolean } = await invoke('get_playback_state');
+            if (s.duration > 0 || s.playing) {
               if (s.duration > 0) { setTrackDurationSeconds(s.duration); trackDurationRef.current = s.duration; }
+              // Explicitly unpause if mpv started in paused state
+              if (s.paused) { invoke('pause_audio').catch(() => {}); }
               clearInterval(t); resolve(); return;
             }
           } catch {}
-          if (waited >= 30000) { clearInterval(t); resolve(); }
-        }, 250);
-      });
-
-      // Phase 2: wait until codec is known (not 'unknown') — this is when
-      // mpv has fully demuxed the stream and audio output has started.
-      // "UNKNOWN" in the player bar means the file format hasn't been identified yet.
-      let codecWaited = 0;
-      await new Promise<void>(resolve => {
-        const t = setInterval(async () => {
-          codecWaited += 300;
-          try {
-            const info: AudioInfo = await invoke('get_audio_info');
-            if (info && info.codec && info.codec !== 'unknown' && info.codec !== '') {
-              setAudioInfo(info);
-              clearInterval(t); resolve(); return;
-            }
-          } catch {}
-          // Cap at 8s — if codec is still unknown after 8s, give up and show it anyway
-          if (codecWaited >= 8000) { clearInterval(t); resolve(); }
-        }, 300);
+          if (waited >= 12000) { clearInterval(t); resolve(); }
+        }, 200);
       });
 
       setIsPlayingSync(true);
-      
+
+      // Poll for codec info — mpv reports 'unknown' until the demuxer finishes.
+      // Keep retrying for up to 6s so the player bar never shows "UNKNOWN".
+      let codecWaited = 0;
+      const codecPoll = setInterval(async () => {
+        codecWaited += 400;
+        try {
+          const info: AudioInfo = await invoke('get_audio_info');
+          if (info?.codec && info.codec !== 'unknown' && info.codec !== '') {
+            setAudioInfo(info);
+            clearInterval(codecPoll);
+          }
+        } catch {}
+        if (codecWaited >= 6000) clearInterval(codecPoll);
+      }, 400);
+
       const bm = bookmarksRef.current[track.url];
       if (bm && bm > 2) {
-        setTimeout(() => invoke('seek_audio', { time: bm }).catch(() => {}), 1200);
+        setTimeout(() => invoke('seek_audio', { time: bm }).catch(() => {}), 800);
       }
     } catch { setIsPlayingSync(false); }
     finally { setIsLoadingTrack(false); }
@@ -2255,6 +2609,7 @@ export default function VanguardPlayer() {
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyF') { e.preventDefault(); searchRef.current?.focus(); }
       if (e.key === '?' && !isInput) { e.preventDefault(); setShowShortcuts(s => !s); }
       if (e.code === 'Escape') { setShowShortcuts(false); setConfirmModal(null); }
+
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -2605,12 +2960,21 @@ export default function VanguardPlayer() {
 
   const handleCoverUpload = useCallback((pid: string) => {
     const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+    inp.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+    document.body.appendChild(inp);
     inp.onchange = e => {
-      const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
-      const r = new FileReader();
-      r.onload = ev => { const d = ev.target?.result as string; if (d) { setPlaylists(p => p.map(x => x.id === pid ? { ...x, customCover: d } : x)); showToast('Cover updated'); } };
-      r.readAsDataURL(f);
+      const f = (e.target as HTMLInputElement).files?.[0];
+      if (f) {
+        const r = new FileReader();
+        r.onload = ev => {
+          const d = ev.target?.result as string;
+          if (d) { setPlaylists(p => p.map(x => x.id === pid ? { ...x, customCover: d } : x)); showToast('Cover updated'); }
+        };
+        r.readAsDataURL(f);
+      }
+      inp.remove();
     };
+    inp.oncancel = () => inp.remove();
     inp.click();
   }, [showToast]);
 
@@ -2637,7 +3001,8 @@ export default function VanguardPlayer() {
 
   
   return (
-    <div className="flex flex-col h-screen w-full bg-[#050505] text-white font-sans overflow-hidden selection:bg-[#39FF14] selection:text-black">
+    <div className="flex flex-col h-screen w-full bg-[#050505] text-white font-sans overflow-hidden selection:bg-[#39FF14] selection:text-black"
+      onContextMenu={e => e.preventDefault()}>
       <style>{`
         @keyframes loadbar { 0%{transform:translateX(-100%)} 50%{transform:translateX(150%)} 100%{transform:translateX(400%)} }
         @keyframes dropIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
@@ -2780,21 +3145,25 @@ export default function VanguardPlayer() {
         <div className="flex-1 flex flex-col bg-gradient-to-b from-[#0f1115] to-[#050505] overflow-hidden relative">
           <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#39FF14]/10 via-transparent to-transparent" />
 
-          {}
           <div className="flex items-center gap-3 px-6 pt-4 pb-0 shrink-0 z-20 relative">
             <button
-              onClick={navigateBack}
-              disabled={activeNav === 'home'}
-              title="Go back to Home"
+              onClick={() => {
+                if (activeNav === 'home' && tracks.length > 0) {
+                  setTracks([]); setSearchQuery(''); setIsSearching(false);
+                } else {
+                  navigateBack();
+                }
+              }}
+              disabled={activeNav === 'home' && tracks.length === 0}
+              title="Go back"
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all duration-200
-                ${activeNav !== 'home'
+                ${(activeNav !== 'home' || tracks.length > 0)
                   ? 'text-white border-neutral-700 bg-neutral-900/80 hover:border-[#39FF14]/50 hover:text-[#39FF14] hover:bg-[#39FF14]/5 active:scale-95'
                   : 'text-neutral-700 border-neutral-800/40 bg-neutral-900/30 cursor-not-allowed opacity-40'}`}
             >
               <ChevronLeft size={16} />
               <span>Back</span>
             </button>
-            {}
             <span className="text-xs text-neutral-600 font-medium uppercase tracking-widest">
               {activeNav === 'home' ? 'Home' : activeNav === 'downloads' ? 'Offline' : activeNav === 'settings' ? 'Settings' : activeNav === 'stats' ? 'Stats' : activeNav === 'library' ? (openPlaylistId ? 'Playlist' : 'Playlists') : activeNav}
             </span>
@@ -2880,21 +3249,21 @@ export default function VanguardPlayer() {
 
                 {!isSearching && tracks.length === 0 && quickPicks.length > 0 && isHydrated && (() => {
                   // --- Genre detection via keyword matching on title + artist ---
-                  const GENRES: { id: string; label: string; emoji: string; keywords: string[] }[] = [
-                    { id: 'hiphop',    label: 'Hip-Hop / Rap',   emoji: '🎤', keywords: ['rap','hip hop','hip-hop','trap','drill','freestyle','cypher','bars','lil ','young ','big ','21 savage','kendrick','drake','kanye','jay-z','eminem','nicki','cardi','asap','uzi','juice','polo g','gunna','future','offset','quavo','takeoff','21savage','dababy','roddy','pooh shiesty','moneybagg'] },
-                    { id: 'synthwave', label: 'Synthwave',        emoji: '🌆', keywords: ['synthwave','retrowave','outrun','neon','vaporwave','dreamwave','80s','retro wave','chillwave','darksynth','perturbator','kavinsky','gunship','carpenter brut','the midnight','timecop1983','FM-84','dreamwave','miami','nightcall'] },
-                    { id: 'lofi',      label: 'Lo-Fi',            emoji: '☕', keywords: ['lofi','lo-fi','lo fi','chill beats','study beats','study music','sleep music','relax beats','chillhop','cafe music','coffee','anime lofi','jazz hop','nujabes'] },
-                    { id: 'pop',       label: 'Pop',              emoji: '🎵', keywords: ['pop','taylor swift','ariana','billie eilish','the weeknd','olivia rodrigo','dua lipa','harry styles','justin bieber','ed sheeran','selena','shawn mendes','camila','chainsmokers','imagine dragons','maroon 5','post malone'] },
-                    { id: 'rock',      label: 'Rock',             emoji: '🎸', keywords: ['rock','metal','punk','grunge','alternative','linkin park','nirvana','green day','foo fighters','system of a down','metallica','acdc','ac/dc','guns n roses','queen','led zeppelin','arctic monkeys','radiohead','muse','twenty one pilots','bring me','parkway drive','bmth','slipknot'] },
-                    { id: 'rnb',       label: 'R&B / Soul',       emoji: '🎷', keywords: ['r&b','rnb','soul','neo soul','smooth','frank ocean','sza','daniel caesar','jorja smith','h.e.r.','bryson tiller','partynextdoor','brent faiyaz','khalid','usher','alicia keys','john legend','maxwell','erykah badu','d\'angelo'] },
-                    { id: 'edm',       label: 'EDM / Dance',      emoji: '🎛️', keywords: ['edm','electronic','dance','techno','house','trance','dubstep','dnb','drum and bass','bass','club','rave','festival','martin garrix','david guetta','tiesto','avicii','marshmello','skrillex','deadmau5','flume','diplo','zedd','alan walker','kygo','dj'] },
-                    { id: 'jazz',      label: 'Jazz',             emoji: '🎺', keywords: ['jazz','blues','swing','bebop','miles davis','coltrane','bill evans','thelonious','monk','duke ellington','charlie parker','herbie hancock','wynton','louis armstrong','nina simone'] },
-                    { id: 'classical', label: 'Classical',        emoji: '🎻', keywords: ['classical','orchestra','symphony','beethoven','mozart','bach','chopin','debussy','brahms','schubert','vivaldi','handel','liszt','tchaikovsky','strauss','mahler','piano sonata','concerto','sonata','nocturne','étude'] },
-                    { id: 'kpop',      label: 'K-Pop',            emoji: '✨', keywords: ['kpop','k-pop','bts','blackpink','exo','nct','stray kids','twice','red velvet','aespa','ive','new jeans','newjeans','itzy','mamamoo','seventeen','got7','shinee','bigbang','2ne1','super junior','astro','monsta x','ateez'] },
-                    { id: 'afrobeats', label: 'Afrobeats',        emoji: '🥁', keywords: ['afrobeats','afrobeat','amapiano','burna boy','wizkid','davido','rema','omah lay','ckay','tems','ayra starr','afropop','naija','afro','fireboy'] },
-                    { id: 'latin',     label: 'Latin',            emoji: '💃', keywords: ['latin','reggaeton','salsa','bachata','cumbia','bad bunny','j balvin','maluma','ozuna','daddy yankee','nicky jam','jhay cortez','anuel','karol g','rosalia','shakira','marc anthony','romeo santos'] },
-                    { id: 'slowed',    label: 'Slowed + Reverb',  emoji: '🌊', keywords: ['slowed','reverb','slowed and reverb','slowed reverb','slowed + reverb','night drive','late night','4am','3am','2am','midnight drive','sad slowed'] },
-                    { id: 'phonk',     label: 'Phonk',            emoji: '💀', keywords: ['phonk','memphis','drift phonk','aggressive phonk','gym phonk','dark phonk','sakkijarven polkka','kordhell','ghostemane','bones','night lovell'] },
+                  const GENRES: { id: string; label: string; keywords: string[] }[] = [
+                    { id: 'hiphop',    label: 'Hip-Hop / Rap',    keywords: ['rap','hip hop','hip-hop','trap','drill','freestyle','cypher','bars','lil ','young ','big ','21 savage','kendrick','drake','kanye','jay-z','eminem','nicki','cardi','asap','uzi','juice','polo g','gunna','future','offset','quavo','takeoff','21savage','dababy','roddy','pooh shiesty','moneybagg'] },
+                    { id: 'synthwave', label: 'Synthwave',        keywords: ['synthwave','retrowave','outrun','neon','vaporwave','dreamwave','80s','retro wave','chillwave','darksynth','perturbator','kavinsky','gunship','carpenter brut','the midnight','timecop1983','FM-84','dreamwave','miami','nightcall'] },
+                    { id: 'lofi',      label: 'Lo-Fi',            keywords: ['lofi','lo-fi','lo fi','chill beats','study beats','study music','sleep music','relax beats','chillhop','cafe music','coffee','anime lofi','jazz hop','nujabes'] },
+                    { id: 'pop',       label: 'Pop',              keywords: ['pop','taylor swift','ariana','billie eilish','the weeknd','olivia rodrigo','dua lipa','harry styles','justin bieber','ed sheeran','selena','shawn mendes','camila','chainsmokers','imagine dragons','maroon 5','post malone'] },
+                    { id: 'rock',      label: 'Rock',             keywords: ['rock','metal','punk','grunge','alternative','linkin park','nirvana','green day','foo fighters','system of a down','metallica','acdc','ac/dc','guns n roses','queen','led zeppelin','arctic monkeys','radiohead','muse','twenty one pilots','bring me','parkway drive','bmth','slipknot'] },
+                    { id: 'rnb',       label: 'R&B / Soul',       keywords: ['r&b','rnb','soul','neo soul','smooth','frank ocean','sza','daniel caesar','jorja smith','h.e.r.','bryson tiller','partynextdoor','brent faiyaz','khalid','usher','alicia keys','john legend','maxwell','erykah badu','d\'angelo'] },
+                    { id: 'edm',       label: 'EDM / Dance',      keywords: ['edm','electronic','dance','techno','house','trance','dubstep','dnb','drum and bass','bass','club','rave','festival','martin garrix','david guetta','tiesto','avicii','marshmello','skrillex','deadmau5','flume','diplo','zedd','alan walker','kygo','dj'] },
+                    { id: 'jazz',      label: 'Jazz',             keywords: ['jazz','blues','swing','bebop','miles davis','coltrane','bill evans','thelonious','monk','duke ellington','charlie parker','herbie hancock','wynton','louis armstrong','nina simone'] },
+                    { id: 'classical', label: 'Classical',        keywords: ['classical','orchestra','symphony','beethoven','mozart','bach','chopin','debussy','brahms','schubert','vivaldi','handel','liszt','tchaikovsky','strauss','mahler','piano sonata','concerto','sonata','nocturne','étude'] },
+                    { id: 'kpop',      label: 'K-Pop',            keywords: ['kpop','k-pop','bts','blackpink','exo','nct','stray kids','twice','red velvet','aespa','ive','new jeans','newjeans','itzy','mamamoo','seventeen','got7','shinee','bigbang','2ne1','super junior','astro','monsta x','ateez'] },
+                    { id: 'afrobeats', label: 'Afrobeats',        keywords: ['afrobeats','afrobeat','amapiano','burna boy','wizkid','davido','rema','omah lay','ckay','tems','ayra starr','afropop','naija','afro','fireboy'] },
+                    { id: 'latin',     label: 'Latin',            keywords: ['latin','reggaeton','salsa','bachata','cumbia','bad bunny','j balvin','maluma','ozuna','daddy yankee','nicky jam','jhay cortez','anuel','karol g','rosalia','shakira','marc anthony','romeo santos'] },
+                    { id: 'slowed',    label: 'Slowed + Reverb',  keywords: ['slowed','reverb','slowed and reverb','slowed reverb','slowed + reverb','night drive','late night','4am','3am','2am','midnight drive','sad slowed'] },
+                    { id: 'phonk',     label: 'Phonk',            keywords: ['phonk','memphis','drift phonk','aggressive phonk','gym phonk','dark phonk','sakkijarven polkka','kordhell','ghostemane','bones','night lovell'] },
                   ];
 
                   // Score each genre based on play history weighted by play count
@@ -2979,7 +3348,7 @@ export default function VanguardPlayer() {
                             <div className="flex items-center gap-3 mb-3">
                               <span className="w-1 h-5 bg-[#39FF14] rounded-full shadow-[0_0_8px_#39FF14] shrink-0" />
                               <h2 className="text-sm font-bold text-white uppercase tracking-widest flex-1">
-                                {genre.emoji} {genre.label}
+                                {genre.label}
                               </h2>
                               <span className="text-[10px] text-neutral-600">{genreTracks.length} tracks</span>
                             </div>
@@ -3192,11 +3561,13 @@ export default function VanguardPlayer() {
                 {openPlaylist.tracks.length === 0
                   ? <div className="flex flex-col items-center justify-center h-40 text-neutral-700 gap-3"><Music size={32} strokeWidth={1} /><p className="text-sm">No tracks yet.</p></div>
                   : (() => {
-                      const filteredTracks = playlistSearchQ.trim()
-                        ? openPlaylist.tracks.filter(t =>
-                            t.title.toLowerCase().includes(playlistSearchQ.toLowerCase()) ||
-                            (t.artist && t.artist.toLowerCase().includes(playlistSearchQ.toLowerCase()))
-                          )
+                      const q = playlistSearchQ.trim().toLowerCase();
+                      const filteredTracks = q
+                        ? openPlaylist.tracks.filter(t => {
+                            const title = (t.title || '').toLowerCase();
+                            const artist = (t.artist || '').toLowerCase();
+                            return title.includes(q) || artist.includes(q);
+                          })
                         : openPlaylist.tracks;
                       return (
                         <div className="flex flex-col gap-1">
@@ -3220,7 +3591,7 @@ export default function VanguardPlayer() {
                             : filteredTracks.map((t, i) => {
                                 const origIdx = openPlaylist.tracks.indexOf(t);
                                 return (
-                                  <div key={t.url}
+                                  <div key={t.url + origIdx}
                                     className="relative group/row flex items-center gap-1"
                                     onMouseEnter={() => { if (dragPlaylistIdx.current !== null) { dragOverPlaylistIdxRef.current = origIdx; setDragOverPlaylistIdx(origIdx); } }}>
                                     {dragOverPlaylistIdx === origIdx && dragPlaylistIdx.current !== null && dragPlaylistIdx.current !== origIdx && (
@@ -3357,28 +3728,35 @@ export default function VanguardPlayer() {
 
           {}
           {activeNav === 'stats' && (() => {
-            const totalSecs = Object.values(listenSecs).reduce((s, n) => s + n, 0);
-            const totalPlays = Object.values(playCounts).reduce((s, n) => s + n, 0);
+            const totalSecs = Object.values(listenSecs).reduce((s: number, n) => s + (n as number), 0);
+            const totalPlays = Object.values(playCounts).reduce((s: number, n) => s + (n as number), 0);
             const hrs = Math.floor(totalSecs / 3600);
             const mins = Math.floor((totalSecs % 3600) / 60);
 
-            // Top 5 tracks by play count
+            // Build a comprehensive track lookup from all known sources
             const allKnownTracks: Track[] = [...new Map(
-              [...quickPicks, ...playHistory].map(t => [t.url, t])
+              [...quickPicks, ...playHistory].map((t: Track) => [t.url, t])
             ).values()];
-            const topTracks = Object.entries(playCounts)
-              .sort((a, b) => b[1] - a[1])
+
+            // Top 5 tracks — only include entries where we have track metadata
+            const topTracks: { track: Track; count: number }[] = Object.entries(playCounts)
+              .sort((a, b) => (b[1] as number) - (a[1] as number))
               .slice(0, 5)
-              .map(([url, count]) => ({ track: allKnownTracks.find(t => t.url === url), count }))
-              .filter(x => x.track) as { track: Track; count: number }[];
+              .reduce((acc: { track: Track; count: number }[], [url, count]) => {
+                const track = allKnownTracks.find(t => t.url === url);
+                if (track) acc.push({ track, count: count as number });
+                return acc;
+              }, []);
 
             // Top 5 artists
             const artistCounts: Record<string, number> = {};
             Object.entries(playCounts).forEach(([url, count]) => {
               const artist = allKnownTracks.find(t => t.url === url)?.artist;
-              if (artist) artistCounts[artist] = (artistCounts[artist] || 0) + count;
+              if (artist && artist.trim()) {
+                artistCounts[artist] = (artistCounts[artist] || 0) + (count as number);
+              }
             });
-            const topArtists = Object.entries(artistCounts)
+            const topArtists: [string, number][] = Object.entries(artistCounts)
               .sort((a, b) => b[1] - a[1]).slice(0, 5);
 
             // Last 7 days bar chart
@@ -3387,13 +3765,28 @@ export default function VanguardPlayer() {
               const d = new Date(today);
               d.setDate(today.getDate() - (6 - i));
               const key = d.toISOString().slice(0, 10);
-              return { label: d.toLocaleDateString('en', { weekday: 'short' }), count: dailyPlays[key] || 0 };
+              return { label: d.toLocaleDateString('en', { weekday: 'short' }), count: (dailyPlays[key] as number) || 0 };
             });
             const maxDay = Math.max(...days.map(d => d.count), 1);
 
-            if (totalSecs === 0 && totalPlays === 0) {
+            const resetStats = () => {
+              setConfirmModal({
+                message: 'Reset all stats? This will clear play counts, listen time, history, and daily plays. Cannot be undone.',
+                onConfirm: () => {
+                  setPlayCounts({}); saveLS('vg_playCounts', {});
+                  setListenSecs({}); saveLS('vg_listenSecs', {});
+                  setDailyPlays({}); saveLS('vg_dailyPlays', {});
+                  setFirstSeen({}); saveLS('vg_firstSeen', {});
+                  setPlayHistory([]); saveLS('vg_playHistory', []);
+                  showToast('Stats reset');
+                }
+              });
+            };
+
+            const hasAnyStats = totalPlays > 0 || totalSecs > 0 || Object.keys(dailyPlays).some(k => (dailyPlays[k] as number) > 0);
+            if (!hasAnyStats) {
               return (
-                <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                <div className="flex-1 flex flex-col items-center justify-center gap-4">
                   <BarChart2 size={36} className="text-neutral-700" strokeWidth={1} />
                   <p className="text-sm text-neutral-600">Play something to start tracking stats</p>
                 </div>
@@ -3402,13 +3795,22 @@ export default function VanguardPlayer() {
 
             return (
               <div className="flex-1 overflow-y-auto custom-scrollbar px-8 py-8">
+                {/* Header with reset button */}
+                <div className="flex items-center justify-between mb-6">
+                  <h1 className="text-lg font-black text-white uppercase tracking-widest">Stats</h1>
+                  <button onClick={resetStats}
+                    className="text-xs text-neutral-600 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-neutral-800 hover:border-red-500/40">
+                    Reset Stats
+                  </button>
+                </div>
+
                 {/* Summary cards */}
                 <div className="grid grid-cols-3 gap-4 mb-8">
-                  {[
+                  {([
                     { label: 'Time Listened', value: hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`, sub: 'total' },
                     { label: 'Tracks Played', value: totalPlays.toLocaleString(), sub: 'all time' },
-                    { label: 'Unique Tracks', value: Object.keys(playCounts).length.toLocaleString(), sub: 'in library' },
-                  ].map(({ label, value, sub }) => (
+                    { label: 'Unique Tracks', value: Object.keys(playCounts).length.toLocaleString(), sub: 'tracked' },
+                  ] as { label: string; value: string; sub: string }[]).map(({ label, value, sub }) => (
                     <div key={label} className="bg-neutral-900/60 border border-neutral-800/60 rounded-xl p-5">
                       <p className="text-xs font-semibold uppercase tracking-widest text-neutral-600 mb-2">{label}</p>
                       <p className="text-3xl font-black text-white tabular-nums">{value}</p>
@@ -3422,21 +3824,34 @@ export default function VanguardPlayer() {
                   <div className="flex items-center gap-3 mb-4">
                     <span className="w-1 h-4 bg-[#39FF14] rounded-full shadow-[0_0_6px_#39FF14] shrink-0" />
                     <h2 className="text-sm font-bold text-white uppercase tracking-widest">Last 7 Days</h2>
+                    <span className="ml-auto text-xs text-neutral-600">{days.reduce((s,d)=>s+d.count,0)} total plays</span>
                   </div>
                   <div className="bg-neutral-900/40 border border-neutral-800/40 rounded-xl p-5">
-                    <div className="flex items-end gap-2 h-24">
-                      {days.map(({ label, count }) => (
-                        <div key={label} className="flex-1 flex flex-col items-center gap-1.5">
-                          <div className="w-full rounded-t-sm transition-all duration-500"
-                            style={{
-                              height: `${Math.max(4, (count / maxDay) * 80)}px`,
-                              background: count > 0 ? 'rgba(57,255,20,0.7)' : 'rgba(255,255,255,0.06)',
-                              boxShadow: count > 0 ? '0 0 8px rgba(57,255,20,0.3)' : 'none',
-                            }} />
-                          <span className="text-[10px] text-neutral-600 font-medium">{label}</span>
-                          {count > 0 && <span className="text-[9px] text-neutral-500 tabular-nums">{count}</span>}
-                        </div>
-                      ))}
+                    <div className="flex items-end gap-3" style={{height:'140px'}}>
+                      {days.map(({ label, count }, di) => {
+                        const isToday = di === 6;
+                        const barH = count === 0 ? 6 : Math.max(20, Math.round((count / maxDay) * 110));
+                        return (
+                          <div key={label} className="flex-1 flex flex-col items-center justify-end gap-1.5 h-full">
+                            {count > 0 && (
+                              <span className="text-[11px] font-bold tabular-nums" style={{color: isToday ? '#39FF14' : '#aaa'}}>{count}</span>
+                            )}
+                            <div className="w-full rounded-lg transition-all duration-500 relative overflow-hidden"
+                              style={{
+                                height: `${barH}px`,
+                                background: count === 0
+                                  ? 'rgba(255,255,255,0.04)'
+                                  : isToday
+                                    ? 'linear-gradient(180deg,#39FF14,#22cc0a)'
+                                    : 'linear-gradient(180deg,rgba(57,255,20,0.65),rgba(57,255,20,0.3))',
+                                boxShadow: count > 0 && isToday ? '0 0 16px rgba(57,255,20,0.5)' : 'none',
+                                border: isToday && count > 0 ? '1px solid rgba(57,255,20,0.4)' : '1px solid transparent',
+                              }} />
+                            <span className={`text-[11px] font-semibold ${isToday ? 'text-[#39FF14]' : 'text-neutral-500'}`}>{label}</span>
+                            {isToday && <span className="text-[9px] text-[#39FF14]/60 font-bold -mt-1">TODAY</span>}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -3479,11 +3894,16 @@ export default function VanguardPlayer() {
                         <h2 className="text-sm font-bold text-white uppercase tracking-widest">Top Artists</h2>
                       </div>
                       <div className="flex flex-col gap-2">
-                        {topArtists.map(([artist, count], i) => (
-                          <div key={artist} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/[0.04] transition-colors">
+                        {topArtists.map(([artist, count], i) => {
+                          const thumb = artistThumbs[artist];
+                          return (
+                          <div key={artist} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/[0.04] transition-colors cursor-pointer"
+                            onClick={() => { setSearchQuery(artist); searchMusic(artist); setActiveNav('home'); }}>
                             <span className="text-xs font-bold text-neutral-600 w-4 tabular-nums shrink-0">{i + 1}</span>
-                            <div className="w-9 h-9 rounded-full bg-neutral-800 border border-neutral-700/60 flex items-center justify-center shrink-0">
-                              <span className="text-xs font-bold text-neutral-400">{artist.slice(0, 2).toUpperCase()}</span>
+                            <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700/60 flex items-center justify-center shrink-0 overflow-hidden">
+                              {thumb
+                                ? <img src={thumb} alt={artist} className="w-full h-full object-cover" />
+                                : <span className="text-xs font-bold text-neutral-400">{artist.slice(0, 2).toUpperCase()}</span>}
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-semibold text-white truncate">{artist}</p>
@@ -3495,7 +3915,8 @@ export default function VanguardPlayer() {
                               </div>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -3507,10 +3928,11 @@ export default function VanguardPlayer() {
                     <div className="flex items-center gap-3 mb-4">
                       <span className="w-1 h-4 bg-[#39FF14] rounded-full shadow-[0_0_6px_#39FF14] shrink-0" />
                       <h2 className="text-sm font-bold text-white uppercase tracking-widest">Recent Plays</h2>
-                      <button onClick={() => setPlayHistory([])} className="ml-auto text-[11px] text-neutral-600 hover:text-neutral-400 transition-colors">Clear</button>
+                      <button onClick={() => { setPlayHistory([]); saveLS('vg_playHistory', []); }}
+                        className="ml-auto text-[11px] text-neutral-600 hover:text-neutral-400 transition-colors">Clear</button>
                     </div>
                     <div className="flex flex-col gap-1">
-                      {playHistory.slice(0, 8).map((track, i) => (
+                      {playHistory.slice(0, 8).map((track: Track, i: number) => (
                         <div key={track.url + i}
                           onClick={() => handlePlayInContext(track, playHistory.slice(0, 8))}
                           className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/[0.04] cursor-pointer transition-colors group">
@@ -3539,12 +3961,15 @@ export default function VanguardPlayer() {
               onBackup={handleBackup} onRestore={handleRestore}
               onReset={() => setConfirmModal({ message: 'Reset all Vanguard data? This cannot be undone.', onConfirm: () => { localStorage.clear(); window.location.reload(); } })}
               backupPath={backupPath} setBackupPath={setBackupPath}
-              cachePath={cachePath} setCachePath={setCachePath}
               loudnormEnabled={loudnormEnabled} setLoudnormEnabled={setLoudnormEnabledState}
               streamQuality={streamQuality} setStreamQuality={setStreamQualityState}
               skipSilence={skipSilence} setSkipSilence={setSkipSilenceState}
+              eq={eq} setEq={v => { setEqState(v); saveLS('vg_eq', v); }}
               showToast={showToast}
               updateAvailable={updateAvailable}
+              lyricsSource={lyricsSource} setLyricsSource={setLyricsSource}
+              trayEnabled={trayEnabled} setTrayEnabled={setTrayEnabled}
+              audioDevices={audioDevices} setAudioDevices={setAudioDevices}
             />
           )}
           </div>
@@ -3676,6 +4101,16 @@ export default function VanguardPlayer() {
                   <Heart size={22} className={isTrackLiked(currentTrack.url) ? 'text-[#39FF14] fill-[#39FF14] drop-shadow-[0_0_8px_rgba(57,255,20,0.6)]' : 'text-neutral-400 hover:text-white'} />
                 </button>
               )}
+              {currentTrack && !currentTrack.url.startsWith('local://') && (() => {
+                const dl = downloadingTracks[currentTrack.url];
+                return (
+                  <button onClick={() => handleDownload(currentTrack)} className="p-1.5 focus:outline-none hover:scale-110 active:scale-95 transition-transform shrink-0" title="Download">
+                    {dl > 0
+                      ? <svg width="20" height="20" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="#333" strokeWidth="1.5"/><circle cx="7" cy="7" r="5.5" fill="none" stroke="#39FF14" strokeWidth="1.5" strokeLinecap="round" strokeDasharray={`${2*Math.PI*5.5}`} strokeDashoffset={`${2*Math.PI*5.5*(1-Math.min(dl,100)/100)}`} style={{transformOrigin:'7px 7px',transform:'rotate(-90deg)',transition:'stroke-dashoffset 0.3s ease'}}/>{dl>=100&&<path d="M4.5 7l2 2 3-3" stroke="#39FF14" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>}</svg>
+                      : <Download size={20} className="text-neutral-400 hover:text-white" />}
+                  </button>
+                );
+              })()}
             </>
           ) : (
             <>
@@ -3771,6 +4206,14 @@ export default function VanguardPlayer() {
               ×{crossfadeSeconds}s
             </span>
           )}
+          {/* Lyrics button */}
+          <button
+            onClick={() => { if (currentTrack) setShowLyrics(o => !o); }}
+            disabled={!currentTrack}
+            title="Lyrics"
+            className={`transition-all duration-200 shrink-0 disabled:opacity-30 ${showLyrics ? 'text-[#39FF14] drop-shadow-[0_0_6px_#39FF14]' : 'text-neutral-500 hover:text-neutral-300'}`}>
+            <Mic2 size={18} />
+          </button>
           <button onClick={toggleMute} className="focus:outline-none shrink-0">
             {volume === 0 ? <VolumeX size={20} className="text-red-500" /> : <Volume2 size={20} className="text-neutral-400 hover:text-white transition-colors" />}
           </button>
@@ -4024,8 +4467,31 @@ export default function VanguardPlayer() {
             const id = `csv_${Date.now()}`;
             setPlaylists(prev => [...prev, { id, name, description: desc || 'Imported from Spotify', tracks }]);
             showToast(`"${name}" saved — ${tracks.length} tracks`);
+            setBgImport(null);
+            setPendingSpotifyImport(null);
+          }}
+          onMatchingDone={(tracks, matched, failed) => {
+            // Store in parent state so name popup shows even if modal was minimized
+            setPendingSpotifyImport({ tracks, matchedCount: matched, failedCount: failed });
+            setShowCsvImportModal(false);
           }}
           showToast={showToast}
+          onProgress={(matched, total, label) => setBgImport(total > 0 ? { matched, total, label } : null)}
+        />
+      )}
+      {/* Name/desc popup for minimized Spotify imports */}
+      {pendingSpotifyImport && !showCsvImportModal && (
+        <ImportResultModal
+          matchedCount={pendingSpotifyImport.matchedCount}
+          failedCount={pendingSpotifyImport.failedCount}
+          onSave={(name, desc) => {
+            const id = `csv_${Date.now()}`;
+            setPlaylists(prev => [...prev, { id, name, description: desc || 'Imported from Spotify', tracks: pendingSpotifyImport.tracks }]);
+            showToast(`"${name}" saved — ${pendingSpotifyImport.tracks.length} tracks`);
+            setBgImport(null);
+            setPendingSpotifyImport(null);
+          }}
+          onClose={() => setPendingSpotifyImport(null)}
         />
       )}
       {showDuplicatesPlaylist && (() => {
@@ -4222,6 +4688,7 @@ export default function VanguardPlayer() {
                 ['M', 'Mute / Unmute'],
                 ['Navigation', null],
                 ['Ctrl+F', 'Focus search'],
+
                 ['?', 'Show this overlay'],
                 ['Esc', 'Close any overlay'],
               ] as [string, string | null][]).map(([key, action], i) =>
@@ -4274,6 +4741,173 @@ export default function VanguardPlayer() {
           {toast}
         </div>
       )}
+
+      {/* Background import progress pill */}
+      {bgImport && !showCsvImportModal && (
+        <div className="fixed bottom-28 right-6 z-[9998] flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-2xl border border-[#1DB954]/30 bg-[#0d0d0d]"
+          style={{ animation: 'fadeUp 0.2s ease both' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+          <div className="flex flex-col gap-1 min-w-[160px]">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-white">Importing Spotify…</span>
+              <span className="text-[10px] text-[#1DB954] font-bold tabular-nums">{bgImport.matched}/{bgImport.total}</span>
+            </div>
+            <div className="h-1 rounded-full bg-neutral-800 overflow-hidden w-full">
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${(bgImport.matched / bgImport.total) * 100}%`, background: '#1DB954' }} />
+            </div>
+          </div>
+          <button onClick={() => setBgImport(null)} className="text-neutral-600 hover:text-white transition-colors ml-1"><X size={12} /></button>
+        </div>
+      )}
+
+
+      {/* Live Lyrics Modal — immersive full-screen */}
+      {showLyrics && currentTrack && (() => {
+        const lines = lyricsData?.lines || [];
+        // End glitch fix: once past last line, keep last line active (not index 0)
+        let currentIdx = lines.length > 0 ? lines.length - 1 : 0;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].time > progressSeconds) { currentIdx = Math.max(0, i - 1); break; }
+        }
+        const pct = trackDurationSeconds > 0 ? Math.min((progressSeconds / trackDurationSeconds) * 100, 100) : 0;
+        return (
+          <div className="fixed inset-0 z-[9999] flex" style={{ userSelect: 'none', background: '#0a0a0a' }}>
+            {/* Always render gradient base so there's never a black void */}
+            <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(135deg,#0d1a10 0%,#080810 100%)' }} />
+            {/* Full-screen blurred cover — overflow visible so blur doesn't get clipped */}
+            {currentTrack.cover && (
+              <div className="absolute pointer-events-none" style={{
+                inset: '-60px',
+                backgroundImage: `url(${currentTrack.cover})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                filter: 'blur(80px) brightness(0.7) saturate(2.0)',
+              }} />
+            )}
+            {/* Scrim */}
+            <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(135deg,rgba(0,0,0,0.42) 0%,rgba(0,0,0,0.28) 100%)' }} />
+
+            {/* Left panel */}
+            <div className="relative z-10 w-[360px] shrink-0 flex flex-col items-center justify-center px-8 gap-5">
+              <button onClick={() => setShowLyrics(false)}
+                className="absolute top-6 left-6 w-9 h-9 flex items-center justify-center rounded-full text-white transition-all"
+                style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)' }}>
+                <X size={16} />
+              </button>
+
+              {/* Album art */}
+              <div className="w-44 h-44 rounded-2xl overflow-hidden shrink-0"
+                style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.85)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                {currentTrack.cover
+                  ? <img src={currentTrack.cover} alt={currentTrack.title} className="w-full h-full object-cover" />
+                  : <div className="w-full h-full bg-neutral-900 flex items-center justify-center"><Music size={36} className="text-neutral-600" /></div>}
+              </div>
+
+              <div className="text-center w-full">
+                <p className="text-lg font-black text-white truncate px-1">{currentTrack.title}</p>
+                <p className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>{currentTrack.artist}</p>
+              </div>
+
+              {/* Progress bar — identical to default player bar */}
+              <div className="w-full flex flex-col gap-1">
+                <div className="slider-track relative w-full h-1 rounded-full cursor-pointer hover:h-1.5 transition-[height] duration-150 ease-out"
+                  style={{ background: 'rgba(255,255,255,0.18)' }}
+                  onMouseDown={e => {
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * (trackDurationSeconds || 0);
+                    invoke('seek_audio', { time: t }).catch(() => {});
+                  }}>
+                  <div className="absolute top-0 left-0 h-full rounded-full pointer-events-none"
+                    style={{ width: `${pct}%`, background: '#39FF14', boxShadow: '0 0 6px rgba(57,255,20,0.5)', transition: 'width 0.5s linear' }}>
+                    <div className="slider-thumb absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 pointer-events-none"
+                      style={{ boxShadow: '0 0 6px rgba(255,255,255,0.8)' }} />
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs tabular-nums" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  <span>{formatTime(progressSeconds)}</span>
+                  <span>{formatTime(trackDurationSeconds)}</span>
+                </div>
+              </div>
+
+              {/* Playback controls */}
+              <div className="flex items-center gap-6">
+                <button onClick={handleSkipBack} style={{ color: 'rgba(255,255,255,0.65)' }} className="hover:text-white transition-colors"><SkipBack size={20} /></button>
+                <button onClick={togglePlayPause}
+                  className="w-12 h-12 rounded-full bg-white flex items-center justify-center active:scale-95 transition-all"
+                  style={{ boxShadow: isPlaying ? '0 0 20px rgba(57,255,20,0.5)' : '0 4px 16px rgba(0,0,0,0.5)' }}>
+                  {isPlaying ? <Pause fill="black" size={20} className="text-black" /> : <Play fill="black" size={20} className="text-black ml-0.5" />}
+                </button>
+                <button onClick={handleSkipForward} style={{ color: 'rgba(255,255,255,0.65)' }} className="hover:text-white transition-colors"><SkipForward size={20} /></button>
+              </div>
+
+              {/* Audio output — clean dropdown */}
+              {audioDevices.length > 0 && (
+                <LyricsAudioDropdown
+                  devices={audioDevices}
+                  switching={switchingDevice}
+                  onSwitch={async (id) => {
+                    setSwitchingDevice(true);
+                    try { await invoke('set_audio_device', { id }); setAudioDevices(prev => prev.map(d => ({ ...d, is_default: d.id === id }))); showToast(`Output: ${audioDevices.find(d=>d.id===id)?.name ?? id}`); }
+                    catch (e) { showToast(`Switch failed: ${e}`); }
+                    finally { setSwitchingDevice(false); }
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Divider */}
+            <div className="relative z-10 w-px shrink-0 my-8" style={{ background: 'rgba(255,255,255,0.07)' }} />
+
+            {/* Lyrics panel */}
+            <div className="relative z-10 flex-1 overflow-hidden">
+              {lyricsLoading ? (
+                <div className="flex flex-col items-center justify-center gap-4 h-full">
+                  <Loader2 size={24} className="animate-spin text-[#39FF14]" />
+                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Fetching lyrics…</p>
+                </div>
+              ) : lines.length > 0 ? (
+                <div className="relative h-full">
+                  <div className="absolute top-0 left-0 right-0 h-28 z-10 pointer-events-none"
+                    style={{ background: 'linear-gradient(to bottom,rgba(0,0,0,0.7) 0%,transparent 100%)' }} />
+                  <div className="absolute bottom-0 left-0 right-0 h-28 z-10 pointer-events-none"
+                    style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.7) 0%,transparent 100%)' }} />
+                  <div className="h-full overflow-y-auto px-10 py-24" style={{ scrollbarWidth: 'none' }}
+                    ref={el => {
+                      if (!el) return;
+                      const active = el.querySelector('[data-active="true"]') as HTMLElement;
+                      if (active) active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}>
+                    {lines.map((line, idx) => {
+                      const isCurrent = idx === currentIdx;
+                      const isPast = idx < currentIdx;
+                      return (
+                        <p key={idx}
+                          data-active={isCurrent ? 'true' : 'false'}
+                          onClick={async () => { await invoke('seek_audio', { time: line.time }).catch(() => {}); }}
+                          className="cursor-pointer leading-snug py-2.5 select-none"
+                          style={{
+                            fontSize: '1.45rem',
+                            fontWeight: isCurrent ? 700 : 500,
+                            color: isCurrent ? '#fff' : isPast ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.48)',
+                            transition: 'color 0.3s ease',
+                          }}>
+                          {line.text || '\u00A0'}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-3 h-full" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                  <Mic2 size={36} strokeWidth={1} />
+                  <p className="text-base font-medium">No lyrics found</p>
+                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.15)' }}>Try Genius or AZLyrics</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

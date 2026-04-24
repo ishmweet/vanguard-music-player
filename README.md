@@ -339,4 +339,4 @@ MIT © [ishmweet](https://github.com/ishmweet)
 
 ---
 
-*Built with Rust, React, and a stubborn belief that music software shouldn't require an account.*
+*Built with Rust, React, and a stubborn belief that music software shouldn’t interrupt your listening with ads.*
