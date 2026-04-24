@@ -28,52 +28,68 @@ Vanguard Player is a native desktop music application that treats `mpv` as its a
 - Stream audio instantly via `yt-dlp` + `mpv` IPC — no video, no buffering delay
 - Search history dropdown (up to 8 recent queries) with one-click re-search
 - **Quick Picks** — a strip of your 20 most recently played tracks on the home screen for instant replay
-- Audio chunks are cached to disk so re-playing a recent stream is instant
+- **Genre Shelves** — home screen auto-detects genres from your listening history and groups tracks into horizontal scrollable shelves (Hip-Hop, EDM, Pop, Rock, R&B, Lo-Fi, K-Pop, Phonk, and more)
 
 ### 📁 Offline Library
-- Point Vanguard at any folder and it scans instantly, then enriches metadata (title, artist, duration) in the background without blocking the UI
+- Point Vanguard at any folder and it scans instantly, then enriches metadata in the background without blocking the UI
 - Filter your library in real time — zero latency, pure in-memory search
 - Drag-to-reorder tracks (disabled automatically while searching)
-- Rename any file directly from the UI — the rename is applied on disk
+- Rename any file directly from the UI — applied on disk
 - Delete files from within the app
 - Show any track in your system file manager
 - Export your entire library as an M3U playlist
 
 ### ⬇️ Downloads
-- Download any YouTube track with one click from search results or right-click menu
+- Download any YouTube track with one click from search results, right-click menu, or the **download button beside the heart icon** in the player bar
 - Choose your **audio format**: MP3, Opus, M4A, or FLAC
 - Choose your **quality**: High (320kbps+), Medium (~128kbps), or Low
-- **Embed Thumbnail** — cover art is written directly into the file's metadata tags
-- All metadata (title, artist, album) is embedded automatically
-- **Duplicate Detection** — scans your download folder before downloading and skips if the track already exists (matched by title, case-insensitive)
+- **Embed Thumbnail** — cover art written directly into file metadata tags
+- All metadata (title, artist, album) embedded automatically
+- **Duplicate Detection** — scans your download folder before downloading and skips if the track already exists
 
 ### 🎵 Playlists
-- Create, name, and describe playlists; edit or delete them at any time
-- Upload a custom cover image for any playlist
+- Create, name, and describe playlists; edit or delete at any time
+- Upload a custom cover image for any playlist (except Liked Songs)
 - Drag-to-reorder playlists in the sidebar and tracks within playlists
 - **Search within a playlist** — filter tracks by title or artist in real time
-- **Liked Songs** — a built-in smart playlist. Heart any track anywhere in the app to add it. The cover is permanently a heart icon and cannot be changed
-- **Import from Spotify** — export your Spotify playlist as a CSV file using [exportify.net](https://exportify.net), upload it, and Vanguard automatically matches each track against YouTube with a live progress feed showing match/fail status for every song
-- **Import from YouTube** — paste any public YouTube playlist URL and it imports instantly — no matching needed, all tracks map directly
+- **Liked Songs** — built-in smart playlist; heart any track anywhere in the app to add it
+- **Import from Spotify** — export your Spotify playlist as a CSV via [exportify.net](https://exportify.net), upload it, and Vanguard matches each track against YouTube with a live progress feed. Minimize the import window while it runs — a **name & description popup appears automatically when matching completes**, even if the window was closed
+- **Import from YouTube** — paste any public YouTube playlist URL for instant import
 
 ### 📋 Queue
 - Add any track to the persistent queue from search results, playlists, or right-click menus
 - Drag-to-reorder the queue at any time
-- Remove individual tracks from the queue without interrupting playback
 - Queue survives across sessions
 
 ### ▶️ Playback Engine
 - **mpv backend** via IPC socket (Unix) / named pipe (Windows) — full codec support, hardware decoding
-- **Shuffle** across the current context (queue, playlist, or offline library)
-- **Repeat modes** — Off, Repeat All, Repeat One
-- **Playback speed** — 0.5×, 0.75×, 1×, 1.25×, 1.5×, 2×
-- **Volume control** — slider and scroll wheel; mute/unmute with memory of previous level
-- **Seek bar** — click or drag anywhere to seek; waveform visualisation overlay on local files
-- **A-B Loop** — set a loop start point (A) and end point (B) anywhere in a track; the player loops that segment continuously until cleared
-- **Bookmarks** — save one position per track; the player jumps to the bookmark when the track is next played
-- **Continue Where Left Off** — saves your position every 5 seconds per track; resumes automatically on next play (works for both streaming and local files)
-- **Next-track prefetching** — the first queued track is pre-fetched in the background for faster transitions
-- **EBU R128 Loudness Normalisation** — optional loudnorm filter equalises perceived volume across all tracks; can be disabled for a ~100ms faster playback start
+- **Shuffle**, **Repeat** (Off / All / One), **Playback speed** (0.5×–2×)
+- **Volume control** — slider, scroll wheel, mute with memory
+- **Seek bar** — click or drag; waveform visualisation overlay on local files
+- **A-B Loop** — loop any segment continuously until cleared
+- **Bookmarks** — save one position per track, restored on next play
+- **Continue Where Left Off** — saves position every 5 seconds per track
+- **Next-track prefetching** — first queued track pre-fetched in background
+- **EBU R128 Loudness Normalisation** — optional loudnorm filter for consistent volume
+- **Skip Silence** — auto-skips silent segments via mpv `silencedetect` filter
+- **3-Band Equalizer** — real-time bass, mid, and treble adjustment (−12dB to +12dB) applied live via mpv audio filters; reset to flat with one click
+
+### 🎤 Lyrics
+- Synced lyrics with **real-time line highlighting** that scrolls automatically as the song plays — click any line to seek
+- **Immersive full-screen view** — full-screen blurred album art background, left panel with cover, progress bar, controls, and audio output switcher; right panel with scrolling lyrics
+- **Lyrics Source** selector in Settings → Playback: choose between **lrclib** (open, fast), **Musixmatch** (word-level richsync), or **NetEase** (best for C-pop / K-pop). Automatically falls back to lrclib → lyrics.ovh if primary source fails
+
+### 🔊 Audio Output
+- **Live device list** in Settings → Playback shows all active output devices with their form factor (headphones / speaker)
+- **Switch output instantly** without restarting playback — on Linux all active streams are moved to the new sink via `pactl move-sink-input`; on Windows switching uses the **Windows Core Audio IPolicyConfig COM interface** (same mechanism used by EarTrumpet / SoundSwitch — no external modules or installs required, works on Win7–Win11)
+- **Audio output dropdown in the immersive lyrics view** — switch devices without leaving the lyrics screen
+
+### 🖥️ System Tray *(optional)*
+Enable in Settings → Appearance. Once active:
+- **Left-click** the tray icon to show/hide the window
+- **Tray menu**: Play/Pause, Next, Previous, Show, Quit
+- Closing the window hides to tray instead of exiting
+- Tray events fire `tray_play_pause`, `tray_next`, `tray_prev` — wired to the same handlers as MPRIS and media keys
 
 ### ⌨️ Controls & Shortcuts
 
@@ -88,35 +104,29 @@ Vanguard Player is a native desktop music application that treats `mpv` as its a
 | Next track (media key) | Hardware key |
 | Previous track (media key) | Hardware key |
 
-Media keys are registered globally via `tauri-plugin-global-shortcut` on both Linux and Windows and work even when the app is not in focus.
+Media keys are registered globally and work even when the app is not in focus.
 
 ### 🐧 MPRIS2 Integration (Linux)
-Vanguard registers a full `org.mpris.MediaPlayer2.vanguard` D-Bus service on the session bus. This means:
-- **playerctl** works: `playerctl play-pause`, `playerctl next`, `playerctl metadata`
-- **KDE Connect** can control playback from your phone
-- **GNOME Shell extensions** and taskbar widgets display Now Playing info
-- All metadata (title, artist, cover art URL, duration) and playback state are pushed in real time via `PropertiesChanged` signals
+Vanguard registers a full `org.mpris.MediaPlayer2.vanguard` D-Bus service. Works with **playerctl**, **KDE Connect**, **GNOME Shell extensions**, and any MPRIS2-compatible widget.
 
 ### 📊 Stats
-- **Total listen time** — displayed as a large HH:MM:SS counter with neon green glow separators
+Total listen time displayed as a large HH:MM:SS counter with neon glow separators.
 
 ### 🌙 Sleep Timer
-Preset buttons (5, 10, 15, 20, 30, 45, 60, 90 minutes) or custom input. A live countdown shows in the sidebar while active. Cancellable at any time. When it expires, playback pauses automatically.
+Preset buttons (5–90 min) or custom input. Live countdown in sidebar. Cancellable at any time.
 
 ### 🖱️ Right-Click Context Menus
-Available on every track in every view (search results, queue, playlists, Quick Picks):
-- Play, Add to Queue, Add to Playlist, Download, Copy URL, Copy Title, Open in YouTube, Track Info
+Available on every track in every view: Play, Add to Queue, Add to Playlist, Download, Copy URL, Copy Title, Open in YouTube, Track Info. Right-click on playlist cards: Play All, Rename, Change Cover, Delete.
 
-Available on playlist cards:
-- Play All, Rename, Change Cover, Delete
+### ⚙️ Settings
+- **Downloads** — quality, format, folder, embed thumbnail, duplicate detection
+- **Playback** — loudnorm, stream quality, skip silence, audio output device switcher, lyrics source selector, equalizer (bass / mid / treble, real-time via mpv)
+- **Storage** — backup, restore, reset
+- **Appearance** — system tray toggle
+- **Updates** — automatic update check against GitHub Releases on startup
 
 ### 💾 Backup & Restore
-- **Backup** — exports everything (all playlists, queue, play history, EQ settings, search history, Quick Picks, playback preferences) as a single JSON file
-- **Restore** — imports a backup JSON and restores all state
-- **Reset** — clears all data and returns the app to its default state
-
-### 🔄 Automatic Update Check
-On startup, Vanguard queries the GitHub Releases API and compares the running version against the latest release. If a newer version exists, a notification card appears in Settings → Updates and a small green dot appears on the Settings icon in the sidebar.
+Export all playlists, queue, play history, EQ settings, search history, Quick Picks, and preferences as a single JSON file. Restore or reset at any time.
 
 ---
 
@@ -124,14 +134,13 @@ On startup, Vanguard queries the GitHub Releases API and compares the running ve
 
 ### Linux — Debian / Ubuntu / Mint
 
-Download the latest `.deb` package from the [Releases](https://github.com/ishmweet/vanguard-music-player/releases) page.
-
 ```bash
 sudo apt install ./vanguard-player_<version>_amd64.deb
 ```
 
-`apt` resolves and installs all required system dependencies automatically:
-`mpv`, `yt-dlp`, `ffmpeg`, `ffprobe`
+`apt` resolves and installs all required system dependencies automatically: `mpv`, `yt-dlp`, `ffmpeg`, `ffprobe`.
+
+> For system tray support on GNOME, install `libayatana-appindicator3-1`.
 
 Launch from your application menu or run:
 
@@ -141,9 +150,7 @@ vanguard-player
 
 ### Windows
 
-Download and run the `.exe` installer from the [Releases](https://github.com/ishmweet/vanguard-music-player/releases) page.
-
-The NSIS installer bundles all required binaries (`mpv`, `yt-dlp`, `ffmpeg`, `ffprobe`) and extracts them to `%LOCALAPPDATA%\Programs\vanguard-deps\` on first launch. No additional setup is required.
+Download and run the `.exe` installer from the [Releases](https://github.com/ishmweet/vanguard-music-player/releases) page. The NSIS installer bundles all required binaries (`mpv`, `yt-dlp`, `ffmpeg`, `ffprobe`) and extracts them to `%LOCALAPPDATA%\Programs\vanguard-deps\` on first launch. No additional setup required.
 
 ---
 
@@ -153,7 +160,7 @@ The NSIS installer bundles all required binaries (`mpv`, `yt-dlp`, `ffmpeg`, `ff
 
 | Requirement | Version | Notes |
 |---|---|---|
-| [Node.js](https://nodejs.org/) | 18+ | For the frontend build |
+| [Node.js](https://nodejs.org/) | 18+ | Frontend build |
 | [Rust](https://rustup.rs/) | stable | `rustup install stable` |
 | [Tauri CLI](https://tauri.app/start/prerequisites/) | v2 | `cargo install tauri-cli --version "^2"` |
 
@@ -167,7 +174,7 @@ sudo apt install mpv yt-dlp ffmpeg libssl-dev pkg-config \
 
 ### Windows — Bundled Binaries
 
-Download `binaries.zip` from the [Releases](https://github.com/ishmweet/vanguard-music-player/releases) page and extract the contents into `src-tauri/binaries/`:
+Download `binaries.zip` from the [Releases](https://github.com/ishmweet/vanguard-music-player/releases) page and extract into `src-tauri/binaries/`:
 
 ```
 src-tauri/binaries/
@@ -186,9 +193,7 @@ npm install
 cargo tauri build
 ```
 
-Output packages will be at:
-
-| Platform | Path |
+| Platform | Output path |
 |---|---|
 | Linux `.deb` | `src-tauri/target/release/bundle/deb/` |
 | Windows `.exe` | `src-tauri/target/release/bundle/nsis/` |
@@ -198,8 +203,6 @@ Output packages will be at:
 ```bash
 cargo tauri dev
 ```
-
-Hot reload is active on both the React frontend (via Vite) and the Rust backend (via `cargo watch`). The terminal window visible during `cargo tauri dev` is the dev runner — it does not appear in production builds.
 
 ---
 
@@ -217,14 +220,29 @@ yt-dlp (audio extraction, stdout pipe)
 mpv (IPC-controlled via Unix socket / Windows named pipe)
     │
     ▼
-System audio output (PipeWire / PulseAudio / DirectSound)
+System audio output (PipeWire / PulseAudio / DirectSound / WASAPI)
 ```
 
-Vanguard never downloads a full video. yt-dlp extracts the audio stream directly and pipes it to mpv, which handles decoding and output. All playback control (seek, pause, volume, speed, EQ, position polling) happens over the IPC socket using JSON commands.
+### Audio Device Switching
 
-### Local File Playback
+On **Linux**: `pactl set-default-sink` + `pactl move-sink-input` moves all active streams to the new device instantly without restarting mpv.
 
-Local files bypass yt-dlp entirely. The file path is passed directly to mpv via `play_local_file`. ffprobe reads the file's metadata (title, artist, duration, codec, bitrate) and ffmpeg generates waveform amplitude data for the visualisation in the seek bar.
+On **Windows**: Vanguard calls `IPolicyConfig::SetDefaultEndpoint` directly via the Windows Core Audio COM API — the same undocumented-but-stable interface used by EarTrumpet and SoundSwitch. No PowerShell modules, no third-party tools, works on Windows 7 through 11.
+
+### Lyrics Pipeline
+
+```
+Track title + artist
+    │
+    ▼
+Parallel fetch: primary source (lrclib / Musixmatch / NetEase) + fallbacks
+    │
+    ▼
+LRC timestamps parsed → line-by-line sync against mpv progress
+    │
+    ▼
+Immersive full-screen view with auto-scroll + seek-on-click
+```
 
 ### Spotify Import Flow
 
@@ -238,26 +256,13 @@ Vanguard parses CSV → extracts title + artist pairs
 Up to 12 concurrent yt-dlp searches run in parallel
     │
     ▼
-Each match (or failure) updates the live progress list
+Each match/failure updates the live progress list
+    │
+    ▼ (even if window was minimized)
+Name & description popup appears when matching completes
     │
     ▼
-User names the playlist → saved to localStorage
-```
-
-### YouTube Playlist Import Flow
-
-```
-User pastes playlist URL
-    │
-    ▼
-yt-dlp fetches all video metadata from the playlist
-    │
-    ▼
-Tracks are imported directly with YouTube IDs
-(no matching step needed)
-    │
-    ▼
-User names the playlist → saved to localStorage
+Playlist saved to localStorage
 ```
 
 ---
@@ -269,16 +274,17 @@ User names the playlist → saved to localStorage
 | UI Framework | React 19 + TypeScript | Component rendering, state management |
 | Styling | Tailwind CSS | Utility-first CSS |
 | Icons | lucide-react | All UI icons |
-| Desktop Shell | Tauri v2 | Native window, IPC bridge, file system access |
+| Desktop Shell | Tauri v2 | Native window, IPC bridge, file system |
 | Backend | Rust (stable) | All system operations |
 | Audio Engine | mpv | Decoding and playback via IPC |
 | Streaming / Download | yt-dlp | YouTube search, streaming, downloading |
-| Media Info | ffprobe / ffmpeg | Metadata reading, waveform generation, format conversion |
+| Media Info | ffprobe / ffmpeg | Metadata, waveform generation, format conversion |
+| Audio Devices (Windows) | windows crate (IPolicyConfig) | Native Core Audio device switching |
 | MPRIS2 | zbus 3 | D-Bus integration on Linux |
 | Global Shortcuts | tauri-plugin-global-shortcut | Hardware media key support |
 | File Dialogs | tauri-plugin-dialog | Folder/file pickers |
-| URL Opening | tauri-plugin-opener | Opening links in the system browser |
-| HTTP | reqwest | GitHub update check |
+| URL Opening | tauri-plugin-opener | Opening links in system browser |
+| HTTP | reqwest | Lyrics fetching, GitHub update check |
 
 ---
 
@@ -287,16 +293,18 @@ User names the playlist → saved to localStorage
 ```
 vanguard-music-player/
 ├── src/
-│   └── App.tsx              # Entire React UI
+│   └── App.tsx                   # Entire React UI
 ├── src-tauri/
 │   ├── src/
-│   │   └── main.rs          # Rust backend
-│   ├── build.rs             # Build script
-│   ├── Cargo.toml           # Rust dependencies
-│   ├── tauri.conf.json      # Base Tauri configuration (Linux + shared)
-│   ├── tauri.windows.conf.json  # Windows-only overrides (bundled binaries)
-│   ├── icons/               # App icons
-│   └── binaries/            # Windows-only bundled executables
+│   │   ├── main.rs               # Rust backend
+│   │   ├── tray.rs               # System tray (Linux + Windows)
+│   │   └── audio_device.rs       # Audio device listing + switching
+│   ├── build.rs
+│   ├── Cargo.toml
+│   ├── tauri.conf.json
+│   ├── tauri.windows.conf.json
+│   ├── icons/
+│   └── binaries/                 # Windows-only bundled executables
 ├── public/
 ├── index.html
 ├── package.json
@@ -307,12 +315,13 @@ vanguard-music-player/
 
 ## Data & Privacy
 
-All application state is stored locally in the webview's `localStorage` under `vg_*` prefixed keys. There is no database, no cloud sync, and no external server. The only network requests Vanguard makes are:
+All application state is stored locally in the webview's `localStorage` under `vg_*` prefixed keys. No database, no cloud sync, no external server. The only network requests Vanguard makes:
 
 | Request | When | Purpose |
 |---|---|---|
 | YouTube search / stream | When you search or play | Via yt-dlp |
 | YouTube thumbnail images | When displaying track art | Direct img src |
+| lrclib / Musixmatch / NetEase | When lyrics are opened | Synced lyrics fetch |
 | GitHub Releases API | Once on startup | Update check |
 
 No usage data, crash reports, or analytics are ever collected or transmitted.
@@ -321,10 +330,9 @@ No usage data, crash reports, or analytics are ever collected or transmitted.
 
 ## Contributing
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you'd like to change.
+Pull requests are welcome. For major changes, please open an issue first.
 
 ```bash
-# Fork the repo, then:
 git clone https://github.com/your-username/vanguard-music-player.git
 cd vanguard-music-player
 npm install
@@ -339,4 +347,4 @@ MIT © [ishmweet](https://github.com/ishmweet)
 
 ---
 
-*Built with Rust, React, and a stubborn belief that music software shouldn’t interrupt your listening with ads.*
+*Built with Rust, React, and a stubborn belief that music software shouldn't interrupt your listening with ads.*

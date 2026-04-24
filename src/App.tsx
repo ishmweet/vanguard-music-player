@@ -3266,10 +3266,20 @@ export default function VanguardPlayer() {
                     { id: 'phonk',     label: 'Phonk',            keywords: ['phonk','memphis','drift phonk','aggressive phonk','gym phonk','dark phonk','sakkijarven polkka','kordhell','ghostemane','bones','night lovell'] },
                   ];
 
-                  // Score each genre based on play history weighted by play count
-                  const allTracksForGenre = [...new Map(
-                    [...quickPicks, ...playHistory].map(t => [t.url, t])
-                  ).values()];
+                  // Map local files to Track shape for genre matching
+                  const localAsTrack: Track[] = localTracksListRef.current.map((lt, i) => ({
+                    id: -(i + 1), title: lt.title, artist: lt.artist || '',
+                    url: `local://${lt.path}`, cover: '', duration: lt.duration || '',
+                  }));
+
+                  // Build the fullest possible track pool:
+                  // quickPicks + playHistory + ALL local files + ALL playlist tracks
+                  const allTracksForGenre = [...new Map([
+                    ...quickPicks,
+                    ...playHistory,
+                    ...localAsTrack,
+                    ...playlists.flatMap(p => p.tracks),
+                  ].map(t => [t.url, t])).values()];
 
                   const genreScores: Record<string, { score: number; tracks: Track[] }> = {};
                   GENRES.forEach(g => { genreScores[g.id] = { score: 0, tracks: [] }; });
@@ -3287,7 +3297,11 @@ export default function VanguardPlayer() {
                     });
                   });
 
-                  // Only show genres with 2+ tracks, sorted by score
+                  // Sort tracks within each genre by play count descending
+                  GENRES.forEach(g => {
+                    genreScores[g.id].tracks.sort((a, b) => (playCounts[b.url] || 0) - (playCounts[a.url] || 0));
+                  });
+
                   const activeGenres = GENRES
                     .filter(g => genreScores[g.id].tracks.length >= 2)
                     .sort((a, b) => genreScores[b.id].score - genreScores[a.id].score)
@@ -4781,7 +4795,7 @@ export default function VanguardPlayer() {
                 backgroundImage: `url(${currentTrack.cover})`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
-                filter: 'blur(80px) brightness(0.7) saturate(2.0)',
+                filter: 'blur(80px) brightness(0.6) saturate(2.0)',
               }} />
             )}
             {/* Scrim */}
