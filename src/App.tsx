@@ -19,7 +19,7 @@ import {
   Loader2, CheckCircle2, XCircle, ArrowUpCircle, Image, Mic2
 } from 'lucide-react';
 
-const __APP_VERSION__ = '0.1.0';
+const __APP_VERSION__ = '0.1.1';
 
 type Track = {
   id: number;
@@ -893,6 +893,7 @@ function SettingsPanel({
   eq, setEq,
   showToast,
   updateAvailable,
+  appVersion,
   lyricsSource, setLyricsSource,
   trayEnabled, setTrayEnabled,
   audioDevices, setAudioDevices,
@@ -910,6 +911,7 @@ function SettingsPanel({
   eq: { bass: number; mid: number; treble: number }; setEq: (v: { bass: number; mid: number; treble: number }) => void;
   showToast: (m: string) => void;
   updateAvailable: string | null;
+  appVersion: string;
   onNavigateToUpdates?: () => void;
   lyricsSource: string; setLyricsSource: (v: string) => void;
   trayEnabled: boolean; setTrayEnabled: (v: boolean) => void;
@@ -984,7 +986,7 @@ function SettingsPanel({
                 ) : (
                   <>
                     <p className="text-sm font-semibold text-white mb-0.5">You're up to date</p>
-                    <p className="text-xs text-neutral-500">Vanguard Player v{__APP_VERSION__} is the latest release.</p>
+                    <p className="text-xs text-neutral-500">Vanguard Player v{appVersion} is the latest release.</p>
                   </>
                 )}
               </div>
@@ -1756,6 +1758,10 @@ export default function VanguardPlayer() {
   const [isLoadingTrack, setIsLoadingTrack] = useState(false);
   const [activeNav, setActiveNav] = useState('home');
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState(__APP_VERSION__);
+  useEffect(() => {
+    import('@tauri-apps/api/app').then(m => m.getVersion()).then(setAppVersion).catch(() => {});
+  }, []);
   const [_navHistory, setNavHistory] = useState<string[]>([]);
 
   const navigateTo = useCallback((nav: string) => {
@@ -3981,6 +3987,7 @@ export default function VanguardPlayer() {
               eq={eq} setEq={v => { setEqState(v); saveLS('vg_eq', v); }}
               showToast={showToast}
               updateAvailable={updateAvailable}
+              appVersion={appVersion}
               lyricsSource={lyricsSource} setLyricsSource={setLyricsSource}
               trayEnabled={trayEnabled} setTrayEnabled={setTrayEnabled}
               audioDevices={audioDevices} setAudioDevices={setAudioDevices}
