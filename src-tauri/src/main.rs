@@ -1657,7 +1657,7 @@ async fn check_for_update() -> Result<Option<String>, String> {
         .map_err(|e| e.to_string())?;
 
     let resp = client
-        .get("https://api.github.com/repos/ishmweet/vanguard-player/releases/latest")
+        .get("https://api.github.com/repos/ishmweet/vanguard-music-player/releases/latest")
         .send()
         .await
         .map_err(|e| e.to_string())?;
