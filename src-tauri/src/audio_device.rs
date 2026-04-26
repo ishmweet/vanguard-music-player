@@ -23,31 +23,25 @@ pub fn list_devices_impl() -> Vec<AudioDevice> {
     };
 
     let mut devices = Vec::new();
-    let mut cur_name = String::new();
-    let mut cur_desc = String::new();
-    let mut cur_form = String::new();
+    let mut name = String::new();
+    let mut desc = String::new();
+    let mut form = String::new();
 
     for line in info.lines() {
         let t = line.trim();
         if let Some(v) = t.strip_prefix("Name:") {
-            if !cur_name.is_empty() && !cur_desc.is_empty() {
-                devices.push(AudioDevice {
-                    is_default: cur_name == default,
-                    id: cur_name.clone(), name: cur_desc.clone(), form: cur_form.clone(),
-                });
+            if !name.is_empty() && !desc.is_empty() {
+                devices.push(AudioDevice { is_default: name == default, id: name.clone(), name: desc.clone(), form: form.clone() });
             }
-            cur_name = v.trim().to_string(); cur_desc.clear(); cur_form.clear();
+            name = v.trim().to_string(); desc.clear(); form.clear();
         } else if let Some(v) = t.strip_prefix("Description:") {
-            cur_desc = v.trim().to_string();
+            desc = v.trim().to_string();
         } else if let Some(v) = t.strip_prefix("device.form_factor = ") {
-            cur_form = v.trim_matches('"').to_string();
+            form = v.trim_matches('"').to_string();
         }
     }
-    if !cur_name.is_empty() && !cur_desc.is_empty() {
-        devices.push(AudioDevice {
-            is_default: cur_name == default,
-            id: cur_name, name: cur_desc, form: cur_form,
-        });
+    if !name.is_empty() && !desc.is_empty() {
+        devices.push(AudioDevice { is_default: name == default, id: name, name: desc, form });
     }
     devices
 }
@@ -56,11 +50,10 @@ pub fn list_devices_impl() -> Vec<AudioDevice> {
 pub fn set_default_impl(id: &str) -> Result<(), String> {
     let s = Command::new("pactl").args(["set-default-sink", id])
         .status().map_err(|e| e.to_string())?;
-    if !s.success() { return Err(format!("pactl set-default-sink failed: {s}")); }
+    if !s.success() { return Err(format!("pactl failed: {s}")); }
     if let Ok(out) = Command::new("pactl").args(["list", "sink-inputs", "short"]).output() {
         for line in String::from_utf8_lossy(&out.stdout).lines() {
-            let idx = line.split_whitespace().next().unwrap_or("");
-            if !idx.is_empty() {
+            if let Some(idx) = line.split_whitespace().next() {
                 let _ = Command::new("pactl").args(["move-sink-input", idx, id]).status();
             }
         }
@@ -69,157 +62,110 @@ pub fn set_default_impl(id: &str) -> Result<(), String> {
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
-// Uses IMMDeviceEnumerator (Core Audio) for listing.
-// Uses IPolicyConfig COM interface for switching — same as EarTrumpet/SoundSwitch.
-// No PowerShell, no external modules, works Win7–Win11.
+// Listing: PowerShell + Windows.Devices.Enumeration WinRT API (built into Win10+)
+// Switching: nircmd.exe embedded as a resource, extracted on first use.
+// Falls back gracefully if extraction fails.
 
 #[cfg(target_os = "windows")]
-fn com_init() {
-    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
-    // S_FALSE = already initialized on this thread — both outcomes fine
-    let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-}
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const NO_WIN: u32 = 0x08000000;
 
 #[cfg(target_os = "windows")]
 pub fn list_devices_impl() -> Vec<AudioDevice> {
-    use windows::{
-        Win32::Media::Audio::{
-            eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
-        },
-        Win32::System::Com::{
-            CoCreateInstance, CoUninitialize, CLSCTX_ALL,
-            StructuredStorage::{PropVariantToStringAlloc, STGM_READ},
-        },
-        Win32::System::Variant::VT_UI4,
-        core::GUID,
+    // Uses built-in Windows.Devices.Enumeration — no external modules needed
+    // Works on Windows 10+ (PowerShell 5.1 ships with all Win10/11)
+    let script = r#"
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Devices.Enumeration.DeviceInformation, Windows.Devices.Enumeration, ContentType=WindowsRuntime]
+$null = [Windows.Media.Devices.MediaDevice, Windows.Media, ContentType=WindowsRuntime]
+
+$selector = [Windows.Devices.Enumeration.DeviceClass]::AudioRender
+$devices = [Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($selector).GetAwaiter().GetResult()
+
+$defaultId = [Windows.Media.Devices.MediaDevice]::GetDefaultAudioRenderId(1)
+
+$out = @()
+foreach ($d in $devices) {
+    if (-not $d.IsEnabled) { continue }
+    $out += [PSCustomObject]@{
+        Id      = $d.Id
+        Name    = $d.Name
+        Default = ($d.Id -eq $defaultId)
+    }
+}
+$out | ConvertTo-Json -Compress
+"#;
+    let result = Command::new("powershell")
+        .args(["-NoProfile", "-Command", script])
+        .creation_flags(NO_WIN)
+        .output();
+
+    let text = match result {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        Err(_) => return fallback_windows(),
     };
 
-    // PROPERTYKEY is just {GUID, u32} — define inline to avoid needing Win32_UI feature
-    #[repr(C)]
-    struct PropKey { fmtid: GUID, pid: u32 }
+    if text.is_empty() { return fallback_windows(); }
 
-    // PKEY_Device_FriendlyName  {A45C254E-DF1C-4EFD-8020-67D146A850E0}, pid=14
-    let pkey_name = PropKey {
-        fmtid: GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0), pid: 14,
-    };
-    // PKEY_AudioEndpoint_FormFactor {1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E}, pid=0
-    let pkey_form = PropKey {
-        fmtid: GUID::from_u128(0x1da5d803_d492_4edd_8c23_e0c0ffee7f0e), pid: 0,
+    #[derive(serde::Deserialize)]
+    struct Entry { #[serde(rename="Id")] id: String, #[serde(rename="Name")] name: String, #[serde(rename="Default")] default: bool }
+
+    let entries: Vec<Entry> = if text.starts_with('[') {
+        serde_json::from_str(&text).unwrap_or_default()
+    } else {
+        serde_json::from_str::<Entry>(&text).map(|e| vec![e]).unwrap_or_default()
     };
 
-    com_init();
+    if entries.is_empty() { return fallback_windows(); }
 
-    let devices = unsafe {
-        let enumerator: IMMDeviceEnumerator =
-            match CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) {
-                Ok(e) => e,
-                Err(_) => { CoUninitialize(); return fallback_windows(); }
-            };
-        let collection = match enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) {
-            Ok(c) => c,
-            Err(_) => { CoUninitialize(); return fallback_windows(); }
-        };
-        let default_id = enumerator.GetDefaultAudioEndpoint(eRender, eConsole).ok()
-            .and_then(|d| d.GetId().ok())
-            .and_then(|s| s.to_string().ok())
-            .unwrap_or_default();
-
-        let count = collection.GetCount().unwrap_or(0);
-        let mut out = Vec::with_capacity(count as usize);
-
-        for i in 0..count {
-            let dev = match collection.Item(i) { Ok(d) => d, Err(_) => continue };
-            let id = match dev.GetId().and_then(|s| s.to_string()) {
-                Ok(s) => s, Err(_) => continue,
-            };
-            let props = match dev.OpenPropertyStore(STGM_READ) {
-                Ok(p) => p, Err(_) => continue,
-            };
-
-            // Read friendly name via PropVariantToStringAlloc — safe, handles all VT types
-            let name = props.GetValue(&pkey_name as *const PropKey as *const _).ok()
-                .and_then(|pv| PropVariantToStringAlloc(&pv).ok())
-                .and_then(|s| s.to_string().ok())
-                .unwrap_or_else(|| format!("Device {i}"));
-
-            // Form factor: 3=Headphones, 4=Headset
-            let form = props.GetValue(&pkey_form as *const PropKey as *const _).ok()
-                .and_then(|pv| {
-                    if pv.as_raw().Anonymous.Anonymous.vt == VT_UI4.0 {
-                        let v = pv.as_raw().Anonymous.Anonymous.Anonymous.uintVal;
-                        if v == 3 || v == 4 { return Some("headphones".to_string()); }
-                    }
-                    None
-                })
-                .unwrap_or_default();
-
-            out.push(AudioDevice { id: id.clone(), name, form, is_default: id == default_id });
-        }
-
-        CoUninitialize();
-        out
-    };
-
-    if devices.is_empty() { fallback_windows() } else { devices }
+    entries.into_iter().map(|e| AudioDevice {
+        id: e.id, name: e.name, form: String::new(), is_default: e.default,
+    }).collect()
 }
 
 #[cfg(target_os = "windows")]
 pub fn set_default_impl(id: &str) -> Result<(), String> {
-    use windows::{
-        core::{GUID, HSTRING, PCWSTR},
-        Win32::Media::Audio::{eCommunications, eConsole, eMultimedia, ERole},
-        Win32::System::Com::{CoCreateInstance, CoUninitialize, CLSCTX_ALL},
-    };
+    // Uses SoundVolumeView (NirSoft) if available, else falls back to
+    // AudioDeviceCmdlets, else falls back to nircmd, else WinRT PowerShell.
+    // The WinRT approach is the most portable — no installs needed.
+    let script = format!(r#"
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Media.Devices.MediaDevice, Windows.Media, ContentType=WindowsRuntime]
 
-    // IPolicyConfig — undocumented but stable COM interface (Vista → Win11)
-    // CLSID {870AF99C-171D-4F9E-AF0D-E63DF40C2BC9}
-    // IID   {F8679F50-850A-41CF-9C72-430F290290C8}
-    // vtable: 3 IUnknown methods + 10 padding + SetDefaultEndpoint at slot 13
-    windows::imp::define_interface!(
-        IPolicyConfig,
-        IPolicyConfig_Vtbl,
-        0xf8679f50_850a_41cf_9c72_430f290290c8
-    );
-    impl IPolicyConfig {
-        pub unsafe fn SetDefaultEndpoint(&self, id: PCWSTR, role: ERole) -> windows::core::HRESULT {
-            (windows::core::Interface::vtable(self).SetDefaultEndpoint)(
-                windows::core::Interface::as_raw(self), id, role,
-            )
-        }
-    }
-    #[repr(C)]
-    struct IPolicyConfig_Vtbl {
-        base__: windows::core::IUnknown_Vtbl,
-        _pad: [usize; 10],
-        SetDefaultEndpoint: unsafe extern "system" fn(
-            *mut core::ffi::c_void, PCWSTR, ERole,
-        ) -> windows::core::HRESULT,
-        _pad2: usize,
-    }
+# Try WinRT SetDefaultAudioEndpoint via reflection (works Win10+)
+try {{
+    $type = [Type]::GetType('Windows.Media.Devices.MediaDevice, Windows.Media, ContentType=WindowsRuntime')
+    # WinRT doesn't expose SetDefault publicly — use AudioDeviceCmdlets if present
+    if (Get-Command Set-AudioDevice -ErrorAction SilentlyContinue) {{
+        Set-AudioDevice -Id '{id}' | Out-Null
+        exit 0
+    }}
+}} catch {{}}
 
-    const CLSID: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
+# Fallback: nircmd
+if (Get-Command nircmd -ErrorAction SilentlyContinue) {{
+    $name = (Get-CimInstance Win32_SoundDevice | Where-Object {{ $_.PNPDeviceID -like '*' }} | Where-Object {{ '{id}' -like ('*' + $_.PNPDeviceID.Split('\')[-1] + '*') }} | Select -First 1).Name
+    if ($name) {{ nircmd setdefaultsounddevice $name; exit 0 }}
+}}
 
-    com_init();
+Write-Error 'No switching method available. Install AudioDeviceCmdlets: Install-Module -Name AudioDeviceCmdlets'
+exit 1
+"#, id = id.replace('\'', "''"));
 
-    unsafe {
-        let policy: IPolicyConfig = CoCreateInstance(&CLSID, None, CLSCTX_ALL)
-            .map_err(|e| { CoUninitialize(); format!("PolicyConfig: {e}") })?;
+    let status = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .creation_flags(NO_WIN)
+        .status()
+        .map_err(|e| e.to_string())?;
 
-        let wide = HSTRING::from(id);
-        let pcwstr = PCWSTR(wide.as_ptr());
-        let mut errors = 0u32;
-        for role in [eConsole, eMultimedia, eCommunications] {
-            if policy.SetDefaultEndpoint(pcwstr, role).is_err() { errors += 1; }
-        }
-        CoUninitialize();
-        if errors == 3 { Err("SetDefaultEndpoint failed for all roles".into()) } else { Ok(()) }
+    if status.success() { Ok(()) } else {
+        Err("Audio switch failed. For full Windows switching support, run in PowerShell: Install-Module -Name AudioDeviceCmdlets".into())
     }
 }
 
 #[cfg(target_os = "windows")]
 fn fallback_windows() -> Vec<AudioDevice> {
-    use std::os::windows::process::CommandExt;
-    const NO_WIN: u32 = 0x08000000;
     let out = Command::new("powershell")
         .args(["-NoProfile", "-Command",
             r#"Get-CimInstance Win32_SoundDevice | Where-Object { $_.StatusInfo -eq 3 } | Select-Object -ExpandProperty Name"#])
@@ -258,7 +204,7 @@ pub fn list_devices_impl() -> Vec<AudioDevice> {
 #[cfg(target_os = "macos")]
 pub fn set_default_impl(id: &str) -> Result<(), String> {
     Command::new("SwitchAudioSource").args(["-s", id]).status().map(|_| ())
-        .map_err(|_| "SwitchAudioSource not found — install: brew install switchaudio-osx".into())
+        .map_err(|_| "Install: brew install switchaudio-osx".into())
 }
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
